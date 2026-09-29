@@ -9,6 +9,7 @@ namespace ValheimCompanion.Net
         private const string SpawnRequest = "CMP_SpawnRequest";
         private const string DespawnRequest = "CMP_DespawnRequest";
         private const string Message = "CMP_Message";
+        private const string PlayerChat = "CMP_PlayerChat";
 
         /// <summary>Called once ZRoutedRpc exists (ZNet.Awake).</summary>
         public static void Register()
@@ -16,6 +17,19 @@ namespace ValheimCompanion.Net
             ZRoutedRpc.instance.Register<Vector3, long, string>(SpawnRequest, RPC_SpawnRequest);
             ZRoutedRpc.instance.Register(DespawnRequest, RPC_DespawnRequest);
             ZRoutedRpc.instance.Register<string>(Message, RPC_Message);
+            ZRoutedRpc.instance.Register<string, string>(PlayerChat, RPC_PlayerChat);
+        }
+
+        // Client -> server: chat addressed to the companion ("prefix" or "proximity").
+        public static void SendPlayerChat(string text, string via) =>
+            ZRoutedRpc.instance.InvokeRoutedRPC(PlayerChat, text, via);
+
+        private static void RPC_PlayerChat(long sender, string text, string via)
+        {
+            if (Role.IsServer)
+            {
+                Conversation.ChatForwarding.HandlePlayerChat(sender, text, via);
+            }
         }
 
         // Client -> server

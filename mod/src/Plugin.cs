@@ -42,6 +42,7 @@ namespace ValheimCompanion
             // Server-side loops; each no-ops unless this instance is the server.
             gameObject.AddComponent<ZoneKeeper>();
             gameObject.AddComponent<CompanionSpawner>();
+            gameObject.AddComponent<Bridge.AgentClient>();
 
             Jotunn.Logger.LogInfo($"{PluginName} {PluginVersion} loaded (headless={Jotunn.Managers.GUIManager.IsHeadless()})");
         }

@@ -1,5 +1,7 @@
+using System.Collections.Generic;
 using Jotunn.Managers;
 using UnityEngine;
+using ValheimCompanion.Conversation;
 
 namespace ValheimCompanion.Companion
 {
@@ -12,9 +14,15 @@ namespace ValheimCompanion.Companion
         private const float TickInterval = 1f;
         private const float StatusInterval = 10f;
 
-        // Loaded companion instances, for cheap lookups in hot paths such as BaseAI.IsEnemy.
-        private static readonly System.Collections.Generic.HashSet<Character> s_companions =
-            new System.Collections.Generic.HashSet<Character>();
+        private const string RpcSay = "CMP_Say";
+        private const float BubbleHeight = 2.2f;
+        private const float BubbleCullDistance = 20f;
+        private const float BubbleSeconds = 8f;
+        private const float ChatLineDistance = 30f;
+
+        // Loaded companion instances. s_companions serves hot paths such as BaseAI.IsEnemy.
+        private static readonly HashSet<Character> s_companions = new HashSet<Character>();
+        private static readonly List<CompanionAI> s_instances = new List<CompanionAI>();
 
         private ZNetView _nview;
         private Humanoid _character;
@@ -33,6 +41,8 @@ namespace ValheimCompanion.Companion
             }
 
             s_companions.Add(_character);
+            s_instances.Add(this);
+            _nview.Register<string>(RpcSay, RPC_Say);
             ApplyName();
 
             // Headless spike: with no camera, a culled Animator would skip the animation events that
@@ -46,7 +56,62 @@ namespace ValheimCompanion.Companion
             }
         }
 
-        private void OnDestroy() => s_companions.Remove(_character);
+        private void OnDestroy()
+        {
+            s_companions.Remove(_character);
+            s_instances.Remove(this);
+        }
+
+        public ZDO ZDO => _nview.GetZDO();
+        public string Name => _character.m_name;
+
+        /// <summary>Server: the loaded companion this instance owns (simulates), if any.</summary>
+        public static CompanionAI FindOwned()
+        {
+            foreach (var ai in s_instances)
+            {
+                if (ai._nview.IsValid() && ai._nview.IsOwner())
+                {
+                    return ai;
+                }
+            }
+            return null;
+        }
+
+        /// <summary>Any loaded companion within range of a point (client-side chat proximity).</summary>
+        public static bool AnyWithin(Vector3 point, float range)
+        {
+            foreach (var ai in s_instances)
+            {
+                if (ai._nview.IsValid() && Vector3.Distance(ai.transform.position, point) <= range)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>Owner only: say something. Every client shows it (speech bubble plus chat line).</summary>
+        public void Say(string text)
+        {
+            _nview.InvokeRPC(ZNetView.Everybody, RpcSay, text);
+        }
+
+        private void RPC_Say(long sender, string text)
+        {
+            if (!Chat.instance || !Player.m_localPlayer)
+            {
+                return; // headless server
+            }
+            Chat.instance.SetNpcText(gameObject, Vector3.up * BubbleHeight, BubbleCullDistance, BubbleSeconds, "", text, false);
+
+            // Chat line for anyone nearby, or anyone who spoke to it recently (the @ prefix works from afar).
+            float distance = Vector3.Distance(Player.m_localPlayer.transform.position, transform.position);
+            if (distance <= ChatLineDistance || ChatForwarding.RecentlyAddressed)
+            {
+                Chat.instance.AddString(_character.m_name, text, Talker.Type.Normal);
+            }
+        }
 
         /// <summary>Server only: initialise a freshly spawned companion.</summary>
         public void InitNew(string name, long masterId, string masterName)

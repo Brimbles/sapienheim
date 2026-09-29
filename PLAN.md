@@ -236,10 +236,10 @@ Each milestone ends with something playable. Acceptance criteria in **bold**.
 - **Companion spawns on the dedicated server, follows and fights, looks correct on two clients, and survives a server restart. Both spikes have a written verdict (works / needs catch-up fallback).**
 
 ### M2 — Bridge + echo agent
-- [ ] `AgentClient` (TCP, reconnect with backoff, shared-secret handshake).
-- [ ] Harmony patch on chat **on the client** (the headless server has no chat UI): messages addressed to the companion (e.g. prefix or proximity) go via RPC to the server, then an event to the agent.
-- [ ] `CMP_Say` RPC broadcasts speech.
-- [ ] Python agent that echoes chat back as `say`.
+- [x] `AgentClient` (TCP, reconnect with backoff, shared-secret handshake).
+- [x] Harmony patch on chat **on the client** (the headless server has no chat UI): messages addressed to the companion (e.g. prefix or proximity) go via RPC to the server, then an event to the agent.
+- [x] `CMP_Say` RPC broadcasts speech: a speech bubble, plus a chat line for players within 30 m or anyone who addressed the companion in the last 2 minutes.
+- [x] Python agent that echoes chat back as `say`.
 - **Typing to the companion in-game produces an echoed speech bubble visible to all players.**
 
 ### M3 — LLM brain v1
@@ -303,7 +303,7 @@ Each milestone ends with something playable. Acceptance criteria in **bold**.
 | LLM spatial reasoning for builds | Blueprints/templates only; the LLM picks from named options |
 | Valheim updates breaking Harmony patches | Keep patches few and isolated; pin the game version on the server |
 | PhValheim custom mod support: its README documents only Thunderstore/Hexium mods and `custom_configs/`, with no custom DLLs | Spike before M8: test whether a DLL dropped into the world's `BepInEx/plugins` on the `/opt/stateful` volume survives a world update and reaches clients. Fallback: publish the mod to Thunderstore |
-| Chat addressing (how does a message reach the companion?) | Decide in M2: name prefix (`@Bjorn ...`), proximity, or a dedicated key |
+| Chat addressing (how does a message reach the companion?) | Decided in M2: both. `@Name ...` works from anywhere. Plain chat counts when the speaker is within 10 m and no other player is that close to them. The server re-checks both. |
 | Security of the agent port | Private Docker network, shared secret, never exposed publicly |
 
 ---
