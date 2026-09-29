@@ -28,7 +28,7 @@ namespace ValheimCompanion
         {
             DebugAutoSpawnAt = Config.Bind("Debug", "AutoSpawnAt", "",
                 "Server only: if no companion exists when the world loads, spawn one here with no master. 'x,z' or 'StartTemple'. Empty = off.");
-            CompanionName = Config.Bind("Companion", "Name", "Bjorn", "Name given to a newly spawned companion (server only).");
+            CompanionName = Config.Bind("Companion", "Name", "Alvar", "The companion's name. Changing it renames the existing companion (server only).");
             // Only the server role uses these; clients never talk to the agent.
             AgentHost = Config.Bind("Agent", "Host", "127.0.0.1", "Hostname of the companion agent (server only).");
             AgentPort = Config.Bind("Agent", "Port", 7777, "TCP port of the companion agent (server only).");

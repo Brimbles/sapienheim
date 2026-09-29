@@ -124,7 +124,11 @@ namespace ValheimCompanion.Conversation
                 ["text"] = text,
                 ["via"] = via,
             };
-            if (!AgentClient.SendEvent("player_chat", data))
+            if (AgentClient.SendEvent("player_chat", data))
+            {
+                companion.ShowThinking();
+            }
+            else
             {
                 Jotunn.Logger.LogWarning("Agent not connected; chat not delivered");
             }

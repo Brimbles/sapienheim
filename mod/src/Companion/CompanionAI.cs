@@ -15,6 +15,8 @@ namespace ValheimCompanion.Companion
         private const float StatusInterval = 10f;
 
         private const string RpcSay = "CMP_Say";
+        private const string RpcThinking = "CMP_Thinking";
+        private const float ThinkingSeconds = 15f;
         private const float BubbleHeight = 2.2f;
         private const float BubbleCullDistance = 20f;
         private const float BubbleSeconds = 8f;
@@ -27,6 +29,7 @@ namespace ValheimCompanion.Companion
         private ZNetView _nview;
         private Humanoid _character;
         private MonsterAI _ai;
+        private CompanionTasks _tasks;
         private float _nextTick;
         private float _nextStatus;
 
@@ -43,6 +46,8 @@ namespace ValheimCompanion.Companion
             s_companions.Add(_character);
             s_instances.Add(this);
             _nview.Register<string>(RpcSay, RPC_Say);
+            _nview.Register(RpcThinking, RPC_Thinking);
+            _tasks = new CompanionTasks(_nview, _character, _ai);
             ApplyName();
 
             // Headless spike: with no camera, a culled Animator would skip the animation events that
@@ -60,7 +65,10 @@ namespace ValheimCompanion.Companion
         {
             s_companions.Remove(_character);
             s_instances.Remove(this);
+            _tasks?.OnDestroy();
         }
+
+        public CompanionTasks Tasks => _tasks;
 
         public ZDO ZDO => _nview.GetZDO();
         public string Name => _character.m_name;
@@ -97,6 +105,20 @@ namespace ValheimCompanion.Companion
             _nview.InvokeRPC(ZNetView.Everybody, RpcSay, text);
         }
 
+        /// <summary>Owner only: show a "..." bubble while the agent thinks. The next Say replaces it.</summary>
+        public void ShowThinking()
+        {
+            _nview.InvokeRPC(ZNetView.Everybody, RpcThinking);
+        }
+
+        private void RPC_Thinking(long sender)
+        {
+            if (Chat.instance && Player.m_localPlayer)
+            {
+                Chat.instance.SetNpcText(gameObject, Vector3.up * BubbleHeight, BubbleCullDistance, ThinkingSeconds, "", "...", false);
+            }
+        }
+
         private void RPC_Say(long sender, string text)
         {
             if (!Chat.instance || !Player.m_localPlayer)
@@ -119,7 +141,7 @@ namespace ValheimCompanion.Companion
             ZDO zdo = _nview.GetZDO();
             zdo.Set(CompanionState.KeyName, name);
             CompanionState.SetMaster(zdo, masterId, masterName);
-            CompanionState.SetTask(zdo, "idle"); // UpdateFollow switches to "follow" once the master is near
+            CompanionState.SetTask(zdo, CompanionTasks.Follow);
             _character.SetTamed(true);
             ApplyName();
         }
@@ -151,7 +173,8 @@ namespace ValheimCompanion.Companion
             {
                 _character.SetTamed(true);
             }
-            UpdateFollow();
+            SyncNameFromConfig();
+            _tasks.Update();
 
             if (Time.time >= _nextStatus)
             {
@@ -160,24 +183,15 @@ namespace ValheimCompanion.Companion
             }
         }
 
-        private void UpdateFollow()
+        // The server config is authoritative for the name, so renaming there renames an existing companion.
+        private void SyncNameFromConfig()
         {
-            ZDO zdo = _nview.GetZDO();
-            long masterId = CompanionState.GetMaster(zdo);
-            Player master = masterId == 0 ? null : Player.GetAllPlayers().Find(p => p.GetPlayerID() == masterId);
-            GameObject target = master ? master.gameObject : null;
-
-            // The second check catches a master who left: the follow target is destroyed (== null) but the
-            // task still says "follow".
-            bool taskStale = !target && CompanionState.GetTask(zdo) == "follow";
-            if (_ai.GetFollowTarget() != target || taskStale)
+            string configured = Plugin.CompanionName.Value.Trim();
+            if (configured.Length > 0 && configured != CompanionState.GetName(_nview.GetZDO()))
             {
-                _ai.ResetPatrolPoint();
-                _ai.SetFollowTarget(target);
-                CompanionState.SetTask(zdo, target ? "follow" : "idle");
-                Jotunn.Logger.LogInfo(target
-                    ? $"{_character.m_name} now following {master.GetPlayerName()}"
-                    : $"{_character.m_name}: master {CompanionState.GetMasterName(zdo)} not nearby, idling");
+                Jotunn.Logger.LogInfo($"Renaming companion {_character.m_name} -> {configured}");
+                _nview.GetZDO().Set(CompanionState.KeyName, configured);
+                ApplyName();
             }
         }
 
@@ -188,6 +202,12 @@ namespace ValheimCompanion.Companion
         {
             private static void Postfix(Character a, Character b, ref bool __result)
             {
+                // Whatever the agent explicitly told it to attack is an enemy.
+                if (IsCommandedTarget(a, b) || IsCommandedTarget(b, a))
+                {
+                    __result = true;
+                    return;
+                }
                 if (!__result)
                 {
                     return;
@@ -200,6 +220,16 @@ namespace ValheimCompanion.Companion
                 {
                     __result = IsHostileTowardUs(a, b);
                 }
+            }
+
+            private static bool IsCommandedTarget(Character companion, Character other)
+            {
+                if (!s_companions.Contains(companion))
+                {
+                    return false;
+                }
+                CompanionAI ai = companion.GetComponent<CompanionAI>();
+                return ai && ai._tasks != null && ai._tasks.AttackTarget == other;
             }
 
             private static bool IsHostileTowardUs(Character animal, Character companion)
@@ -233,7 +263,7 @@ namespace ValheimCompanion.Companion
             GameObject follow = _ai.GetFollowTarget();
             Jotunn.Logger.LogInfo(
                 $"[status] {_character.m_name} pos={transform.position:F0} hp={_character.GetHealth():F0}/{_character.GetMaxHealth():F0} " +
-                $"owner={_nview.GetZDO().GetOwner()} task={CompanionState.GetTask(_nview.GetZDO())} " +
+                $"owner={_nview.GetZDO().GetOwner()} task={_tasks.Current} " +
                 $"follow={(follow ? follow.name : "-")} target={(target ? $"{target.m_name}({target.GetHealth():F0}hp)" : "-")}");
         }
     }

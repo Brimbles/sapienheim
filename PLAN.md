@@ -221,7 +221,7 @@ Each milestone ends with something playable. Acceptance criteria in **bold**.
 - **Mod loads on both the local dedicated server and the client, and logs the correct role.**
 
 ### M1 — Companion NPC (no LLM)
-- [x] Create the companion prefab: Dverger clone for M1 (name configurable, default Bjorn). Player-model viking look as a follow-up task.
+- [x] Create the companion prefab: Dverger clone for M1 (name configurable, default Alvar). Player-model viking look as a follow-up task.
 - [x] Spawn command (console) creates the companion; the server claims and keeps ownership. (`cmp_spawn` / `cmp_despawn`, admin only; `Debug.AutoSpawnAt` config spawns one headless.)
 - [x] Reflex AI: follow master, attack hostiles near master, avoid water/cliffs. Uses the vanilla tamed `MonsterAI`. Passive wildlife is ignored unless it attacks the companion or a player.
 - [x] ZDO state: `cmp_master`, `cmp_task`.
@@ -246,7 +246,8 @@ Each milestone ends with something playable. Acceptance criteria in **bold**.
 - [ ] `brain.py`: event → build context (persona + recent chat + state snapshot + memory) → Claude with tools → commands.
 - [ ] Tools: `say`, `follow`, `stay`, `go_to`, `attack`, `get_status`.
 - [ ] Model routing (Haiku default, Sonnet for planning); per-minute call budget.
-- [ ] "Thinking" gesture while waiting for a response.
+- [ ] "Thinking" gesture while waiting for a response ("..." speech bubble).
+- Persona: **Alvar Partridgesson**, an Alan Partridge-style ex-skald whose mead-hall saga show got cancelled (`agent/companion_agent/persona.md`). The name comes from `Companion.Name` in the server config, and changing it renames the existing companion.
 - [ ] Optional: `mcp_server.py` exposing the same tools for Claude Code testing.
 - **Natural conversation plus the companion obeying simple spoken commands.**
 
@@ -303,7 +304,7 @@ Each milestone ends with something playable. Acceptance criteria in **bold**.
 | LLM spatial reasoning for builds | Blueprints/templates only; the LLM picks from named options |
 | Valheim updates breaking Harmony patches | Keep patches few and isolated; pin the game version on the server |
 | PhValheim custom mod support: its README documents only Thunderstore/Hexium mods and `custom_configs/`, with no custom DLLs | Spike before M8: test whether a DLL dropped into the world's `BepInEx/plugins` on the `/opt/stateful` volume survives a world update and reaches clients. Fallback: publish the mod to Thunderstore |
-| Chat addressing (how does a message reach the companion?) | Decided in M2: both. `@Name ...` works from anywhere. Plain chat counts when the speaker is within 10 m and no other player is that close to them. The server re-checks both. |
+| Chat addressing (how does a message reach the companion?) | Decided in M2: both. `@Name ...` (e.g. `@Alvar`) works from anywhere. Plain chat counts when the speaker is within 10 m and no other player is that close to them. The server re-checks both. |
 | Security of the agent port | Private Docker network, shared secret, never exposed publicly |
 
 ---

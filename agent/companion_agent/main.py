@@ -1,15 +1,21 @@
 """Agent entry point: accepts the mod's TCP connection and speaks newline-delimited JSON.
 
-M2: performs the hello handshake and echoes player chat back as `say`. The LLM brain arrives in M3.
+Events from the mod are queued and handled one at a time by the Brain, which calls Claude and
+sends commands back. Command results and state snapshots are routed to whoever awaits them.
 """
 
 import asyncio
 import hmac
 import logging
 import os
+from typing import Callable
+
+import anthropic
 
 from companion_agent import __version__
-from companion_agent.protocol import CommandResult, Event, Hello, HelloAck, State, command, encode, parse
+from companion_agent.brain import Brain
+from companion_agent.connection import ModConnection
+from companion_agent.protocol import Event, Hello, HelloAck, parse
 
 log = logging.getLogger("companion_agent")
 
@@ -33,57 +39,71 @@ PORT = int(os.environ.get("AGENT_PORT", "7777"))
 TOKEN = os.environ.get("AGENT_TOKEN", "")
 
 HANDSHAKE_TIMEOUT = 10.0
+EVENT_QUEUE_SIZE = 5
 
 
-async def send(writer: asyncio.StreamWriter, msg) -> None:
-    writer.write(encode(msg))
-    await writer.drain()
+def default_brain_factory(conn: ModConnection) -> Brain:
+    return Brain(conn, anthropic.AsyncAnthropic())
 
 
-async def on_event(writer: asyncio.StreamWriter, event: Event) -> None:
-    if event.name == "player_chat":
-        player = event.data.get("player", "someone")
-        text = str(event.data.get("text", "")).strip()
-        reply = f"You said: {text}" if text else f"Yes, {player}?"
-        log.info("chat from %s (%s): %s", player, event.data.get("via"), text)
-        await send(writer, command("say", text=reply))
-    else:
-        log.info("event %s: %s", event.name, event.data)
+# Tests swap this for a Brain with a fake LLM client.
+brain_factory: Callable[[ModConnection], Brain] = default_brain_factory
+
+
+async def _event_worker(brain: Brain, queue: "asyncio.Queue[Event]") -> None:
+    while True:
+        event = await queue.get()
+        try:
+            await brain.on_event(event)
+        except anthropic.APIError as e:
+            log.error("Claude API error handling %s: %s", event.name, e)
+        except Exception:
+            log.exception("failed handling event %s", event.name)
 
 
 async def handle_mod(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
     peer = writer.get_extra_info("peername")
     log.info("mod connected from %s", peer)
+    worker = None
     try:
         hello = parse(await asyncio.wait_for(reader.readline(), HANDSHAKE_TIMEOUT))
         if not isinstance(hello, Hello) or not hmac.compare_digest(hello.token, TOKEN):
             log.warning("rejected handshake from %s", peer)
             return
         log.info("hello from mod %s, world %s", hello.mod_version, hello.world)
-        await send(writer, HelloAck(agent_version=__version__))
+
+        conn = ModConnection(writer)
+        await conn.send(HelloAck(agent_version=__version__))
+        queue: asyncio.Queue[Event] = asyncio.Queue(maxsize=EVENT_QUEUE_SIZE)
+        worker = asyncio.create_task(_event_worker(brain_factory(conn), queue))
 
         while line := await reader.readline():
             msg = parse(line)
-            if isinstance(msg, Event):
-                await on_event(writer, msg)
-            elif isinstance(msg, CommandResult):
-                if not msg.ok:
-                    log.warning("command %s failed: %s", msg.cmd_id, msg.error)
-            elif isinstance(msg, State):
-                log.info("state: %s", msg.model_dump())
-            else:
+            if msg is None:
                 log.warning("unhandled message: %r", line[:200])
+            elif conn.dispatch(msg):
+                pass
+            elif isinstance(msg, Event):
+                try:
+                    queue.put_nowait(msg)
+                except asyncio.QueueFull:
+                    log.warning("busy; dropped event %s", msg.name)
     except (asyncio.TimeoutError, ConnectionError) as e:
         log.warning("connection %s ended: %s", peer, e)
     finally:
+        if worker:
+            worker.cancel()
         writer.close()
         log.info("mod disconnected")
 
 
 async def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     if not TOKEN:
         raise SystemExit("AGENT_TOKEN must be set")
+    if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
+        raise SystemExit("No Claude credentials: add ANTHROPIC_API_KEY=... to agent/.env (never commit it)")
     server = await asyncio.start_server(handle_mod, HOST, PORT)
     log.info("listening on %s:%d", HOST, PORT)
     async with server:
