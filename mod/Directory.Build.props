@@ -1,0 +1,11 @@
+<Project>
+  <!--
+    JotunnLib's Paths.props imports $(SolutionDir)Environment.props. Point SolutionDir here so that
+    works for `dotnet build` on the csproj (no .sln) as well as from an IDE.
+  -->
+  <PropertyGroup>
+    <SolutionDir Condition="'$(SolutionDir)' == '' Or '$(SolutionDir)' == '*Undefined*'">$(MSBuildThisFileDirectory)</SolutionDir>
+    <!-- Let Jotunn generate publicized game assemblies (needed after every Valheim update). -->
+    <ExecutePrebuild>true</ExecutePrebuild>
+  </PropertyGroup>
+</Project>

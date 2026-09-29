@@ -124,10 +124,10 @@ sapienheim/
 
 **Mod (C#)**
 - BepInEx (Valheim pack), Harmony, **Jötunn**. Start from the JotunnModStub template.
-- Target framework per the Jötunn template, probably `net462` **(verify)**.
+- Target framework `net48` (as in the current JotunnModStub); JotunnLib 2.30.2 from NuGet, matching the Thunderstore Jötunn.
 - Must run on the **Linux** dedicated server: no Windows-only APIs.
 - Transport: newline-delimited JSON over TCP (simplest, safe on Unity Mono). Decided: no WebSocket.
-- JSON: confirm which serializer is available/bundleable (Newtonsoft vs. a small lib); Unity `JsonUtility` is too limited. **(verify)**
+- JSON: Newtonsoft.Json ships with Valheim in `valheim_Data/Managed`, so reference it without bundling. **(verify it is also present on the Linux dedicated server)**
 
 **Agent (Python 3.12+)**
 - `anthropic` SDK with tool use; `asyncio`; `pydantic` for the protocol.
@@ -213,9 +213,9 @@ The LLM **plans**; the task queue **executes**. Failures come back as events (e.
 Each milestone ends with something playable. Acceptance criteria in **bold**.
 
 ### M0 — Dev environment & hello world
-- [ ] Install BepInEx + Jötunn into the Valheim client and a **local Valheim Dedicated Server**.
-- [ ] Create `mod/` from the JotunnModStub; VS Code task: build → copy DLL to client + local server `BepInEx/plugins`.
-- [ ] Plugin logs its role (server/client) on load.
+- [x] Install BepInEx + Jötunn into the Valheim client and a **local Valheim Dedicated Server**.
+- [x] Create `mod/` from the JotunnModStub; VS Code task: build → copy DLL to client + local server `BepInEx/plugins`.
+- [x] Plugin logs its role (server/client) on load.
 - [ ] Decompile `assembly_valheim.dll` for reference (BaseAI, MonsterAI, Humanoid, Piece, Player placement, Recipe, ZNetView, ZDOMan, ZoneSystem).
 - **Mod loads on both the local dedicated server and the client, and logs the correct role.**
 
@@ -274,7 +274,7 @@ Each milestone ends with something playable. Acceptance criteria in **bold**.
 
 ### M8 — Deploy to Unraid / PhValheim
 - [ ] Create a **separate PhValheim test world**.
-- [ ] Determine how PhValheim installs custom (non-Thunderstore) mods **(verify)**: custom-mod support vs. dropping the DLL into the world's BepInEx plugins via volume mapping.
+- [ ] Get the mod onto PhValheim (see the risk table): DLL on the `/opt/stateful` volume if it survives world updates and syncs to clients, otherwise a Thunderstore release.
 - [ ] Agent `Dockerfile` + Unraid template (env: `ANTHROPIC_API_KEY`, `AGENT_TOKEN`, `AGENT_PORT`; volume `/data`).
 - [ ] Custom Docker network shared by PhValheim + agent; **no public port for the agent**.
 - [ ] Confirm the PhValheim client launcher distributes the mod to clients.
@@ -295,7 +295,7 @@ Each milestone ends with something playable. Acceptance criteria in **bold**.
 | LLM cost when running 24/7 | Event-driven calls, Haiku by default, per-hour budget, offline budget mode |
 | LLM spatial reasoning for builds | Blueprints/templates only; the LLM picks from named options |
 | Valheim updates breaking Harmony patches | Keep patches few and isolated; pin the game version on the server |
-| PhValheim custom mod support | Verify in M8; the volume-mount fallback always works |
+| PhValheim custom mod support: its README documents only Thunderstore/Hexium mods and `custom_configs/`, with no custom DLLs | Spike before M8: test whether a DLL dropped into the world's `BepInEx/plugins` on the `/opt/stateful` volume survives a world update and reaches clients. Fallback: publish the mod to Thunderstore |
 | Chat addressing (how does a message reach the companion?) | Decide in M2: name prefix (`@Bjorn ...`), proximity, or a dedicated key |
 | Security of the agent port | Private Docker network, shared secret, never exposed publicly |
 

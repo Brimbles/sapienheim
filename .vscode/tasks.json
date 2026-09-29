@@ -1,0 +1,32 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "mod: build + deploy",
+      "detail": "Builds the plugin and copies it to BepInEx/plugins of the client and local dedicated server (see mod/Environment.props)",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["build", "${workspaceFolder}/mod/ValheimCompanion.csproj", "-c", "Debug"],
+      "problemMatcher": "$msCompile",
+      "group": { "kind": "build", "isDefault": true }
+    },
+    {
+      "label": "server: start dev",
+      "detail": "Local Valheim Dedicated Server on the private SapienDev world (password: DEV_SERVER_PASSWORD or 'sapiendev')",
+      "type": "process",
+      "command": "powershell.exe",
+      "args": ["-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/scripts/start-dev-server.ps1"],
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "agent: run",
+      "type": "process",
+      "command": "uv",
+      "args": ["run", "python", "-m", "companion_agent.main"],
+      "options": { "cwd": "${workspaceFolder}/agent" },
+      "isBackground": true,
+      "problemMatcher": []
+    }
+  ]
+}

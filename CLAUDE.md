@@ -18,4 +18,4 @@ LLM-powered NPC companion for Valheim. **Read `PLAN.md` first.** It holds the ar
 - Never commit API keys or the agent token.
 
 ## Dev loop
-Build the mod, copy the DLL to the local Valheim client and the local Valheim Dedicated Server `BepInEx/plugins`, start the server, run `python -m companion_agent.main`, then connect with the client.
+`dotnet build mod/ValheimCompanion.csproj` builds the mod and copies the DLL to `BepInEx/plugins` of the local Valheim client and the local Valheim Dedicated Server. Paths come from `mod/Environment.props`, which is gitignored; copy it from `Environment.props.example`. Start the server with `scripts/start-dev-server.ps1` (private `SapienDev` world, BepInEx log in `<server>/BepInEx/LogOutput.log`), run the agent with `uv run python -m companion_agent.main` from `agent/` (needs `AGENT_TOKEN`), then connect with the client. Both steps are also available as VS Code tasks.

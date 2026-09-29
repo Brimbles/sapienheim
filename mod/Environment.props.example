@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Copy to Environment.props (gitignored) and adjust paths for your machine. -->
+<Project ToolsVersion="Current" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <!-- Valheim client; game assemblies are referenced from here. -->
+    <VALHEIM_INSTALL>C:\Program Files (x86)\Steam\steamapps\common\Valheim</VALHEIM_INSTALL>
+    <!-- Local Valheim Dedicated Server; the DLL is also deployed here if it exists. -->
+    <VALHEIM_SERVER_INSTALL>C:\Program Files (x86)\Steam\steamapps\common\Valheim dedicated server</VALHEIM_SERVER_INSTALL>
+  </PropertyGroup>
+</Project>

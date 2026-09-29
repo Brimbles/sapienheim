@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>ValheimCompanion</AssemblyName>
+    <RootNamespace>ValheimCompanion</RootNamespace>
+    <LangVersion>10</LangVersion>
+    <Nullable>disable</Nullable>
+    <DebugType>portable</DebugType>
+    <!-- Game/BepInEx assemblies are already present at runtime; don't copy them to the output. -->
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Keep in step with the Jotunn version installed from Thunderstore. -->
+    <PackageReference Include="JotunnLib" Version="2.30.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Referenced by JotunnLib's props but not shipped with current Valheim builds. -->
+    <Reference Remove="UnityEngine.ProfilerModule" />
+    <!-- Ships with Valheim (client and dedicated server) in valheim_Data/Managed. -->
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>$(VALHEIM_INSTALL)\valheim_Data\Managed\Newtonsoft.Json.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- Copy the plugin into BepInEx/plugins of the client and the local dedicated server. -->
+  <Target Name="DeployPlugin" AfterTargets="Build">
+    <ItemGroup>
+      <_PluginFiles Include="$(TargetDir)$(TargetName).dll;$(TargetDir)$(TargetName).pdb" />
+      <_DeployRoot Include="$(VALHEIM_INSTALL)" Condition="Exists('$(VALHEIM_INSTALL)\BepInEx')" />
+      <_DeployRoot Include="$(VALHEIM_SERVER_INSTALL)" Condition="'$(VALHEIM_SERVER_INSTALL)' != '' And Exists('$(VALHEIM_SERVER_INSTALL)\BepInEx')" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_PluginFiles)" DestinationFolder="%(_DeployRoot.Identity)\BepInEx\plugins\$(AssemblyName)" Condition="'@(_DeployRoot)' != ''" />
+    <Message Importance="high" Text="Deployed $(AssemblyName) to %(_DeployRoot.Identity)\BepInEx\plugins" Condition="'@(_DeployRoot)' != ''" />
+    <Warning Text="No BepInEx install found to deploy to; check mod/Environment.props" Condition="'@(_DeployRoot)' == ''" />
+  </Target>
+</Project>
