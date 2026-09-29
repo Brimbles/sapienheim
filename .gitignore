@@ -1,0 +1,29 @@
+# Secrets
+.env
+.env.*
+*.token
+secrets/
+
+# Agent data (memory, SQLite)
+data/
+*.db
+*.sqlite
+
+# C# build output
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# OS / editor
+.DS_Store
+Thumbs.db
