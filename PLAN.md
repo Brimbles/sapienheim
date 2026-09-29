@@ -68,7 +68,8 @@ One DLL; the role is chosen at runtime with `ZNet.instance.IsDedicated()` / `IsS
 
 ### Ownership rules (multiplayer correctness)
 1. All AI and task logic is gated: `if (!m_nview.IsValid() || !m_nview.IsOwner()) return;`
-2. The server re-claims ownership if it ever moves (`m_nview.ClaimOwnership()` on the server).
+2. The server re-claims ownership if it ever moves (`ZDO.SetOwner(server)` in `ZoneKeeper`).
+   - Why this works: a dedicated server only loads zones, instantiates objects and takes ownership around **one point**, `ZNet.GetReferencePosition()`, which it normally leaves unused. Clients simulate their own areas. `ZoneKeeper` pins that point to the companion every frame, so the server simulates the companion's area whether or not players are near. This is also the basis for M7 offline operation. Limitation: one reference point means one server-simulated companion.
 3. Persistent companion state goes in ZDO keys prefixed `cmp_` (e.g. `cmp_task`, `cmp_target`, `cmp_master`, `cmp_memory_id`).
 4. Anything visible to all players is broadcast via `m_nview.InvokeRPC(ZNetView.Everybody, "CMP_Say", text)`.
 5. Player input (chat addressed to the companion) goes client → server via RPC. Clients never call the LLM.
@@ -216,16 +217,22 @@ Each milestone ends with something playable. Acceptance criteria in **bold**.
 - [x] Install BepInEx + Jötunn into the Valheim client and a **local Valheim Dedicated Server**.
 - [x] Create `mod/` from the JotunnModStub; VS Code task: build → copy DLL to client + local server `BepInEx/plugins`.
 - [x] Plugin logs its role (server/client) on load.
-- [ ] Decompile `assembly_valheim.dll` for reference (BaseAI, MonsterAI, Humanoid, Piece, Player placement, Recipe, ZNetView, ZDOMan, ZoneSystem).
+- [x] Decompile `assembly_valheim.dll` for reference (BaseAI, MonsterAI, Humanoid, Piece, Player placement, Recipe, ZNetView, ZDOMan, ZoneSystem).
 - **Mod loads on both the local dedicated server and the client, and logs the correct role.**
 
 ### M1 — Companion NPC (no LLM)
-- [ ] Create the companion prefab (clone a humanoid, e.g. Dverger or a player-model NPC; decide the look).
-- [ ] Spawn command (console) creates the companion; the server claims and keeps ownership.
-- [ ] Reflex AI: follow master, attack hostiles near master, avoid water/cliffs.
-- [ ] ZDO state: `cmp_master`, `cmp_task`.
-- [ ] **Spike (early, de-risks M7):** keep the companion's zone loaded on the server with no players near or online; study existing server-side simulation mods on Thunderstore.
-- [ ] **Spike:** check pathfinding and animation on the headless dedicated server with no clients connected.
+- [x] Create the companion prefab: Dverger clone for M1 (name configurable, default Bjorn). Player-model viking look as a follow-up task.
+- [x] Spawn command (console) creates the companion; the server claims and keeps ownership. (`cmp_spawn` / `cmp_despawn`, admin only; `Debug.AutoSpawnAt` config spawns one headless.)
+- [x] Reflex AI: follow master, attack hostiles near master, avoid water/cliffs. Uses the vanilla tamed `MonsterAI`. Passive wildlife is ignored unless it attacks the companion or a player.
+- [x] ZDO state: `cmp_master`, `cmp_task`.
+- [x] **Spike (early, de-risks M7):** keep the companion's zone loaded on the server with no players near or online. Approach: `ZoneKeeper` pins the server reference position to the companion (see ownership rules).
+- [x] **Spike:** check pathfinding and animation on the headless dedicated server with no clients connected.
+- Spike results (2026-09-29, local Windows dedicated server):
+  - Zone kept loaded: **works.** The server-build `Game.FixedUpdate` parks the reference position at (1e6, 0, 1e6) every tick, so `ZoneKeeper` re-applies its anchor in a postfix. After the only player disconnected, the server kept simulating the companion (moving, chasing wildlife).
+  - Headless pathfinding and combat: **works.** It followed a player about 150 m, roamed after they left, and killed two boars while the server simulated it.
+  - Still to check on the Linux server (PhValheim).
+  - Restart: **works.** After `save` and a server restart it reloaded, the server reclaimed ownership, and it kept its name, master and HP, then re-followed the master on rejoin.
+  - Still open: the "looks correct on two clients" check, deferred to the PhValheim test world.
 - **Companion spawns on the dedicated server, follows and fights, looks correct on two clients, and survives a server restart. Both spikes have a written verdict (works / needs catch-up fallback).**
 
 ### M2 — Bridge + echo agent

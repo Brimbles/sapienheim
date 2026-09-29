@@ -30,3 +30,6 @@ Thumbs.db
 
 # Local machine paths for the mod build
 mod/Environment.props
+
+# Decompiled game code (copyrighted, reference only)
+.decompiled/

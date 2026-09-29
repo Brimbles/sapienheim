@@ -23,6 +23,7 @@ namespace ValheimCompanion
             {
                 Current = __instance.IsServer() ? CompanionRole.Server : CompanionRole.Client;
                 Jotunn.Logger.LogInfo($"Role: {Current} (dedicated={__instance.IsDedicated()})");
+                Net.Rpcs.Register();
             }
         }
 
