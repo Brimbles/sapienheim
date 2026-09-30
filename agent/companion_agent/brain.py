@@ -149,9 +149,15 @@ TOOLS: list[dict[str, Any]] = [
                 "radius": {"type": "number", "description": "Search radius in metres around where you start (default 40)."},
                 "source": {
                     "type": "string",
-                    "enum": ["pick", "chop", "mine"],
-                    "description": "Only pick (branches, stones, berries), only chop trees, or only mine rocks. "
-                    "Omit to use whatever is easiest. Use chop when asked to chop or fell a tree.",
+                    "enum": ["pick", "logs", "trees", "chop", "mine"],
+                    "description": "pick: branches, stones, berries. logs: ONLY fallen logs (\"chop up the logs\"). "
+                    "trees: ONLY fell standing trees. chop: anything woody (trees, logs, stumps, bushes). mine: rocks. "
+                    "Omit to use whatever is easiest.",
+                },
+                "near": {
+                    "type": "string",
+                    "description": "Search around this player instead of around you, e.g. for \"the log by me\" "
+                    "(use with a small radius like 10).",
                 },
                 "queue": {"type": "boolean", "description": "true = run after your current work instead of right away."},
             },

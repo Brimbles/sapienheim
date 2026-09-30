@@ -222,9 +222,9 @@ namespace ValheimCompanion.Companion
             SetTask(Give, taskId);
         }
 
-        public void CommandGather(string item, int qty, float radius, string source, string taskId)
+        public void CommandGather(string item, int qty, float radius, string source, Vector3? near, string taskId)
         {
-            _gather.Start(item, qty, radius, source);
+            _gather.Start(item, qty, radius, source, near);
             SetTask(Gather, taskId);
         }
 
@@ -423,10 +423,8 @@ namespace ValheimCompanion.Companion
 
             if (Vector3.Distance(_pickupTarget.transform.position, _character.transform.position) <= PickupReach)
             {
-                // Requests ownership of the drop if needed; the drop disappears once it's in our inventory.
                 int before = _pickupTarget.m_itemData.m_stack;
-                _pickupTarget.Pickup(_character);
-                if (!_pickupTarget || !_pickupTarget.m_nview.IsValid())
+                if (_inventory.TryPickup(_pickupTarget))
                 {
                     _pickedUp += before;
                     _pickupTarget = null;

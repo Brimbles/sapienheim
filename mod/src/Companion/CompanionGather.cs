@@ -58,7 +58,8 @@ namespace ValheimCompanion.Companion
         private float _deadline;
         private string _blockedReason; // why sources exist but can't be used (e.g. need_axe)
         private bool _skippedWarded;
-        private Tool? _only; // restrict to picking (None), chopping (Axe) or mining (Pickaxe); drops are always collected
+        private string _sourceFilter; // pick | logs | trees | chop | mine | null; loose drops are always collected
+        private bool _loggedSearch;
 
         public CompanionGather(Humanoid character, MonsterAI ai, CompanionInventory inventory)
         {
@@ -76,15 +77,17 @@ namespace ValheimCompanion.Companion
         private int _startCount;
 
         /// <param name="qty">How many more to collect; 0 or less means everything nearby.</param>
-        /// <param name="source">"pick", "chop", "mine" or null for anything.</param>
-        public void Start(string item, int qty, float radius, string source = null)
+        /// <param name="source">pick, logs (fallen logs only), trees (standing trees only), chop (anything woody), mine, or null.</param>
+        /// <param name="near">Search around this point instead of where the companion stands.</param>
+        public void Start(string item, int qty, float radius, string source = null, Vector3? near = null)
         {
             _startCount = _inventory.Count(item);
-            _only = source == "pick" ? Tool.None : source == "chop" ? Tool.Axe : source == "mine" ? Tool.Pickaxe : (Tool?)null;
+            _sourceFilter = source;
+            _loggedSearch = false;
             _item = item;
             Wanted = qty > 0 ? qty : -1;
             _goal = qty > 0 ? _startCount + qty : int.MaxValue;
-            _origin = _character.transform.position;
+            _origin = near ?? _character.transform.position;
             _radius = radius;
             _target = null;
             _lastCount = _inventory.Count(item);
@@ -194,7 +197,7 @@ namespace ValheimCompanion.Companion
             switch (source.Target)
             {
                 case ItemDrop drop:
-                    drop.Pickup(_character);
+                    _inventory.TryPickup(drop);
                     return;
                 case Pickable pickable:
                     pickable.Interact(_character, false, false);
@@ -333,6 +336,7 @@ namespace ValheimCompanion.Companion
             }
 
             // 2. Pickables and things to chop or mine.
+            _kindCounts.Clear();
             int n = Physics.OverlapSphereNonAlloc(_origin, _radius, s_overlap, ~0, QueryTriggerInteraction.Collide);
             var seen = new HashSet<Component>();
             for (int i = 0; i < n; i++)
@@ -342,7 +346,8 @@ namespace ValheimCompanion.Companion
                 {
                     continue;
                 }
-                if (_only.HasValue && source.Tool != _only.Value)
+                CountKind(source);
+                if (!Allowed(source))
                 {
                     continue;
                 }
@@ -367,7 +372,41 @@ namespace ValheimCompanion.Companion
                 }
                 Consider(source, ref best, ref bestDist);
             }
+            if (!_loggedSearch || best == null)
+            {
+                _loggedSearch = true;
+                var parts = new List<string>();
+                foreach (var kv in _kindCounts)
+                {
+                    parts.Add($"{kv.Key}={kv.Value}");
+                }
+                Jotunn.Logger.LogInfo($"{_character.m_name}: gather {_item} [{_sourceFilter ?? "any"}] within {_radius:F0} m found " +
+                                      (parts.Count > 0 ? string.Join(", ", parts) : "no sources") +
+                                      (_blockedReason != null ? $" (blocked: {_blockedReason})" : ""));
+            }
             return best;
+        }
+
+        private readonly Dictionary<string, int> _kindCounts = new Dictionary<string, int>();
+
+        private void CountKind(Source source)
+        {
+            string kind = source.Target.GetType().Name;
+            _kindCounts.TryGetValue(kind, out int n);
+            _kindCounts[kind] = n + 1;
+        }
+
+        private bool Allowed(Source source)
+        {
+            switch (_sourceFilter)
+            {
+                case "pick": return source.Target is Pickable;
+                case "logs": return source.Target is TreeLog;
+                case "trees": return source.Target is TreeBase;
+                case "chop": return source.Tool == Tool.Axe;
+                case "mine": return source.Tool == Tool.Pickaxe;
+                default: return true;
+            }
         }
 
         private void Consider(Source source, ref Source best, ref float bestDist)

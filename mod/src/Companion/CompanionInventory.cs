@@ -68,6 +68,32 @@ namespace ValheimCompanion.Companion
             }
         }
 
+        /// <summary>
+        /// Pick up a ground item. ItemDrop.Pickup(Humanoid) can't be used for a non-player when the drop is
+        /// owned by someone else: its deferred PickupUpdate casts the requester to Player and throws. Instead
+        /// ask for ownership and retry on later ticks. Returns true once the item is in our inventory.
+        /// </summary>
+        public bool TryPickup(ItemDrop drop)
+        {
+            if (!drop || !drop.m_nview || !drop.m_nview.IsValid())
+            {
+                return true; // gone (picked up, or despawned)
+            }
+            if (!drop.CanPickup(autoPickupDelay: false))
+            {
+                drop.RequestOwn();
+                return false;
+            }
+            drop.Load();
+            _character.Pickup(drop.gameObject, autoequip: false, autoPickupDelay: false);
+            if (drop && drop.m_nview && drop.m_nview.IsValid())
+            {
+                drop.Save(); // partially picked up (inventory full): keep the remainder in sync
+                return false;
+            }
+            return true;
+        }
+
         public int Count(string prefab)
         {
             int total = 0;

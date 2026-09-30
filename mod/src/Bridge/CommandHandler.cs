@@ -170,12 +170,22 @@ namespace ValheimCompanion.Bridge
                     }
                     float radius = args["radius"] != null ? Mathf.Clamp((float)args["radius"], 5f, 60f) : 40f;
                     string source = (string)args["source"];
-                    if (source != null && source != "pick" && source != "chop" && source != "mine")
+                    if (source != null && Array.IndexOf(new[] { "pick", "logs", "trees", "chop", "mine" }, source) < 0)
                     {
-                        return "source_must_be_pick_chop_or_mine";
+                        return "source_must_be_pick_logs_trees_chop_or_mine";
+                    }
+                    Vector3? near = null;
+                    string nearPlayer = (string)args["near"];
+                    if (!string.IsNullOrEmpty(nearPlayer))
+                    {
+                        if (!TryFindPlayer(nearPlayer, out _, out _, out Vector3 playerPos))
+                        {
+                            return "player_not_found";
+                        }
+                        near = playerPos;
                     }
                     return Queue(companion, args, $"gather({(qty > 0 ? qty.ToString() : "all")} {item})",
-                        () => companion.Tasks.CommandGather(item, qty, radius, source, TaskId(args, cmdId)));
+                        () => companion.Tasks.CommandGather(item, qty, radius, source, near, TaskId(args, cmdId)));
                 }
                 case "store_items":
                 case "fetch_items":
