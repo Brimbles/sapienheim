@@ -160,10 +160,37 @@ def test_say_only_turn_makes_one_llm_call():
 def test_tool_schemas_are_well_formed():
     names = [t["name"] for t in brain_mod.TOOLS]
     assert len(names) == len(set(names))
-    assert {"say", "follow", "stay", "go_to", "attack", "pick_up", "give", "get_status"} <= set(names)
+    assert {"say", "follow", "stay", "go_to", "attack", "pick_up", "give", "gather", "get_status"} <= set(names)
     for t in brain_mod.TOOLS:
         assert t["input_schema"]["type"] == "object"
         assert set(t["input_schema"].get("required", [])) <= set(t["input_schema"]["properties"])
+
+
+def test_finished_job_triggers_report_but_mid_queue_step_does_not():
+    async def run():
+        client = FakeClient([reply(tool("say", text="Twenty wood. Textbook."))])
+        sent = []
+
+        class Conn:
+            async def request_state(self):
+                return {}
+
+            async def command(self, action, **args):
+                sent.append((action, args))
+                return SimpleNamespace(ok=True, error=None)
+
+        b = Brain(Conn(), client)
+        # Mid-queue: silent, just noted.
+        await b.on_event(main.Event(type="event", name="task_done", data={"task": "gather", "queue_remaining": 1}))
+        # End of the job: Alvar reports.
+        await b.on_event(main.Event(type="event", name="task_done", data={"task": "give", "queue_remaining": 0}))
+        return client, sent
+
+    client, sent = asyncio.run(run())
+    assert len(client.calls) == 1
+    assert sent == [("say", {"text": "Twenty wood. Textbook."})]
+    prompt = client.calls[0]["messages"][-1]["content"]
+    assert '"task": "give"' in prompt and '"queue_remaining": 1' in prompt  # earlier step rides along as a note
 
 
 def test_history_carries_previous_exchange():

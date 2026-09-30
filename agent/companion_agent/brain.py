@@ -42,7 +42,10 @@ RULES = """
 - You can only talk through the `say` tool. Plain text replies are never heard by anyone.
 - Every reply should include a `say` call. When asked to do something you can do, call the matching tool and say something in character about it.
 - You carry an inventory (see `inventory` in the state; items are named by id, e.g. "Wood"). Players hand you things by dropping them near you; use `pick_up` to collect them. Use `give` to hand items to a player.
-- You cannot yet build, craft, chop trees, mine or manage chests. If asked, say so in character (a "project for next season", say) instead of pretending.
+- `gather` collects resources: it picks things up, picks branches and stones, chops trees and logs (needs an axe in your inventory) and mines rocks (needs a pickaxe).
+- Work tools (go_to, attack, pick_up, give, gather) take `queue: true` to run one after another. Plan multi-step jobs as a queue, e.g. gather wood, then give it. If one task fails, the rest of the queue is dropped and you'll hear about it.
+- You'll be told when queued work finishes or fails. Report back in character; if something failed (e.g. need_axe), say what you need.
+- You cannot yet craft, build or manage chests. If asked, say so in character (a "project for next season", say) instead of pretending.
 - Never attack players or tamed animals. Use the `id` values from the `nearby` list for `attack`.
 - Positions are [x, y, z] in metres; `go_to` takes x and z.
 - Each message from a player includes a fresh state snapshot. Use it: who is near, what is hostile, time of day, weather, biome.
@@ -83,6 +86,7 @@ TOOLS: list[dict[str, Any]] = [
                 "x": {"type": "number"},
                 "z": {"type": "number"},
                 "player": {"type": "string", "description": "Go to this player's position instead of x/z."},
+                "queue": {"type": "boolean", "description": "true = run after your current work instead of right away."},
             },
         },
     },
@@ -91,7 +95,10 @@ TOOLS: list[dict[str, Any]] = [
         "description": "Attack one creature from the `nearby` list, then return to following.",
         "input_schema": {
             "type": "object",
-            "properties": {"target_id": {"type": "string", "description": "The creature's `id` from the state snapshot."}},
+            "properties": {
+                "target_id": {"type": "string", "description": "The creature's `id` from the state snapshot."},
+                "queue": {"type": "boolean", "description": "true = run after your current work instead of right away."},
+            },
             "required": ["target_id"],
         },
     },
@@ -104,6 +111,7 @@ TOOLS: list[dict[str, Any]] = [
             "properties": {
                 "item": {"type": "string", "description": "Only pick up this item id, e.g. \"Wood\". Omit for everything."},
                 "radius": {"type": "number", "description": "Search radius in metres (1-30, default 10)."},
+                "queue": {"type": "boolean", "description": "true = run after your current work instead of right away."},
             },
         },
     },
@@ -116,8 +124,25 @@ TOOLS: list[dict[str, Any]] = [
                 "player": {"type": "string"},
                 "item": {"type": "string", "description": "Item id from your inventory, e.g. \"Wood\"."},
                 "qty": {"type": "integer", "description": "How many. Omit to give all of them."},
+                "queue": {"type": "boolean", "description": "true = run after your current work instead of right away."},
             },
             "required": ["player", "item"],
+        },
+    },
+    {
+        "name": "gather",
+        "description": "Collect `qty` more of an item near you: picks it up or picks it (branches, stones), chops trees "
+        "and logs with an axe, mines rocks with a pickaxe. Item ids: Wood, Stone, Resin, Flint, FineWood, CopperOre, TinOre... "
+        "A task_done/task_failed event reports the result (e.g. reason need_axe).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "item": {"type": "string", "description": "Item id, e.g. \"Wood\"."},
+                "qty": {"type": "integer", "description": "How many more to collect."},
+                "radius": {"type": "number", "description": "Search radius in metres around where you start (default 40)."},
+                "queue": {"type": "boolean", "description": "true = run after your current work instead of right away."},
+            },
+            "required": ["item", "qty"],
         },
     },
     {
@@ -162,6 +187,13 @@ class Brain:
     async def on_event(self, event: Event) -> None:
         if event.name == "player_chat":
             await self.on_chat(event.data)
+        elif event.name in ("task_done", "task_failed") and _worth_reporting(event):
+            # The whole job is finished (or failed): let Alvar tell the players.
+            log.info("%s %s", event.name, event.data)
+            await self.take_turn(
+                f"({event.name}: {json.dumps(event.data)}. Report back to the players in character.)",
+                history_line=f"({event.name}: {json.dumps(event.data)})",
+            )
         elif event.name in ("task_done", "task_failed", "died"):
             # Informational: fed into the next turn's context instead of costing an LLM call now.
             self.notes.append(f"{event.name}: {json.dumps(event.data)}")
@@ -280,6 +312,13 @@ class Brain:
                 actions.append(f"{name}({', '.join(f'{k}={v}' for k, v in args.items())})")
             return _tool_result(block.id, "ok")
         return _tool_result(block.id, f"failed: {result.error}", error=True)
+
+
+def _worth_reporting(event: Event) -> bool:
+    """A failure, or the last task of a job. Routine steps (a go_to in the middle of a queue) stay silent."""
+    if event.name == "task_failed":
+        return True
+    return event.data.get("queue_remaining", 0) == 0 and event.data.get("task") in ("gather", "give", "pick_up")
 
 
 def _tool_result(tool_use_id: str, content: str, error: bool = False) -> dict[str, Any]:

@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using Newtonsoft.Json.Linq;
 using UnityEngine;
 using ValheimCompanion.Bridge;
@@ -9,12 +11,15 @@ namespace ValheimCompanion.Companion
     /// <list type="bullet">
     /// <item><c>follow</c> (default): follow the master while they are nearby.</item>
     /// <item><c>stay</c>: hold position, idling around a fixed point.</item>
-    /// <item><c>go_to</c>: walk to a point, then stay there. Reports <c>task_done</c> / <c>task_failed</c>.</item>
-    /// <item><c>attack</c>: fight one target, then go back to following. Not persisted.</item>
-    /// <item><c>pick_up</c>: collect items lying on the ground nearby. Not persisted.</item>
-    /// <item><c>give</c>: walk to a player and drop items at their feet. Not persisted.</item>
+    /// <item><c>go_to</c>: walk to a point, then stay there.</item>
+    /// <item><c>attack</c>: fight one target.</item>
+    /// <item><c>pick_up</c>: collect items lying on the ground nearby.</item>
+    /// <item><c>give</c>: walk to a player and drop items at their feet.</item>
+    /// <item><c>gather</c>: collect N of an item by picking, chopping or mining (<see cref="CompanionGather"/>).</item>
     /// </list>
-    /// The task and its position live in the ZDO so they survive restarts.
+    /// Work tasks (everything except follow/stay) report <c>task_done</c> / <c>task_failed</c> and can be
+    /// queued: when one finishes the next queued task starts. A failure clears the queue so the agent can
+    /// re-plan. Only follow/stay/go_to (and their positions) are persisted in the ZDO.
     /// </summary>
     internal class CompanionTasks
     {
@@ -24,18 +29,28 @@ namespace ValheimCompanion.Companion
         public const string Attack = "attack";
         public const string PickUp = "pick_up";
         public const string Give = "give";
+        public const string Gather = "gather";
 
         private const float ArriveDistance = 3.5f;
         private const float GoToTimeout = 180f;
         private const float HandoverTimeout = 120f;
         private const float PickupReach = 2.5f;
         private const float GiveReach = 3.5f;
+        private const int MaxQueue = 8;
         public const float MaxGoToDistance = 500f;
+
+        private class Queued
+        {
+            public string Label;
+            public Action Start;
+        }
 
         private readonly ZNetView _nview;
         private readonly Humanoid _character;
         private readonly MonsterAI _ai;
         private readonly CompanionInventory _inventory;
+        private readonly CompanionGather _gather;
+        private readonly Queue<Queued> _queue = new Queue<Queued>();
 
         private string _applied; // task the AI is currently set up for
         private GameObject _waypoint;
@@ -61,6 +76,7 @@ namespace ValheimCompanion.Companion
             _character = character;
             _ai = ai;
             _inventory = inventory;
+            _gather = new CompanionGather(character, ai, inventory);
         }
 
         private ZDO Zdo => _nview.GetZDO();
@@ -70,30 +86,83 @@ namespace ValheimCompanion.Companion
             get
             {
                 string task = CompanionState.GetTask(Zdo);
-                return task == Stay || task == GoTo || task == Attack || task == PickUp || task == Give ? task : Follow;
+                switch (task)
+                {
+                    case Stay:
+                    case GoTo:
+                    case Attack:
+                    case PickUp:
+                    case Give:
+                    case Gather:
+                        return task;
+                    default:
+                        return Follow;
+                }
             }
         }
+
+        public bool Busy => Current != Follow && Current != Stay;
 
         public Character AttackTarget => Current == Attack ? _attackTarget : null;
 
         public bool MasterNearby => FindMaster();
 
-        // --- Commands (server, from the agent) ---
+        /// <summary>Labels of queued tasks, for the state snapshot.</summary>
+        public JArray DescribeQueue()
+        {
+            var list = new JArray();
+            foreach (Queued q in _queue)
+            {
+                list.Add(q.Label);
+            }
+            return list;
+        }
 
-        /// <summary>Follow the master; a non-zero id makes that player the new master.</summary>
+        /// <summary>Progress of the current work task, if it has any.</summary>
+        public JObject DescribeProgress()
+        {
+            if (Current == Gather && _gather.Active)
+            {
+                return new JObject { ["item"] = _gather.Item, ["collected"] = _gather.Collected, ["wanted"] = _gather.Wanted };
+            }
+            return null;
+        }
+
+        // --- Commands (server, from the agent) ---
+        // Work commands take `queue`: when true and the companion is busy, the task waits its turn.
+
+        /// <summary>Returns false if the queue is full.</summary>
+        public bool RunOrQueue(bool queue, string label, Action start)
+        {
+            if (!queue || !Busy)
+            {
+                _queue.Clear();
+                start();
+                return true;
+            }
+            if (_queue.Count >= MaxQueue)
+            {
+                return false;
+            }
+            _queue.Enqueue(new Queued { Label = label, Start = start });
+            return true;
+        }
+
+        /// <summary>Follow the master; a non-zero id makes that player the new master. Clears the queue.</summary>
         public void CommandFollow(long masterId, string masterName)
         {
             if (masterId != 0)
             {
                 CompanionState.SetMaster(Zdo, masterId, masterName);
             }
+            _queue.Clear();
             SetTask(Follow, null);
         }
 
         public void CommandStay()
         {
-            Zdo.Set(CompanionState.KeyTaskPos, _character.transform.position);
-            SetTask(Stay, null);
+            _queue.Clear();
+            StayHere();
         }
 
         public void CommandGoTo(Vector3 pos, string taskId)
@@ -108,7 +177,6 @@ namespace ValheimCompanion.Companion
             SetTask(Attack, taskId);
         }
 
-        /// <summary>Collect ground items within <paramref name="radius"/> (optionally only one prefab).</summary>
         public void CommandPickUp(string itemFilter, float radius, string taskId)
         {
             _pickupFilter = string.IsNullOrEmpty(itemFilter) ? null : itemFilter;
@@ -127,14 +195,30 @@ namespace ValheimCompanion.Companion
             SetTask(Give, taskId);
         }
 
+        public void CommandGather(string item, int qty, float radius, string taskId)
+        {
+            _gather.Start(item, qty, radius);
+            SetTask(Gather, taskId);
+        }
+
+        private void StayHere()
+        {
+            Zdo.Set(CompanionState.KeyTaskPos, _character.transform.position);
+            SetTask(Stay, null);
+        }
+
         private void SetTask(string task, string taskId)
         {
+            if (task != Gather)
+            {
+                _gather.Stop();
+            }
             CompanionState.SetTask(Zdo, task);
             _taskId = taskId;
             _applied = null; // re-apply on the next tick
         }
 
-        // --- Per-tick update (owner only, about once a second) ---
+        // --- Per-tick update (owner only) ---
 
         public void Update()
         {
@@ -142,6 +226,7 @@ namespace ValheimCompanion.Companion
             if (task != _applied)
             {
                 Apply(task);
+                task = Current; // Apply may fall back to follow
             }
 
             switch (task)
@@ -161,6 +246,9 @@ namespace ValheimCompanion.Companion
                 case Give:
                     UpdateGive();
                     break;
+                case Gather:
+                    UpdateGather();
+                    break;
             }
         }
 
@@ -170,6 +258,18 @@ namespace ValheimCompanion.Companion
             _ai.ResetPatrolPoint();
             _ai.SetFollowTarget(null);
             _applied = task;
+
+            // Tasks whose runtime state doesn't survive a restart fall back to following.
+            bool lost = (task == Attack && !_attackTarget)
+                        || (task == Give && _giveItem == null)
+                        || (task == PickUp && _pickupRadius <= 0f)
+                        || (task == Gather && !_gather.Active);
+            if (lost)
+            {
+                CompanionState.SetTask(Zdo, Follow);
+                _applied = Follow;
+                task = Follow;
+            }
 
             switch (task)
             {
@@ -182,25 +282,12 @@ namespace ValheimCompanion.Companion
                     _ai.SetFollowTarget(_waypoint);
                     _deadline = Time.time + GoToTimeout;
                     break;
-                case Attack:
-                    if (!_attackTarget)
-                    {
-                        // Loaded after a restart, or the target vanished before we started.
-                        CompanionState.SetTask(Zdo, Follow);
-                        _applied = null;
-                    }
-                    break;
                 case PickUp:
                 case Give:
                     _deadline = Time.time + HandoverTimeout;
-                    if ((task == Give && _giveItem == null) || (task == PickUp && _pickupRadius <= 0f))
-                    {
-                        CompanionState.SetTask(Zdo, Follow); // runtime state lost (restart)
-                        _applied = null;
-                    }
                     break;
             }
-            Jotunn.Logger.LogInfo($"{_character.m_name}: task -> {Current}");
+            Jotunn.Logger.LogInfo($"{_character.m_name}: task -> {task}" + (_queue.Count > 0 ? $" ({_queue.Count} queued)" : ""));
         }
 
         private void UpdateFollow()
@@ -230,14 +317,11 @@ namespace ValheimCompanion.Companion
             delta.y = 0f;
             if (delta.magnitude <= ArriveDistance)
             {
-                Finish("task_done", new JObject { ["task"] = GoTo, ["pos"] = Pos(goal) });
-                Zdo.Set(CompanionState.KeyTaskPos, _character.transform.position);
-                SetTask(Stay, null);
+                Complete(true, new JObject { ["task"] = GoTo, ["pos"] = Pos(goal) }, afterwards: Stay);
             }
             else if (Time.time > _deadline)
             {
-                Finish("task_failed", new JObject { ["task"] = GoTo, ["reason"] = "timeout", ["remaining_m"] = Mathf.Round(delta.magnitude) });
-                CommandStay();
+                Complete(false, new JObject { ["task"] = GoTo, ["reason"] = "timeout", ["remaining_m"] = Mathf.Round(delta.magnitude) }, afterwards: Stay);
             }
         }
 
@@ -245,9 +329,8 @@ namespace ValheimCompanion.Companion
         {
             if (!_attackTarget || _attackTarget.IsDead())
             {
-                Finish("task_done", new JObject { ["task"] = Attack });
                 _attackTarget = null;
-                SetTask(Follow, null);
+                Complete(true, new JObject { ["task"] = Attack });
                 return;
             }
             _ai.m_targetCreature = _attackTarget;
@@ -261,8 +344,7 @@ namespace ValheimCompanion.Companion
                 _pickupTarget = NearestGroundItem();
                 if (!_pickupTarget)
                 {
-                    Finish("task_done", new JObject { ["task"] = PickUp, ["picked_up"] = _pickedUp });
-                    SetTask(Follow, null);
+                    Complete(true, new JObject { ["task"] = PickUp, ["picked_up"] = _pickedUp });
                     return;
                 }
                 _ai.SetFollowTarget(_pickupTarget.gameObject);
@@ -270,14 +352,12 @@ namespace ValheimCompanion.Companion
 
             if (!_inventory.Inventory.CanAddItem(_pickupTarget.m_itemData))
             {
-                Finish("task_failed", new JObject { ["task"] = PickUp, ["reason"] = "inventory_full", ["picked_up"] = _pickedUp });
-                SetTask(Follow, null);
+                Complete(false, new JObject { ["task"] = PickUp, ["reason"] = "inventory_full", ["picked_up"] = _pickedUp });
                 return;
             }
             if (Time.time > _deadline)
             {
-                Finish("task_failed", new JObject { ["task"] = PickUp, ["reason"] = "timeout", ["picked_up"] = _pickedUp });
-                SetTask(Follow, null);
+                Complete(false, new JObject { ["task"] = PickUp, ["reason"] = "timeout", ["picked_up"] = _pickedUp });
                 return;
             }
 
@@ -327,8 +407,8 @@ namespace ValheimCompanion.Companion
             Player player = Player.GetAllPlayers().Find(p => p.GetPlayerID() == _givePlayerId);
             if (!player)
             {
-                Finish("task_failed", new JObject { ["task"] = Give, ["reason"] = "player_not_nearby" });
-                SetTask(Follow, null);
+                _giveItem = null;
+                Complete(false, new JObject { ["task"] = Give, ["reason"] = "player_not_nearby" });
                 return;
             }
             if (_ai.GetFollowTarget() != player.gameObject)
@@ -337,30 +417,72 @@ namespace ValheimCompanion.Companion
             }
             if (Time.time > _deadline)
             {
-                Finish("task_failed", new JObject { ["task"] = Give, ["reason"] = "timeout" });
-                SetTask(Follow, null);
+                _giveItem = null;
+                Complete(false, new JObject { ["task"] = Give, ["reason"] = "timeout" });
                 return;
             }
             if (Vector3.Distance(player.transform.position, _character.transform.position) <= GiveReach)
             {
                 int dropped = _inventory.Drop(_giveItem, _giveQty);
-                Finish(dropped > 0 ? "task_done" : "task_failed", new JObject
-                {
-                    ["task"] = Give, ["item"] = _giveItem, ["given"] = dropped, ["player"] = player.GetPlayerName(),
-                });
+                var data = new JObject { ["task"] = Give, ["item"] = _giveItem, ["given"] = dropped, ["player"] = player.GetPlayerName() };
                 _giveItem = null;
-                SetTask(Follow, null);
+                if (dropped == 0)
+                {
+                    data["reason"] = "dont_have_item";
+                }
+                Complete(dropped > 0, data);
             }
         }
 
-        private void Finish(string eventName, JObject data)
+        private void UpdateGather()
+        {
+            switch (_gather.Tick(out string reason))
+            {
+                case CompanionGather.Status.Done:
+                    Complete(true, new JObject { ["task"] = Gather, ["item"] = _gather.Item, ["collected"] = _gather.Wanted });
+                    break;
+                case CompanionGather.Status.Failed:
+                    Complete(false, new JObject
+                    {
+                        ["task"] = Gather, ["item"] = _gather.Item, ["reason"] = reason,
+                        ["collected"] = Math.Max(0, _gather.Collected), ["wanted"] = _gather.Wanted,
+                    });
+                    break;
+            }
+        }
+
+        /// <summary>
+        /// A work task ended: report it, then start the next queued task or fall back to
+        /// <paramref name="afterwards"/>. A failure drops the rest of the queue.
+        /// </summary>
+        private void Complete(bool ok, JObject data, string afterwards = Follow)
         {
             if (_taskId != null)
             {
                 data["task_id"] = _taskId;
             }
+            if (!ok && _queue.Count > 0)
+            {
+                data["dropped_queue"] = _queue.Count;
+                _queue.Clear();
+            }
+            data["queue_remaining"] = _queue.Count;
+            string eventName = ok ? "task_done" : "task_failed";
             Jotunn.Logger.LogInfo($"{_character.m_name}: {eventName} {data.ToString(Newtonsoft.Json.Formatting.None)}");
             AgentClient.SendEvent(eventName, data);
+
+            if (afterwards == Stay)
+            {
+                StayHere();
+            }
+            else
+            {
+                SetTask(Follow, null);
+            }
+            if (_queue.Count > 0)
+            {
+                _queue.Dequeue().Start();
+            }
         }
 
         private Player FindMaster()
@@ -373,12 +495,16 @@ namespace ValheimCompanion.Companion
         {
             if (_waypoint)
             {
-                Object.Destroy(_waypoint);
+                UnityEngine.Object.Destroy(_waypoint);
                 _waypoint = null;
             }
         }
 
-        public void OnDestroy() => ClearWaypoint();
+        public void OnDestroy()
+        {
+            ClearWaypoint();
+            _gather.Stop();
+        }
 
         private static JArray Pos(Vector3 p) => new JArray(Mathf.Round(p.x), Mathf.Round(p.y), Mathf.Round(p.z));
     }

@@ -111,8 +111,8 @@ namespace ValheimCompanion.Bridge
                         return "too_far";
                     }
                     pos.y = here.y; // snapped to the ground once that terrain is loaded
-                    companion.Tasks.CommandGoTo(pos, (string)args["task_id"] ?? cmdId);
-                    return null;
+                    return Queue(companion, args, $"go_to({pos.x:F0},{pos.z:F0})",
+                        () => companion.Tasks.CommandGoTo(pos, TaskId(args, cmdId)));
                 }
                 case "attack":
                 {
@@ -125,14 +125,15 @@ namespace ValheimCompanion.Bridge
                     {
                         return "target_is_friendly";
                     }
-                    companion.Tasks.CommandAttack(target, (string)args["task_id"] ?? cmdId);
-                    return null;
+                    return Queue(companion, args, $"attack({target.m_name})",
+                        () => companion.Tasks.CommandAttack(target, TaskId(args, cmdId)));
                 }
                 case "pick_up":
                 {
                     float radius = args["radius"] != null ? Mathf.Clamp((float)args["radius"], 1f, 30f) : 10f;
-                    companion.Tasks.CommandPickUp((string)args["item"], radius, (string)args["task_id"] ?? cmdId);
-                    return null;
+                    string item = (string)args["item"];
+                    return Queue(companion, args, $"pick_up({item ?? "all"})",
+                        () => companion.Tasks.CommandPickUp(item, radius, TaskId(args, cmdId)));
                 }
                 case "give":
                 {
@@ -142,7 +143,8 @@ namespace ValheimCompanion.Bridge
                     {
                         return "need_item_and_qty";
                     }
-                    if (companion.Inventory.Count(item) == 0)
+                    // A queued give may be for something still being gathered or crafted; that is checked when it runs.
+                    if (!IsQueued(args) && companion.Inventory.Count(item) == 0)
                     {
                         return "dont_have_item";
                     }
@@ -151,13 +153,33 @@ namespace ValheimCompanion.Bridge
                     {
                         return "player_not_found";
                     }
-                    companion.Tasks.CommandGive(playerId, item, qty, (string)args["task_id"] ?? cmdId);
-                    return null;
+                    return Queue(companion, args, $"give({item} to {playerName})",
+                        () => companion.Tasks.CommandGive(playerId, item, qty, TaskId(args, cmdId)));
+                }
+                case "gather":
+                {
+                    string item = (string)args["item"];
+                    int qty = args["qty"] != null ? (int)args["qty"] : 0;
+                    if (string.IsNullOrEmpty(item) || qty <= 0)
+                    {
+                        return "need_item_and_qty";
+                    }
+                    float radius = args["radius"] != null ? Mathf.Clamp((float)args["radius"], 5f, 60f) : 40f;
+                    return Queue(companion, args, $"gather({qty} {item})",
+                        () => companion.Tasks.CommandGather(item, qty, radius, TaskId(args, cmdId)));
                 }
                 default:
                     return "unknown_action";
             }
         }
+
+        private static bool IsQueued(JObject args) => args["queue"] != null && (bool)args["queue"];
+
+        private static string TaskId(JObject args, string cmdId) => (string)args["task_id"] ?? cmdId;
+
+        // Start now, or after the current work if args.queue is true.
+        private static string Queue(CompanionAI companion, JObject args, string label, Action start) =>
+            companion.Tasks.RunOrQueue(IsQueued(args), label, start) ? null : "queue_full";
 
         private static void Result(string cmdId, bool ok, string error = null)
         {
@@ -256,7 +278,13 @@ namespace ValheimCompanion.Bridge
                 ["master_nearby"] = companion.Tasks.MasterNearby,
                 ["inventory"] = companion.Inventory.Describe(),
                 ["free_slots"] = companion.Inventory.FreeSlots,
+                ["queue"] = companion.Tasks.DescribeQueue(),
             };
+            JObject progress = companion.Tasks.DescribeProgress();
+            if (progress != null)
+            {
+                ((JObject)state["self"])["progress"] = progress;
+            }
 
             var nearby = new JArray();
             foreach (Character c in Character.GetAllCharacters())
