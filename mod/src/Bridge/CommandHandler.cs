@@ -10,6 +10,8 @@ namespace ValheimCompanion.Bridge
     {
         private const float PerceptionRange = 40f;
         private const float GroundItemRange = 15f;
+        private const float ChestRange = 30f;
+        private const float StationSearchRange = 60f;
 
         public static void Handle(JObject msg)
         {
@@ -41,21 +43,23 @@ namespace ValheimCompanion.Bridge
             }
 
             string error;
+            JObject data = null;
             try
             {
-                error = Execute(companion, action, args, cmdId);
+                error = Execute(companion, action, args, cmdId, out data);
             }
             catch (Exception e)
             {
                 Jotunn.Logger.LogError($"Command {action} failed: {e}");
                 error = "internal_error";
             }
-            Result(cmdId, error == null, error);
+            Result(cmdId, error == null, error, data);
         }
 
         /// <summary>Returns null on success, otherwise a short error code the LLM can read.</summary>
-        private static string Execute(CompanionAI companion, string action, JObject args, string cmdId)
+        private static string Execute(CompanionAI companion, string action, JObject args, string cmdId, out JObject data)
         {
+            data = null;
             switch (action)
             {
                 case "say":
@@ -168,6 +172,60 @@ namespace ValheimCompanion.Bridge
                     return Queue(companion, args, $"gather({qty} {item})",
                         () => companion.Tasks.CommandGather(item, qty, radius, TaskId(args, cmdId)));
                 }
+                case "store_items":
+                case "fetch_items":
+                {
+                    Container chest = CompanionWorkshop.FindContainer((string)args["chest_id"]);
+                    if (!chest)
+                    {
+                        return "chest_not_found";
+                    }
+                    bool store = action == "store_items";
+                    string item = (string)args["item"];
+                    if (!store && string.IsNullOrEmpty(item))
+                    {
+                        return "need_item";
+                    }
+                    int qty = args["qty"] != null ? (int)args["qty"] : int.MaxValue;
+                    return Queue(companion, args, $"{action}({item ?? "all"})",
+                        () => companion.Tasks.CommandChest(store, chest, item, qty, TaskId(args, cmdId)));
+                }
+                case "recipe":
+                {
+                    Recipe recipe = CompanionWorkshop.FindRecipe((string)args["item"] ?? "");
+                    if (!recipe)
+                    {
+                        return "no_recipe";
+                    }
+                    data = DescribeRecipe(recipe, companion);
+                    return null;
+                }
+                case "craft":
+                {
+                    Recipe recipe = CompanionWorkshop.FindRecipe((string)args["item"] ?? "");
+                    if (!recipe)
+                    {
+                        return "no_recipe";
+                    }
+                    int qty = args["qty"] != null ? Math.Max(1, (int)args["qty"]) : 1;
+                    CraftingStation station = CompanionWorkshop.FindStation(recipe, companion.transform.position, StationSearchRange, out string stationError);
+                    if (stationError != null)
+                    {
+                        return stationError;
+                    }
+                    // A queued craft may be waiting on a gather; materials are checked when it runs.
+                    if (!IsQueued(args))
+                    {
+                        JObject missing = CompanionWorkshop.Missing(recipe, qty, companion.Inventory);
+                        if (missing.Count > 0)
+                        {
+                            data = new JObject { ["missing"] = missing };
+                            return "missing_materials";
+                        }
+                    }
+                    return Queue(companion, args, $"craft({qty} {recipe.m_item.gameObject.name})",
+                        () => companion.Tasks.CommandCraft(recipe, station, qty, TaskId(args, cmdId)));
+                }
                 default:
                     return "unknown_action";
             }
@@ -181,14 +239,50 @@ namespace ValheimCompanion.Bridge
         private static string Queue(CompanionAI companion, JObject args, string label, Action start) =>
             companion.Tasks.RunOrQueue(IsQueued(args), label, start) ? null : "queue_full";
 
-        private static void Result(string cmdId, bool ok, string error = null)
+        private static void Result(string cmdId, bool ok, string error = null, JObject data = null)
         {
             var result = new JObject { ["type"] = "command_result", ["cmd_id"] = cmdId, ["ok"] = ok };
             if (error != null)
             {
                 result["error"] = error;
             }
+            if (data != null)
+            {
+                result["data"] = data;
+            }
             AgentClient.Send(result);
+        }
+
+        private static JObject DescribeRecipe(Recipe recipe, CompanionAI companion)
+        {
+            var materials = new JObject();
+            foreach (Piece.Requirement req in recipe.m_resources)
+            {
+                if (req.m_resItem)
+                {
+                    materials[req.m_resItem.gameObject.name] = req.GetAmount(1);
+                }
+            }
+            var info = new JObject
+            {
+                ["item"] = recipe.m_item.gameObject.name,
+                ["name"] = Localization.instance.Localize(recipe.m_item.m_itemData.m_shared.m_name),
+                ["makes"] = recipe.m_amount,
+                ["materials"] = materials,
+                ["station"] = recipe.m_craftingStation ? Localization.instance.Localize(recipe.m_craftingStation.m_name) : "none",
+            };
+            if (recipe.m_craftingStation)
+            {
+                info["min_station_level"] = recipe.m_minStationLevel;
+                CompanionWorkshop.FindStation(recipe, companion.transform.position, StationSearchRange, out string stationError);
+                info["station_nearby"] = stationError == null;
+            }
+            JObject missing = CompanionWorkshop.Missing(recipe, 1, companion.Inventory);
+            if (missing.Count > 0)
+            {
+                info["missing"] = missing;
+            }
+            return info;
         }
 
         // Online players by (case-insensitive) name. Uses the character ZDO, so it works at any distance.
@@ -331,6 +425,7 @@ namespace ValheimCompanion.Bridge
                 }
             }
             state["ground_items"] = ground;
+            state["chests"] = CompanionWorkshop.DescribeChests(origin, ChestRange, CompanionState.GetMaster(zdo));
 
             if (EnvMan.instance)
             {

@@ -16,6 +16,8 @@ namespace ValheimCompanion.Companion
     /// <item><c>pick_up</c>: collect items lying on the ground nearby.</item>
     /// <item><c>give</c>: walk to a player and drop items at their feet.</item>
     /// <item><c>gather</c>: collect N of an item by picking, chopping or mining (<see cref="CompanionGather"/>).</item>
+    /// <item><c>store</c> / <c>fetch</c>: walk to a chest and move items into or out of it.</item>
+    /// <item><c>craft</c>: walk to the recipe's crafting station (if any) and craft N of an item.</item>
     /// </list>
     /// Work tasks (everything except follow/stay) report <c>task_done</c> / <c>task_failed</c> and can be
     /// queued: when one finishes the next queued task starts. A failure clears the queue so the agent can
@@ -30,6 +32,9 @@ namespace ValheimCompanion.Companion
         public const string PickUp = "pick_up";
         public const string Give = "give";
         public const string Gather = "gather";
+        public const string Store = "store";
+        public const string Fetch = "fetch";
+        public const string Craft = "craft";
 
         private const float ArriveDistance = 3.5f;
         private const float GoToTimeout = 180f;
@@ -37,6 +42,8 @@ namespace ValheimCompanion.Companion
         private const float PickupReach = 2.5f;
         private const float GiveReach = 3.5f;
         private const int MaxQueue = 8;
+        private const float CraftSeconds = 2f;
+        private const float StationTimeout = 120f;
         public const float MaxGoToDistance = 500f;
 
         private class Queued
@@ -70,6 +77,18 @@ namespace ValheimCompanion.Companion
         private string _giveItem;
         private int _giveQty;
 
+        // store / fetch
+        private Container _chest;
+        private string _chestItem;
+        private int _chestQty;
+
+        // craft
+        private Recipe _recipe;
+        private CraftingStation _station;
+        private int _craftWanted;
+        private int _crafted;
+        private float _nextCraft;
+
         public CompanionTasks(ZNetView nview, Humanoid character, MonsterAI ai, CompanionInventory inventory)
         {
             _nview = nview;
@@ -94,6 +113,9 @@ namespace ValheimCompanion.Companion
                     case PickUp:
                     case Give:
                     case Gather:
+                    case Store:
+                    case Fetch:
+                    case Craft:
                         return task;
                     default:
                         return Follow;
@@ -124,6 +146,10 @@ namespace ValheimCompanion.Companion
             if (Current == Gather && _gather.Active)
             {
                 return new JObject { ["item"] = _gather.Item, ["collected"] = _gather.Collected, ["wanted"] = _gather.Wanted };
+            }
+            if (Current == Craft && _recipe)
+            {
+                return new JObject { ["item"] = _recipe.m_item.gameObject.name, ["crafted"] = _crafted, ["wanted"] = _craftWanted };
             }
             return null;
         }
@@ -201,6 +227,25 @@ namespace ValheimCompanion.Companion
             SetTask(Gather, taskId);
         }
 
+        /// <summary>Move items into (<paramref name="store"/>) or out of a chest. Null item = everything not equipped.</summary>
+        public void CommandChest(bool store, Container chest, string item, int qty, string taskId)
+        {
+            _chest = chest;
+            _chestItem = item;
+            _chestQty = qty;
+            SetTask(store ? Store : Fetch, taskId);
+        }
+
+        public void CommandCraft(Recipe recipe, CraftingStation station, int qty, string taskId)
+        {
+            _recipe = recipe;
+            _station = station;
+            _craftWanted = qty;
+            _crafted = 0;
+            _nextCraft = 0f;
+            SetTask(Craft, taskId);
+        }
+
         private void StayHere()
         {
             Zdo.Set(CompanionState.KeyTaskPos, _character.transform.position);
@@ -249,6 +294,13 @@ namespace ValheimCompanion.Companion
                 case Gather:
                     UpdateGather();
                     break;
+                case Store:
+                case Fetch:
+                    UpdateChest(task == Store);
+                    break;
+                case Craft:
+                    UpdateCraft();
+                    break;
             }
         }
 
@@ -263,7 +315,9 @@ namespace ValheimCompanion.Companion
             bool lost = (task == Attack && !_attackTarget)
                         || (task == Give && _giveItem == null)
                         || (task == PickUp && _pickupRadius <= 0f)
-                        || (task == Gather && !_gather.Active);
+                        || (task == Gather && !_gather.Active)
+                        || ((task == Store || task == Fetch) && !_chest)
+                        || (task == Craft && !_recipe);
             if (lost)
             {
                 CompanionState.SetTask(Zdo, Follow);
@@ -285,6 +339,11 @@ namespace ValheimCompanion.Companion
                 case PickUp:
                 case Give:
                     _deadline = Time.time + HandoverTimeout;
+                    break;
+                case Store:
+                case Fetch:
+                case Craft:
+                    _deadline = Time.time + StationTimeout;
                     break;
             }
             Jotunn.Logger.LogInfo($"{_character.m_name}: task -> {task}" + (_queue.Count > 0 ? $" ({_queue.Count} queued)" : ""));
@@ -449,6 +508,140 @@ namespace ValheimCompanion.Companion
                     });
                     break;
             }
+        }
+
+        private void UpdateChest(bool store)
+        {
+            string task = store ? Store : Fetch;
+            if (!_chest || !_chest.m_nview.IsValid())
+            {
+                _chest = null;
+                Complete(false, new JObject { ["task"] = task, ["reason"] = "chest_gone" });
+                return;
+            }
+            if (!WalkTo(_chest))
+            {
+                if (Time.time > _deadline)
+                {
+                    _chest = null;
+                    Complete(false, new JObject { ["task"] = task, ["reason"] = "cant_reach_chest" });
+                }
+                return;
+            }
+
+            string error = CompanionWorkshop.PrepareContainer(_chest, CompanionState.GetMaster(Zdo));
+            if (error != null)
+            {
+                _chest = null;
+                Complete(false, new JObject { ["task"] = task, ["reason"] = error });
+                return;
+            }
+            Inventory chestInv = _chest.GetInventory();
+            int moved = store
+                ? CompanionWorkshop.Transfer(_inventory.Inventory, chestInv, _chestItem, _chestQty)
+                : CompanionWorkshop.Transfer(chestInv, _inventory.Inventory, _chestItem, _chestQty);
+            var data = new JObject { ["task"] = task, ["item"] = _chestItem ?? "all", ["moved"] = moved };
+            _chest = null;
+            if (moved == 0)
+            {
+                data["reason"] = store ? "nothing_to_store_or_chest_full" : "chest_doesnt_have_item_or_inventory_full";
+            }
+            Complete(moved > 0, data);
+        }
+
+        private void UpdateCraft()
+        {
+            if (_station)
+            {
+                if (!WalkTo(_station))
+                {
+                    if (Time.time > _deadline)
+                    {
+                        FailCraft("cant_reach_station");
+                    }
+                    return;
+                }
+                string error = CompanionWorkshop.CheckStationUsable(_station);
+                if (error != null)
+                {
+                    FailCraft(error);
+                    return;
+                }
+            }
+            if (Time.time < _nextCraft)
+            {
+                return;
+            }
+            _nextCraft = Time.time + CraftSeconds;
+
+            JObject missing = CompanionWorkshop.Missing(_recipe, 1, _inventory);
+            if (missing.Count > 0)
+            {
+                FailCraft("missing_materials", missing);
+                return;
+            }
+            if (!CompanionWorkshop.CraftOnce(_recipe, _inventory, _character.m_name))
+            {
+                FailCraft("inventory_full");
+                return;
+            }
+            _crafted++;
+            Jotunn.Logger.LogInfo($"{_character.m_name}: crafted {_recipe.m_item.gameObject.name} ({_crafted}/{_craftWanted})");
+            if (_crafted >= _craftWanted)
+            {
+                var data = new JObject { ["task"] = Craft, ["item"] = _recipe.m_item.gameObject.name, ["crafted"] = _crafted };
+                _recipe = null;
+                Complete(true, data);
+            }
+        }
+
+        private void FailCraft(string reason, JObject missing = null)
+        {
+            var data = new JObject { ["task"] = Craft, ["item"] = _recipe.m_item.gameObject.name, ["reason"] = reason, ["crafted"] = _crafted };
+            if (missing != null)
+            {
+                data["missing"] = missing;
+            }
+            _recipe = null;
+            Complete(false, data);
+        }
+
+        /// <summary>Walk towards the closest point of an object. True once within reach.</summary>
+        private bool WalkTo(Component target)
+        {
+            Vector3 point = ClosestPoint(target);
+            if (!_waypoint)
+            {
+                _waypoint = new GameObject("CompanionWaypoint");
+            }
+            _waypoint.transform.position = point;
+            if (_ai.GetFollowTarget() != _waypoint)
+            {
+                _ai.SetFollowTarget(_waypoint);
+            }
+            return Vector3.Distance(point, _character.transform.position) <= CompanionWorkshop.Reach + 0.5f;
+        }
+
+        private Vector3 ClosestPoint(Component target)
+        {
+            Vector3 from = _character.transform.position;
+            Vector3 best = target.transform.position;
+            float bestDist = Vector3.Distance(best, from);
+            foreach (Collider col in target.GetComponentsInChildren<Collider>())
+            {
+                if (!col.enabled || col.isTrigger)
+                {
+                    continue;
+                }
+                Vector3 p = col.bounds.ClosestPoint(from);
+                float d = Vector3.Distance(p, from);
+                if (d < bestDist)
+                {
+                    best = p;
+                    bestDist = d;
+                }
+            }
+            return best;
         }
 
         /// <summary>

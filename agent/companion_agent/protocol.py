@@ -32,6 +32,7 @@ class CommandResult(_Msg):
     cmd_id: str | None = None
     ok: bool
     error: str | None = None
+    data: dict[str, Any] | None = None
 
 
 class State(_Msg):

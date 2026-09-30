@@ -43,9 +43,12 @@ RULES = """
 - Every reply should include a `say` call. When asked to do something you can do, call the matching tool and say something in character about it.
 - You carry an inventory (see `inventory` in the state; items are named by id, e.g. "Wood"). Players hand you things by dropping them near you; use `pick_up` to collect them. Use `give` to hand items to a player.
 - `gather` collects resources: it picks things up, picks branches and stones, chops trees and logs (needs an axe in your inventory) and mines rocks (needs a pickaxe).
-- Work tools (go_to, attack, pick_up, give, gather) take `queue: true` to run one after another. Plan multi-step jobs as a queue, e.g. gather wood, then give it. If one task fails, the rest of the queue is dropped and you'll hear about it.
+- `chests` in the state lists nearby chests with their contents; use `fetch_items` / `store_items` with a chest id.
+- `craft` makes items from your inventory, walking to the right crafting station if the recipe needs one. Check what an item needs with `recipe` first; if you're short, gather or fetch the materials, then craft.
+- Work tools (go_to, attack, pick_up, give, gather, store_items, fetch_items, craft) take `queue: true` to run one after another. Plan multi-step jobs as a queue, e.g. gather wood, then give it. If one task fails, the rest of the queue is dropped and you'll hear about it.
 - You'll be told when queued work finishes or fails. Report back in character; if something failed (e.g. need_axe), say what you need.
-- You cannot yet craft, build or manage chests. If asked, say so in character (a "project for next season", say) instead of pretending.
+- You cannot yet build structures. If asked, say so in character (a "project for next season", say) instead of pretending.
+- Example plan for "get 20 wood and make me a club": recipe(Club) -> gather(Wood, enough for the club plus 20, queue) -> craft(Club, queue) -> give(Club to the player, queue) -> give(Wood, 20, queue). Say what you're about to do first.
 - Never attack players or tamed animals. Use the `id` values from the `nearby` list for `attack`.
 - Positions are [x, y, z] in metres; `go_to` takes x and z.
 - Each message from a player includes a fresh state snapshot. Use it: who is near, what is hostile, time of day, weather, biome.
@@ -143,6 +146,57 @@ TOOLS: list[dict[str, Any]] = [
                 "queue": {"type": "boolean", "description": "true = run after your current work instead of right away."},
             },
             "required": ["item", "qty"],
+        },
+    },
+    {
+        "name": "store_items",
+        "description": "Walk to a chest and put items from your inventory into it. Omit item to store everything you're not wearing.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "chest_id": {"type": "string", "description": "Chest `id` from the state's `chests` list."},
+                "item": {"type": "string"},
+                "qty": {"type": "integer", "description": "Omit for all of them."},
+                "queue": {"type": "boolean", "description": "true = run after your current work instead of right away."},
+            },
+            "required": ["chest_id"],
+        },
+    },
+    {
+        "name": "fetch_items",
+        "description": "Walk to a chest and take items out of it into your inventory.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "chest_id": {"type": "string"},
+                "item": {"type": "string", "description": "Item id, e.g. \"Wood\"."},
+                "qty": {"type": "integer", "description": "Omit for all of them."},
+                "queue": {"type": "boolean", "description": "true = run after your current work instead of right away."},
+            },
+            "required": ["chest_id", "item"],
+        },
+    },
+    {
+        "name": "recipe",
+        "description": "Look up what an item needs to craft: materials, crafting station, whether one is nearby, and what you're missing.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"item": {"type": "string", "description": "Item id, e.g. \"Club\", \"AxeStone\", \"Torch\"."}},
+            "required": ["item"],
+        },
+    },
+    {
+        "name": "craft",
+        "description": "Craft items from materials in your inventory, walking to the needed crafting station first. "
+        "Fails with missing_materials (and what's missing) if you don't have enough.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "item": {"type": "string", "description": "Item id, e.g. \"Club\"."},
+                "qty": {"type": "integer", "description": "How many to make (default 1)."},
+                "queue": {"type": "boolean", "description": "true = run after your current work instead of right away."},
+            },
+            "required": ["item"],
         },
     },
     {
@@ -305,20 +359,24 @@ class Brain:
 
         result = await self.conn.command(name, **args)
         log.info("tool %s(%s) -> %s", name, args, "ok" if result.ok else result.error)
+        data = getattr(result, "data", None)
         if result.ok:
             if name == "say":
                 spoken.append(str(args.get("text", "")))
-            else:
+            elif name != "recipe":
                 actions.append(f"{name}({', '.join(f'{k}={v}' for k, v in args.items())})")
-            return _tool_result(block.id, "ok")
-        return _tool_result(block.id, f"failed: {result.error}", error=True)
+            return _tool_result(block.id, json.dumps(data) if data else "ok")
+        detail = f" {json.dumps(data)}" if data else ""
+        return _tool_result(block.id, f"failed: {result.error}{detail}", error=True)
 
 
 def _worth_reporting(event: Event) -> bool:
     """A failure, or the last task of a job. Routine steps (a go_to in the middle of a queue) stay silent."""
     if event.name == "task_failed":
         return True
-    return event.data.get("queue_remaining", 0) == 0 and event.data.get("task") in ("gather", "give", "pick_up")
+    return event.data.get("queue_remaining", 0) == 0 and event.data.get("task") in (
+        "gather", "give", "pick_up", "craft", "store", "fetch"
+    )
 
 
 def _tool_result(tool_use_id: str, content: str, error: bool = False) -> dict[str, Any]:

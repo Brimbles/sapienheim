@@ -160,7 +160,10 @@ def test_say_only_turn_makes_one_llm_call():
 def test_tool_schemas_are_well_formed():
     names = [t["name"] for t in brain_mod.TOOLS]
     assert len(names) == len(set(names))
-    assert {"say", "follow", "stay", "go_to", "attack", "pick_up", "give", "gather", "get_status"} <= set(names)
+    assert {
+        "say", "follow", "stay", "go_to", "attack", "pick_up", "give", "gather",
+        "store_items", "fetch_items", "recipe", "craft", "get_status",
+    } <= set(names)
     for t in brain_mod.TOOLS:
         assert t["input_schema"]["type"] == "object"
         assert set(t["input_schema"].get("required", [])) <= set(t["input_schema"]["properties"])
@@ -191,6 +194,34 @@ def test_finished_job_triggers_report_but_mid_queue_step_does_not():
     assert sent == [("say", {"text": "Twenty wood. Textbook."})]
     prompt = client.calls[0]["messages"][-1]["content"]
     assert '"task": "give"' in prompt and '"queue_remaining": 1' in prompt  # earlier step rides along as a note
+
+
+def test_command_data_is_returned_to_claude():
+    async def run():
+        client = FakeClient([
+            reply(tool("recipe", item="Club"), stop="tool_use"),
+            reply(tool("say", text="Six wood. Child's play.")),
+        ])
+
+        class Conn:
+            async def request_state(self):
+                return {}
+
+            async def command(self, action, **args):
+                if action == "recipe":
+                    return SimpleNamespace(ok=True, error=None, data={"item": "Club", "materials": {"Wood": 6}})
+                if action == "craft":
+                    return SimpleNamespace(ok=False, error="missing_materials", data={"missing": {"Wood": 6}})
+                return SimpleNamespace(ok=True, error=None, data=None)
+
+        b = Brain(Conn(), client)
+        await b.on_chat({"player": "Ben", "text": "what does a club need?"})
+        results = client.calls[1]["messages"][-1]["content"]
+        return results
+
+    results = asyncio.run(run())
+    assert results[0]["content"] == '{"item": "Club", "materials": {"Wood": 6}}'
+    assert "is_error" not in results[0]
 
 
 def test_history_carries_previous_exchange():
