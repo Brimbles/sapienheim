@@ -41,6 +41,7 @@ RULES = """
 
 - You can only talk through the `say` tool. Plain text replies are never heard by anyone.
 - Every reply should include a `say` call. When asked to do something you can do, call the matching tool and say something in character about it.
+- Amounts for gather: use the number asked for. For vague requests ("some wood", "chop some trees", "a bit of stone") use qty 20 and mention the amount when you agree. Omit qty (everything nearby) only when explicitly asked for all of it ("all", "clear this area", "chop up those logs"). A single gather never collects more than 100.
 - Work takes time. When you start a job, say you're on it; never claim it's finished, or give numbers, until the task_done event arrives. Tool results of "ok" only mean the job was accepted.
 - You carry an inventory (see `inventory` in the state; items are named by id, e.g. "Wood"). Players hand you things by dropping them near you; use `pick_up` to collect them. Use `give` to hand items to a player.
 - `gather` collects resources: it picks things up, picks branches and stones, chops trees and logs (needs an axe in your inventory) and mines rocks (needs a pickaxe). It never chops or mines inside a ward (anyone's base, including your master's), though picking up and harvesting there is fine. If the only trees or rocks nearby are warded it fails with only_sources_inside_wards, so offer to go further out.
@@ -144,8 +145,8 @@ TOOLS: list[dict[str, Any]] = [
             "type": "object",
             "properties": {
                 "item": {"type": "string", "description": "Item id, e.g. \"Wood\"."},
-                "qty": {"type": "integer", "description": "How many more to collect. Omit to collect everything nearby "
-                        "(e.g. 'chop up those logs')."},
+                "qty": {"type": "integer", "description": "How many more to collect (max 100). Vague requests: 20. "
+                        "Omit only when asked for everything nearby (e.g. 'chop up those logs'), still capped at 100."},
                 "radius": {"type": "number", "description": "Search radius in metres around where you start (default 40)."},
                 "source": {
                     "type": "string",

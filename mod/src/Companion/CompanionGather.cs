@@ -34,6 +34,8 @@ namespace ValheimCompanion.Companion
         private const float Reach = 3.6f;
         private const float StuckSeconds = 90f;
         private const float MaxSeconds = 600f;
+        // Hard limit per gather, including "everything nearby", so a vague request can't strip a hillside.
+        public const int MaxItems = 100;
 
         private static readonly Collider[] s_overlap = new Collider[512];
         private static readonly Dictionary<string, bool> s_yieldCache = new Dictionary<string, bool>();
@@ -76,7 +78,7 @@ namespace ValheimCompanion.Companion
         private bool All => Wanted < 0;
         private int _startCount;
 
-        /// <param name="qty">How many more to collect; 0 or less means everything nearby.</param>
+        /// <param name="qty">How many more to collect (capped at MaxItems); 0 or less means everything nearby, up to MaxItems.</param>
         /// <param name="source">pick, logs (fallen logs only), trees (standing trees only), chop (anything woody), mine, or null.</param>
         /// <param name="near">Search around this point instead of where the companion stands.</param>
         public void Start(string item, int qty, float radius, string source = null, Vector3? near = null)
@@ -85,8 +87,8 @@ namespace ValheimCompanion.Companion
             _sourceFilter = source;
             _loggedSearch = false;
             _item = item;
-            Wanted = qty > 0 ? qty : -1;
-            _goal = qty > 0 ? _startCount + qty : int.MaxValue;
+            Wanted = qty > 0 ? Mathf.Min(qty, MaxItems) : -1;
+            _goal = _startCount + (qty > 0 ? Wanted : MaxItems);
             _origin = near ?? _character.transform.position;
             _radius = radius;
             _target = null;
