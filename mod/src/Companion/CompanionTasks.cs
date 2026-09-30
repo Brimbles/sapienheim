@@ -19,6 +19,8 @@ namespace ValheimCompanion.Companion
     /// <item><c>store</c> / <c>fetch</c>: walk to a chest and move items into or out of it.</item>
     /// <item><c>craft</c>: walk to the recipe's crafting station (if any) and craft N of an item.</item>
     /// </list>
+    /// Combat pre-empts everything: an aggressive enemy nearby pauses the current task until it is dead,
+    /// gone or has fled, then the task resumes with its clocks shifted by the pause.
     /// Work tasks (everything except follow/stay) report <c>task_done</c> / <c>task_failed</c> and can be
     /// queued: when one finishes the next queued task starts. A failure clears the queue so the agent can
     /// re-plan. Only follow/stay/go_to (and their positions) are persisted in the ZDO.
@@ -43,6 +45,9 @@ namespace ValheimCompanion.Companion
         private const float PickupReach = 3.6f;
         private const float GiveReach = 3.6f;
         private const int MaxQueue = 8;
+        private const float ThreatRange = 20f;
+        private const float DisengageRange = 35f;
+        private const float BattleCryCooldown = 30f;
         private const float CraftSeconds = 2f;
         private const float StationTimeout = 120f;
         public const float MaxGoToDistance = 500f;
@@ -59,6 +64,12 @@ namespace ValheimCompanion.Companion
         private readonly CompanionInventory _inventory;
         private readonly CompanionGather _gather;
         private readonly Queue<Queued> _queue = new Queue<Queued>();
+
+        // combat interruption
+        private Character _threat;
+        private bool _inCombat;
+        private float _combatStart;
+        private float _nextBattleCry;
 
         private string _applied; // task the AI is currently set up for
         private GameObject _waypoint;
@@ -125,6 +136,8 @@ namespace ValheimCompanion.Companion
         }
 
         public bool Busy => Current != Follow && Current != Stay;
+
+        public bool InCombat => _inCombat;
 
         public Character AttackTarget => Current == Attack ? _attackTarget : null;
 
@@ -268,6 +281,11 @@ namespace ValheimCompanion.Companion
 
         public void Update()
         {
+            if (UpdateCombat())
+            {
+                return; // the current task waits
+            }
+
             string task = Current;
             if (task != _applied)
             {
@@ -348,6 +366,104 @@ namespace ValheimCompanion.Companion
                     break;
             }
             Jotunn.Logger.LogInfo($"{_character.m_name}: task -> {task}" + (_queue.Count > 0 ? $" ({_queue.Count} queued)" : ""));
+        }
+
+        // ---------- Combat interruption ----------
+
+        /// <summary>True while fighting (the current task is paused).</summary>
+        private bool UpdateCombat()
+        {
+            if (Current == Attack)
+            {
+                return false; // already fighting on purpose
+            }
+
+            Character threat = _threat;
+            if (!threat || threat.IsDead() || Vector3.Distance(threat.transform.position, _character.transform.position) > DisengageRange)
+            {
+                threat = FindThreat();
+            }
+
+            if (threat)
+            {
+                if (!_inCombat)
+                {
+                    _inCombat = true;
+                    _combatStart = Time.time;
+                    Jotunn.Logger.LogInfo($"{_character.m_name}: pausing {Current} to fight {threat.m_name}");
+                    BattleCry();
+                    AgentClient.SendEvent("combat", new JObject { ["state"] = "started", ["enemy"] = Localization.instance.Localize(threat.m_name), ["paused_task"] = Current });
+                }
+                _threat = threat;
+                _ai.SetFollowTarget(null);
+                _ai.m_targetCreature = threat;
+                _ai.SetAlerted(true);
+                return true;
+            }
+
+            if (_inCombat)
+            {
+                _inCombat = false;
+                _threat = null;
+                float paused = Time.time - _combatStart;
+                _deadline += paused;
+                _nextCraft += paused;
+                _gather.Shift(paused);
+                _applied = null; // re-set the task's movement (follow target, waypoint, patrol point)
+                Jotunn.Logger.LogInfo($"{_character.m_name}: fight over after {paused:F0}s, resuming {Current}");
+                AgentClient.SendEvent("combat", new JObject { ["state"] = "ended", ["resumed_task"] = Current });
+            }
+            return false;
+        }
+
+        /// <summary>The nearest enemy within range that is actually aggressive (alerted, or going for us, a player or a tamed animal).</summary>
+        private Character FindThreat()
+        {
+            Character best = null;
+            float bestDist = ThreatRange;
+            foreach (Character c in Character.GetAllCharacters())
+            {
+                if (c == _character || c.IsDead() || c.IsPlayer() || c.IsTamed())
+                {
+                    continue;
+                }
+                float d = Vector3.Distance(c.transform.position, _character.transform.position);
+                if (d > bestDist || !BaseAI.IsEnemy(_character, c))
+                {
+                    continue;
+                }
+                BaseAI ai = c.GetBaseAI();
+                Character target = ai ? ai.GetTargetCreature() : null;
+                bool aggressive = ai && (ai.IsAlerted() || (target && (target == _character || target.IsPlayer() || target.IsTamed())));
+                if (aggressive)
+                {
+                    best = c;
+                    bestDist = d;
+                }
+            }
+            return best;
+        }
+
+        private static readonly string[] BattleCries =
+        {
+            "Aha! Hostiles! Stand back, I've trained for this. Loosely.",
+            "Contact! Pausing the day job, back in a jiffy.",
+            "Right, that's quite enough of that!",
+            "Unscheduled combat. Not ideal, but I'm a professional.",
+        };
+
+        private void BattleCry()
+        {
+            if (Time.time < _nextBattleCry)
+            {
+                return;
+            }
+            _nextBattleCry = Time.time + BattleCryCooldown;
+            CompanionAI companion = _character.GetComponent<CompanionAI>();
+            if (companion)
+            {
+                companion.Say(BattleCries[UnityEngine.Random.Range(0, BattleCries.Length)]);
+            }
         }
 
         private void UpdateFollow()

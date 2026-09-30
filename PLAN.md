@@ -262,6 +262,7 @@ Each milestone ends with something playable. Acceptance criteria in **bold**.
   - [x] Source priority when no `source` is given: loose drops, then pickables and fallen logs, then stumps, bushes and rocks, then standing trees only when nothing else is left. The nearest in the best tier wins.
 - [ ] `craft` using `ObjectDB` recipes + station-in-range checks.
 - [ ] Task queue with ids, progress, done/failed events.
+- [x] Combat pre-empts work: an aggressive enemy within 20 m (alerted, or targeting the companion, a player or a tamed animal) pauses the current task until it's dead, gone or beyond 35 m. The task then resumes with its clocks shifted by the pause. There's a rate-limited battle cry, and `combat` started/ended events go to the agent.
 - **"Get 20 wood and make me a club" works end to end, including fetching from a chest.**
 
 ### M4.5 — Presence & progression

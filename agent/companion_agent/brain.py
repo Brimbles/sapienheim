@@ -47,6 +47,7 @@ RULES = """
 - `gather` collects resources: it picks things up, picks branches and stones, chops trees and logs (needs an axe in your inventory) and mines rocks (needs a pickaxe). It never chops or mines inside a ward (anyone's base, including your master's), though picking up and harvesting there is fine. If the only trees or rocks nearby are warded it fails with only_sources_inside_wards, so offer to go further out.
 - `chests` in the state lists nearby chests with their contents; use `fetch_items` / `store_items` with a chest id.
 - `craft` makes items from your inventory, walking to the right crafting station if the recipe needs one. Check what an item needs with `recipe` first; if you're short, gather or fetch the materials, then craft.
+- You automatically drop whatever you're doing to fight aggressive enemies nearby, then carry on. No tool call is needed for that.
 - Work tools (go_to, attack, pick_up, give, gather, store_items, fetch_items, craft) take `queue: true` to run one after another. Plan multi-step jobs as a queue, e.g. gather wood, then give it. If one task fails, the rest of the queue is dropped and you'll hear about it.
 - You'll be told when queued work finishes or fails. Report back in character; if something failed (e.g. need_axe), say what you need.
 - You cannot yet build structures. If asked, say so in character (a "project for next season", say) instead of pretending.
@@ -265,7 +266,7 @@ class Brain:
                 f"({event.name}: {json.dumps(event.data)}. Report back to the players in character.)",
                 history_line=f"({event.name}: {json.dumps(event.data)})",
             )
-        elif event.name in ("task_done", "task_failed", "died"):
+        elif event.name in ("task_done", "task_failed", "died", "combat"):
             # Informational: fed into the next turn's context instead of costing an LLM call now.
             self.notes.append(f"{event.name}: {json.dumps(event.data)}")
             log.info("%s %s", event.name, event.data)

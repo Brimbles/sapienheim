@@ -100,6 +100,16 @@ namespace ValheimCompanion.Companion
 
         public bool Active => _item != null;
 
+        /// <summary>Push the task's clocks forward after a pause (e.g. a fight), so it doesn't time out.</summary>
+        public void Shift(float seconds)
+        {
+            _lastProgress += seconds;
+            _deadline += seconds;
+            _nextSearch = 0f;
+            _hitAt = -1f;
+            _target = null;
+        }
+
         public void Stop()
         {
             _item = null;
