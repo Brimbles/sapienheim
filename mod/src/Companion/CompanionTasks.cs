@@ -222,9 +222,9 @@ namespace ValheimCompanion.Companion
             SetTask(Give, taskId);
         }
 
-        public void CommandGather(string item, int qty, float radius, string taskId)
+        public void CommandGather(string item, int qty, float radius, string source, string taskId)
         {
-            _gather.Start(item, qty, radius);
+            _gather.Start(item, qty, radius, source);
             SetTask(Gather, taskId);
         }
 

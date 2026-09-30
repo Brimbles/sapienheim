@@ -143,6 +143,12 @@ TOOLS: list[dict[str, Any]] = [
                 "item": {"type": "string", "description": "Item id, e.g. \"Wood\"."},
                 "qty": {"type": "integer", "description": "How many more to collect."},
                 "radius": {"type": "number", "description": "Search radius in metres around where you start (default 40)."},
+                "source": {
+                    "type": "string",
+                    "enum": ["pick", "chop", "mine"],
+                    "description": "Only pick (branches, stones, berries), only chop trees, or only mine rocks. "
+                    "Omit to use whatever is easiest. Use chop when asked to chop or fell a tree.",
+                },
                 "queue": {"type": "boolean", "description": "true = run after your current work instead of right away."},
             },
             "required": ["item", "qty"],

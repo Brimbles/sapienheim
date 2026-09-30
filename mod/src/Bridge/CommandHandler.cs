@@ -169,8 +169,13 @@ namespace ValheimCompanion.Bridge
                         return "need_item_and_qty";
                     }
                     float radius = args["radius"] != null ? Mathf.Clamp((float)args["radius"], 5f, 60f) : 40f;
+                    string source = (string)args["source"];
+                    if (source != null && source != "pick" && source != "chop" && source != "mine")
+                    {
+                        return "source_must_be_pick_chop_or_mine";
+                    }
                     return Queue(companion, args, $"gather({qty} {item})",
-                        () => companion.Tasks.CommandGather(item, qty, radius, TaskId(args, cmdId)));
+                        () => companion.Tasks.CommandGather(item, qty, radius, source, TaskId(args, cmdId)));
                 }
                 case "store_items":
                 case "fetch_items":

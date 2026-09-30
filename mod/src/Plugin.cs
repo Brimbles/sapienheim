@@ -39,6 +39,10 @@ namespace ValheimCompanion
 
             _harmony = new Harmony(PluginGUID);
             _harmony.PatchAll(typeof(Plugin).Assembly);
+            if (Jotunn.Managers.GUIManager.IsHeadless())
+            {
+                LocalPlayerGuards.Apply(_harmony);
+            }
 
             CompanionPrefab.Register();
             Commands.Register();

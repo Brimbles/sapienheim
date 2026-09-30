@@ -53,6 +53,7 @@ namespace ValheimCompanion.Companion
         private float _deadline;
         private string _blockedReason; // why sources exist but can't be used (e.g. need_axe)
         private bool _skippedWarded;
+        private Tool? _only; // restrict to picking (None), chopping (Axe) or mining (Pickaxe); drops are always collected
 
         public CompanionGather(Humanoid character, MonsterAI ai, CompanionInventory inventory)
         {
@@ -65,8 +66,10 @@ namespace ValheimCompanion.Companion
         public int Collected => _inventory.Count(_item) - (_goal - Wanted);
         public int Wanted { get; private set; }
 
-        public void Start(string item, int qty, float radius)
+        /// <param name="source">"pick", "chop", "mine" or null for anything.</param>
+        public void Start(string item, int qty, float radius, string source = null)
         {
+            _only = source == "pick" ? Tool.None : source == "chop" ? Tool.Axe : source == "mine" ? Tool.Pickaxe : (Tool?)null;
             _item = item;
             Wanted = qty;
             _goal = _inventory.Count(item) + qty;
@@ -232,6 +235,10 @@ namespace ValheimCompanion.Companion
             {
                 Source source = Classify(s_overlap[i]);
                 if (source == null || !seen.Add(source.Target) || !IsUsable(source))
+                {
+                    continue;
+                }
+                if (_only.HasValue && source.Tool != _only.Value)
                 {
                     continue;
                 }
