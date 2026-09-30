@@ -136,10 +136,17 @@ class Brain:
     async def on_event(self, event: Event) -> None:
         if event.name == "player_chat":
             await self.on_chat(event.data)
-        elif event.name in ("task_done", "task_failed"):
+        elif event.name in ("task_done", "task_failed", "died"):
             # Informational: fed into the next turn's context instead of costing an LLM call now.
             self.notes.append(f"{event.name}: {json.dumps(event.data)}")
             log.info("%s %s", event.name, event.data)
+        elif event.name == "respawned":
+            killer = event.data.get("killed_by") or "something you'd rather not discuss"
+            await self.take_turn(
+                f"(You were just killed by {killer}, and have now bounced back to life next to the group. "
+                "React in character: you were never really dead.)",
+                history_line=f"(Alvar was killed by {killer} and bounced back)",
+            )
         else:
             log.info("event %s: %s", event.name, event.data)
 
@@ -147,24 +154,28 @@ class Brain:
         player = data.get("player", "someone")
         text = str(data.get("text", "")).strip() or "(says your name to get your attention)"
         log.info("chat from %s (%s): %s", player, data.get("via"), text)
+        line = f"{player} says to you: {text}"
+        model = PLAN_MODEL if PLAN_PATTERN.search(text) else CHAT_MODEL
+        await self.take_turn(line, history_line=line, model=model)
 
+    async def take_turn(self, prompt: str, history_line: str, model: str = CHAT_MODEL) -> None:
+        """One LLM turn: prompt plus notes and a fresh state snapshot, then record it in history."""
         if not self.budget.available():
             log.warning("LLM budget exhausted; canned reply")
             await self.conn.command("say", text=random.choice(OUT_OF_BREATH))
             return
 
         state = await self.conn.request_state()
-        content = f"{player} says to you: {text}"
+        content = prompt
         if self.notes:
             content += "\n\nSince you last spoke:\n" + "\n".join(f"- {n}" for n in self.notes)
             self.notes.clear()
         content += "\n\nCurrent state:\n" + (json.dumps(state) if state else "(unavailable)")
 
-        model = PLAN_MODEL if PLAN_PATTERN.search(text) else CHAT_MODEL
         spoken, actions = await self.run_turn(model, content)
 
-        # History keeps plain text only: the player's line and what Alvar said/did.
-        self.history.append({"role": "user", "content": f"{player} says to you: {text}"})
+        # History keeps plain text only: the prompt line and what Alvar said/did.
+        self.history.append({"role": "user", "content": history_line})
         summary = " ".join(spoken) or "(said nothing)"
         if actions:
             summary += f" [did: {', '.join(actions)}]"
@@ -197,6 +208,10 @@ class Brain:
             results = await asyncio.gather(*(self._execute(b, spoken, actions) for b in tool_uses))
             messages.append({"role": "user", "content": list(results)})
             if response.stop_reason != "tool_use":
+                break
+            # Speech is the end of a turn. Only go back to Claude when an action's outcome matters
+            # (a failure to react to, or get_status data to use).
+            if all(b.name == "say" for b in tool_uses) and not any(r.get("is_error") for r in results):
                 break
 
         # Models sometimes answer in plain text instead of calling `say`; speak it rather than lose it.

@@ -151,9 +151,39 @@ def test_budget_exhausted_gives_canned_reply_without_llm_call():
     assert mod.commands[0]["args"]["text"] in brain_mod.OUT_OF_BREATH
 
 
+def test_say_only_turn_makes_one_llm_call():
+    script = [reply(tool("say", text="Aha! Hello."), stop="tool_use"), reply(text("should never be requested"))]
+    _, client = asyncio.run(_run(script, ["hi"], expect_commands=1))
+    assert len(client.calls) == 1
+
+
 def test_history_carries_previous_exchange():
     script = [reply(tool("say", text="Alvar Partridgesson, at your service.")), reply(tool("say", text="Still me."))]
     _, client = asyncio.run(_run(script, ["who are you", "who are you again"], expect_commands=2))
     second = client.calls[1]["messages"]
     assert second[0] == {"role": "user", "content": "Ben says to you: who are you"}
     assert second[1] == {"role": "assistant", "content": "Alvar Partridgesson, at your service."}
+
+
+def test_respawn_event_triggers_a_turn():
+    async def run():
+        client = FakeClient([reply(tool("say", text="Tactical withdrawal. Never dead."))])
+        sent = []
+
+        class Conn:
+            async def request_state(self):
+                return {"players_online": 1}
+
+            async def command(self, action, **args):
+                sent.append((action, args))
+                return SimpleNamespace(ok=True, error=None)
+
+        b = Brain(Conn(), client)
+        await b.on_event(main.Event(type="event", name="died", data={"killer": "$enemy_troll"}))
+        await b.on_event(main.Event(type="event", name="respawned", data={"killed_by": "Troll"}))
+        return client, sent
+
+    client, sent = asyncio.run(run())
+    assert sent == [("say", {"text": "Tactical withdrawal. Never dead."})]
+    prompt = client.calls[0]["messages"][-1]["content"]
+    assert "killed by Troll" in prompt and "died:" in prompt  # the died note rides along

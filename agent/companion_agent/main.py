@@ -8,6 +8,7 @@ import asyncio
 import hmac
 import logging
 import os
+import sys
 from typing import Callable
 
 import anthropic
@@ -98,8 +99,10 @@ async def handle_mod(reader: asyncio.StreamReader, writer: asyncio.StreamWriter)
 
 
 async def main() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        stream.reconfigure(encoding="utf-8")  # Windows consoles default to a legacy code page
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpx2").setLevel(logging.WARNING)  # the SDK's HTTP client logs every request
     if not TOKEN:
         raise SystemExit("AGENT_TOKEN must be set")
     if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):

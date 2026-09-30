@@ -10,6 +10,7 @@ namespace ValheimCompanion.Companion
         {
             CommandManager.Instance.AddConsoleCommand(new SpawnCommand());
             CommandManager.Instance.AddConsoleCommand(new DespawnCommand());
+            CommandManager.Instance.AddConsoleCommand(new KillCommand());
         }
 
         private class SpawnCommand : ConsoleCommand
@@ -36,6 +37,14 @@ namespace ValheimCompanion.Companion
             public override string Help => "Remove the companion from the world (admin only)";
 
             public override void Run(string[] args) => Rpcs.SendDespawnRequest();
+        }
+
+        private class KillCommand : ConsoleCommand
+        {
+            public override string Name => "cmp_kill";
+            public override string Help => "Debug: kill the companion to test bouncing back (admin only)";
+
+            public override void Run(string[] args) => Rpcs.SendKillRequest();
         }
     }
 }

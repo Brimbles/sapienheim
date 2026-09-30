@@ -10,6 +10,7 @@ namespace ValheimCompanion.Net
         private const string DespawnRequest = "CMP_DespawnRequest";
         private const string Message = "CMP_Message";
         private const string PlayerChat = "CMP_PlayerChat";
+        private const string KillRequest = "CMP_KillRequest";
 
         /// <summary>Called once ZRoutedRpc exists (ZNet.Awake).</summary>
         public static void Register()
@@ -18,6 +19,7 @@ namespace ValheimCompanion.Net
             ZRoutedRpc.instance.Register(DespawnRequest, RPC_DespawnRequest);
             ZRoutedRpc.instance.Register<string>(Message, RPC_Message);
             ZRoutedRpc.instance.Register<string, string>(PlayerChat, RPC_PlayerChat);
+            ZRoutedRpc.instance.Register(KillRequest, RPC_KillRequest);
         }
 
         // Client -> server: chat addressed to the companion ("prefix" or "proximity").
@@ -37,6 +39,28 @@ namespace ValheimCompanion.Net
             ZRoutedRpc.instance.InvokeRoutedRPC(SpawnRequest, pos, masterId, masterName);
 
         public static void SendDespawnRequest() => ZRoutedRpc.instance.InvokeRoutedRPC(DespawnRequest);
+
+        public static void SendKillRequest() => ZRoutedRpc.instance.InvokeRoutedRPC(KillRequest);
+
+        // Debug: kill the companion through the normal damage path so death and bounce-back run for real.
+        private static void RPC_KillRequest(long sender)
+        {
+            if (!Role.IsServer || !IsAllowed(sender))
+            {
+                return;
+            }
+            CompanionAI companion = CompanionAI.FindOwned();
+            if (!companion)
+            {
+                Reply(sender, "No companion loaded.");
+                return;
+            }
+            var hit = new HitData();
+            hit.m_damage.m_damage = 1e6f;
+            hit.m_point = companion.transform.position;
+            companion.GetComponent<Character>().Damage(hit);
+            Reply(sender, $"{companion.Name} has been struck down. Give it a minute.");
+        }
 
         // Server -> one client
         public static void Reply(long target, string text) =>

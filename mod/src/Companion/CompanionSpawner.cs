@@ -1,5 +1,7 @@
 using System.Globalization;
+using Newtonsoft.Json.Linq;
 using UnityEngine;
+using ValheimCompanion.Bridge;
 using ValheimCompanion.Net;
 using ValheimCompanion.World;
 
@@ -19,16 +21,23 @@ namespace ValheimCompanion.Companion
             public string MasterName;
             public long Sender;
             public float Deadline;
+            public string RespawnKiller; // non-null when this is a bounce-back after death
             public float NextDiagnostic;
         }
 
         private static Request s_pending;
         private bool _autoSpawnChecked;
 
-        public static void RequestSpawn(long sender, Vector3 pos, long masterId, string masterName, bool snapToGround = false)
+        public static void RequestSpawn(long sender, Vector3 pos, long masterId, string masterName,
+                                        bool snapToGround = false, string respawnKiller = null)
         {
             if (FindExisting() != null)
             {
+                if (respawnKiller != null)
+                {
+                    Jotunn.Logger.LogInfo("Respawn skipped: a companion already exists");
+                    return;
+                }
                 Rpcs.Reply(sender, "A companion already exists. Use cmp_despawn first.");
                 return;
             }
@@ -41,7 +50,7 @@ namespace ValheimCompanion.Companion
             s_pending = new Request
             {
                 Pos = pos, SnapToGround = snapToGround, MasterId = masterId, MasterName = masterName, Sender = sender,
-                Deadline = Time.time + SpawnTimeout,
+                Deadline = Time.time + SpawnTimeout, RespawnKiller = respawnKiller,
             };
             // On a dedicated server the area must be loaded around the spawn point first.
             ZoneKeeper.SetPendingAnchor(pos);
@@ -66,6 +75,7 @@ namespace ValheimCompanion.Companion
                 ZDOMan.instance.DestroyZDO(zdo);
             }
             ZoneKeeper.Instance?.Forget();
+            CompanionRespawn.Clear();
             Jotunn.Logger.LogInfo("Companion despawned");
             Rpcs.Reply(sender, "Companion despawned.");
         }
@@ -96,10 +106,14 @@ namespace ValheimCompanion.Companion
                 _autoSpawnChecked = false;
                 return;
             }
-            if (!_autoSpawnChecked && Role.IsServer && ZoneSystem.instance.LocationsGenerated)
+            if (Role.IsServer && ZoneSystem.instance.LocationsGenerated)
             {
-                _autoSpawnChecked = true;
-                TryDebugAutoSpawn();
+                if (!_autoSpawnChecked)
+                {
+                    _autoSpawnChecked = true;
+                    TryDebugAutoSpawn();
+                }
+                CompanionRespawn.Update();
             }
 
             Request req = s_pending;
@@ -145,7 +159,18 @@ namespace ValheimCompanion.Companion
             go.GetComponent<CompanionAI>().InitNew(name, req.MasterId, req.MasterName);
 
             Jotunn.Logger.LogInfo($"Spawned companion {name} for '{req.MasterName}' at {pos:F0}");
-            Rpcs.Reply(req.Sender, $"{name} has arrived.");
+            if (req.RespawnKiller != null)
+            {
+                AgentClient.SendEvent("respawned", new JObject
+                {
+                    ["killed_by"] = req.RespawnKiller,
+                    ["pos"] = new JArray(Mathf.Round(pos.x), Mathf.Round(pos.y), Mathf.Round(pos.z)),
+                });
+            }
+            else
+            {
+                Rpcs.Reply(req.Sender, $"{name} has arrived.");
+            }
         }
 
         // Mirrors the early-outs in ZoneSystem.SpawnZone to show why a zone isn't loading.
