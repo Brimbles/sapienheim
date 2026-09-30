@@ -243,16 +243,18 @@ Each milestone ends with something playable. Acceptance criteria in **bold**.
 - **Typing to the companion in-game produces an echoed speech bubble visible to all players.**
 
 ### M3 — LLM brain v1
-- [ ] `brain.py`: event → build context (persona + recent chat + state snapshot + memory) → Claude with tools → commands.
-- [ ] Tools: `say`, `follow`, `stay`, `go_to`, `attack`, `get_status`.
-- [ ] Model routing (Haiku default, Sonnet for planning); per-minute call budget.
-- [ ] "Thinking" gesture while waiting for a response ("..." speech bubble).
+- [x] `brain.py`: event → build context (persona + recent chat + state snapshot + memory) → Claude with tools → commands.
+- [x] Tools: `say`, `follow`, `stay`, `go_to`, `attack`, `get_status`. `say`, `follow` and `stay` are verified in-game. `attack` and `go_to` are covered by agent tests only; the in-game test was skipped.
+- [x] Model routing (Haiku default, Sonnet for planning); per-minute call budget.
+- [x] "Thinking" gesture while waiting for a response ("..." speech bubble).
+- [x] Death: the companion bounces back next to its master after `Companion.RespawnSeconds` (`CompanionRespawn`), then reacts in character.
 - Persona: **Alvar Partridgesson**, an Alan Partridge-style ex-skald whose mead-hall saga show got cancelled (`agent/companion_agent/persona.md`). The name comes from `Companion.Name` in the server config, and changing it renames the existing companion.
 - [ ] Optional: `mcp_server.py` exposing the same tools for Claude Code testing.
 - **Natural conversation plus the companion obeying simple spoken commands.**
 
 ### M4 — Inventory & crafting
 - [ ] Companion inventory (ZDO-persisted), `give`/`take` interaction with players.
+  - Persists through death. The inventory, including equipped items, is serialized into the respawn record (`CompanionRespawn`) and restored when he bounces back. Nothing is dropped.
 - [ ] Chest tools: `store_items`, `fetch_items`, chest registry.
 - [ ] `gather` action (chop trees, pick up drops, mine rocks).
 - [ ] `craft` using `ObjectDB` recipes + station-in-range checks.

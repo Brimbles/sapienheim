@@ -11,7 +11,7 @@ namespace ValheimCompanion.Companion
     /// </summary>
     internal class CompanionAI : MonoBehaviour
     {
-        private const float TickInterval = 1f;
+        private const float TickInterval = 0.25f;
         private const float StatusInterval = 10f;
 
         private const string RpcSay = "CMP_Say";
@@ -30,6 +30,7 @@ namespace ValheimCompanion.Companion
         private Humanoid _character;
         private MonsterAI _ai;
         private CompanionTasks _tasks;
+        private CompanionInventory _inventory;
         private float _nextTick;
         private float _nextStatus;
 
@@ -47,7 +48,8 @@ namespace ValheimCompanion.Companion
             s_instances.Add(this);
             _nview.Register<string>(RpcSay, RPC_Say);
             _nview.Register(RpcThinking, RPC_Thinking);
-            _tasks = new CompanionTasks(_nview, _character, _ai);
+            _inventory = new CompanionInventory(_nview, _character);
+            _tasks = new CompanionTasks(_nview, _character, _ai, _inventory);
             ApplyName();
 
             // Headless spike: with no camera, a culled Animator would skip the animation events that
@@ -69,6 +71,7 @@ namespace ValheimCompanion.Companion
         }
 
         public CompanionTasks Tasks => _tasks;
+        public CompanionInventory Inventory => _inventory;
 
         public ZDO ZDO => _nview.GetZDO();
         public string Name => _character.m_name;
@@ -136,9 +139,13 @@ namespace ValheimCompanion.Companion
         }
 
         /// <summary>Server only: initialise a freshly spawned companion.</summary>
-        public void InitNew(string name, long masterId, string masterName)
+        public void InitNew(string name, long masterId, string masterName, byte[] inventory = null)
         {
             ZDO zdo = _nview.GetZDO();
+            if (inventory != null)
+            {
+                zdo.Set(CompanionState.KeyInventory, inventory); // restored on the first owner tick
+            }
             zdo.Set(CompanionState.KeyName, name);
             CompanionState.SetMaster(zdo, masterId, masterName);
             CompanionState.SetTask(zdo, CompanionTasks.Follow);
@@ -174,6 +181,7 @@ namespace ValheimCompanion.Companion
                 _character.SetTamed(true);
             }
             SyncNameFromConfig();
+            _inventory.EnsureRestored();
             _tasks.Update();
 
             if (Time.time >= _nextStatus)

@@ -22,6 +22,7 @@ namespace ValheimCompanion.Companion
             public long Sender;
             public float Deadline;
             public string RespawnKiller; // non-null when this is a bounce-back after death
+            public byte[] Inventory;     // carried over from the previous life
             public float NextDiagnostic;
         }
 
@@ -29,7 +30,7 @@ namespace ValheimCompanion.Companion
         private bool _autoSpawnChecked;
 
         public static void RequestSpawn(long sender, Vector3 pos, long masterId, string masterName,
-                                        bool snapToGround = false, string respawnKiller = null)
+                                        bool snapToGround = false, string respawnKiller = null, byte[] inventory = null)
         {
             if (FindExisting() != null)
             {
@@ -50,7 +51,7 @@ namespace ValheimCompanion.Companion
             s_pending = new Request
             {
                 Pos = pos, SnapToGround = snapToGround, MasterId = masterId, MasterName = masterName, Sender = sender,
-                Deadline = Time.time + SpawnTimeout, RespawnKiller = respawnKiller,
+                Deadline = Time.time + SpawnTimeout, RespawnKiller = respawnKiller, Inventory = inventory,
             };
             // On a dedicated server the area must be loaded around the spawn point first.
             ZoneKeeper.SetPendingAnchor(pos);
@@ -156,7 +157,7 @@ namespace ValheimCompanion.Companion
             GameObject prefab = ZNetScene.instance.GetPrefab(CompanionState.PrefabName);
             GameObject go = Instantiate(prefab, pos, Quaternion.identity);
             string name = Plugin.CompanionName.Value;
-            go.GetComponent<CompanionAI>().InitNew(name, req.MasterId, req.MasterName);
+            go.GetComponent<CompanionAI>().InitNew(name, req.MasterId, req.MasterName, req.Inventory);
 
             Jotunn.Logger.LogInfo($"Spawned companion {name} for '{req.MasterName}' at {pos:F0}");
             if (req.RespawnKiller != null)

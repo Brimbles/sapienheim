@@ -24,6 +24,7 @@ namespace ValheimCompanion.Companion
             public float[] DeathPos;
             public string Killer;
             public long DueUnixSeconds;
+            public string Inventory; // base64 of Inventory.Save(); restored on respawn
         }
 
         private static Record s_record;
@@ -55,6 +56,7 @@ namespace ValheimCompanion.Companion
                 DeathPos = new[] { pos.x, pos.y, pos.z },
                 Killer = killer,
                 DueUnixSeconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds() + Plugin.RespawnSeconds.Value,
+                Inventory = Convert.ToBase64String(ai.Inventory.Serialize()),
             };
             Save();
 
@@ -89,8 +91,9 @@ namespace ValheimCompanion.Companion
                 pos = masterPos + new Vector3(2f, 0.5f, 2f);
             }
             Jotunn.Logger.LogInfo($"Companion bouncing back at {pos:F0}");
+            byte[] inventory = string.IsNullOrEmpty(record.Inventory) ? null : Convert.FromBase64String(record.Inventory);
             CompanionSpawner.RequestSpawn(ZDOMan.GetSessionID(), pos, record.MasterId, record.MasterName,
-                snapToGround: true, respawnKiller: record.Killer ?? "");
+                snapToGround: true, respawnKiller: record.Killer ?? "", inventory: inventory);
         }
 
         public static void Clear()

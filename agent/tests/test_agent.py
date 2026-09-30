@@ -157,6 +157,15 @@ def test_say_only_turn_makes_one_llm_call():
     assert len(client.calls) == 1
 
 
+def test_tool_schemas_are_well_formed():
+    names = [t["name"] for t in brain_mod.TOOLS]
+    assert len(names) == len(set(names))
+    assert {"say", "follow", "stay", "go_to", "attack", "pick_up", "give", "get_status"} <= set(names)
+    for t in brain_mod.TOOLS:
+        assert t["input_schema"]["type"] == "object"
+        assert set(t["input_schema"].get("required", [])) <= set(t["input_schema"]["properties"])
+
+
 def test_history_carries_previous_exchange():
     script = [reply(tool("say", text="Alvar Partridgesson, at your service.")), reply(tool("say", text="Still me."))]
     _, client = asyncio.run(_run(script, ["who are you", "who are you again"], expect_commands=2))

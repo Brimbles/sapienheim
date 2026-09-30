@@ -10,6 +10,7 @@ namespace ValheimCompanion.Companion
         public const string KeyMasterName = "cmp_master_name";
         public const string KeyTask = "cmp_task";
         public const string KeyTaskPos = "cmp_task_pos"; // stay / go_to position
+        public const string KeyInventory = "cmp_inventory"; // Inventory.Save() bytes
 
         public static string GetName(ZDO zdo) => zdo.GetString(KeyName);
         public static long GetMaster(ZDO zdo) => zdo.GetLong(KeyMaster);

@@ -9,6 +9,7 @@ namespace ValheimCompanion.Bridge
     internal static class CommandHandler
     {
         private const float PerceptionRange = 40f;
+        private const float GroundItemRange = 15f;
 
         public static void Handle(JObject msg)
         {
@@ -127,6 +128,32 @@ namespace ValheimCompanion.Bridge
                     companion.Tasks.CommandAttack(target, (string)args["task_id"] ?? cmdId);
                     return null;
                 }
+                case "pick_up":
+                {
+                    float radius = args["radius"] != null ? Mathf.Clamp((float)args["radius"], 1f, 30f) : 10f;
+                    companion.Tasks.CommandPickUp((string)args["item"], radius, (string)args["task_id"] ?? cmdId);
+                    return null;
+                }
+                case "give":
+                {
+                    string item = (string)args["item"];
+                    int qty = args["qty"] != null ? (int)args["qty"] : int.MaxValue;
+                    if (string.IsNullOrEmpty(item) || qty <= 0)
+                    {
+                        return "need_item_and_qty";
+                    }
+                    if (companion.Inventory.Count(item) == 0)
+                    {
+                        return "dont_have_item";
+                    }
+                    string playerName = (string)args["player"];
+                    if (string.IsNullOrEmpty(playerName) || !TryFindPlayer(playerName, out long playerId, out _, out _))
+                    {
+                        return "player_not_found";
+                    }
+                    companion.Tasks.CommandGive(playerId, item, qty, (string)args["task_id"] ?? cmdId);
+                    return null;
+                }
                 default:
                     return "unknown_action";
             }
@@ -227,6 +254,8 @@ namespace ValheimCompanion.Bridge
                 ["task"] = companion.Tasks.Current,
                 ["master"] = CompanionState.GetMasterName(zdo),
                 ["master_nearby"] = companion.Tasks.MasterNearby,
+                ["inventory"] = companion.Inventory.Describe(),
+                ["free_slots"] = companion.Inventory.FreeSlots,
             };
 
             var nearby = new JArray();
@@ -254,6 +283,26 @@ namespace ValheimCompanion.Bridge
                 });
             }
             state["nearby"] = nearby;
+
+            var ground = new JArray();
+            foreach (ItemDrop drop in ItemDrop.s_instances)
+            {
+                if (!drop || !drop.m_nview || !drop.m_nview.IsValid())
+                {
+                    continue;
+                }
+                float dist = Vector3.Distance(drop.transform.position, origin);
+                if (dist <= GroundItemRange)
+                {
+                    ground.Add(new JObject
+                    {
+                        ["item"] = CompanionInventory.PrefabName(drop.m_itemData),
+                        ["qty"] = drop.m_itemData.m_stack,
+                        ["dist"] = Round(dist),
+                    });
+                }
+            }
+            state["ground_items"] = ground;
 
             if (EnvMan.instance)
             {

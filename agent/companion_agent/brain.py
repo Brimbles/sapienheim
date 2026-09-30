@@ -41,7 +41,8 @@ RULES = """
 
 - You can only talk through the `say` tool. Plain text replies are never heard by anyone.
 - Every reply should include a `say` call. When asked to do something you can do, call the matching tool and say something in character about it.
-- You cannot yet build, craft, gather or manage chests. If asked, say so in character (a "project for next season", say) instead of pretending.
+- You carry an inventory (see `inventory` in the state; items are named by id, e.g. "Wood"). Players hand you things by dropping them near you; use `pick_up` to collect them. Use `give` to hand items to a player.
+- You cannot yet build, craft, chop trees, mine or manage chests. If asked, say so in character (a "project for next season", say) instead of pretending.
 - Never attack players or tamed animals. Use the `id` values from the `nearby` list for `attack`.
 - Positions are [x, y, z] in metres; `go_to` takes x and z.
 - Each message from a player includes a fresh state snapshot. Use it: who is near, what is hostile, time of day, weather, biome.
@@ -92,6 +93,31 @@ TOOLS: list[dict[str, Any]] = [
             "type": "object",
             "properties": {"target_id": {"type": "string", "description": "The creature's `id` from the state snapshot."}},
             "required": ["target_id"],
+        },
+    },
+    {
+        "name": "pick_up",
+        "description": "Collect items lying on the ground near you (see `ground_items` in the state). "
+        "A task_done event reports how many were picked up.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "item": {"type": "string", "description": "Only pick up this item id, e.g. \"Wood\". Omit for everything."},
+                "radius": {"type": "number", "description": "Search radius in metres (1-30, default 10)."},
+            },
+        },
+    },
+    {
+        "name": "give",
+        "description": "Walk to a player and drop items from your inventory at their feet.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "player": {"type": "string"},
+                "item": {"type": "string", "description": "Item id from your inventory, e.g. \"Wood\"."},
+                "qty": {"type": "integer", "description": "How many. Omit to give all of them."},
+            },
+            "required": ["player", "item"],
         },
     },
     {

@@ -11,6 +11,8 @@ namespace ValheimCompanion.Companion
     /// <item><c>stay</c>: hold position, idling around a fixed point.</item>
     /// <item><c>go_to</c>: walk to a point, then stay there. Reports <c>task_done</c> / <c>task_failed</c>.</item>
     /// <item><c>attack</c>: fight one target, then go back to following. Not persisted.</item>
+    /// <item><c>pick_up</c>: collect items lying on the ground nearby. Not persisted.</item>
+    /// <item><c>give</c>: walk to a player and drop items at their feet. Not persisted.</item>
     /// </list>
     /// The task and its position live in the ZDO so they survive restarts.
     /// </summary>
@@ -20,14 +22,20 @@ namespace ValheimCompanion.Companion
         public const string Stay = "stay";
         public const string GoTo = "go_to";
         public const string Attack = "attack";
+        public const string PickUp = "pick_up";
+        public const string Give = "give";
 
         private const float ArriveDistance = 3.5f;
         private const float GoToTimeout = 180f;
+        private const float HandoverTimeout = 120f;
+        private const float PickupReach = 2.5f;
+        private const float GiveReach = 3.5f;
         public const float MaxGoToDistance = 500f;
 
         private readonly ZNetView _nview;
         private readonly Humanoid _character;
         private readonly MonsterAI _ai;
+        private readonly CompanionInventory _inventory;
 
         private string _applied; // task the AI is currently set up for
         private GameObject _waypoint;
@@ -35,11 +43,24 @@ namespace ValheimCompanion.Companion
         private Character _attackTarget;
         private string _taskId;
 
-        public CompanionTasks(ZNetView nview, Humanoid character, MonsterAI ai)
+        // pick_up
+        private string _pickupFilter;
+        private float _pickupRadius;
+        private Vector3 _pickupOrigin;
+        private ItemDrop _pickupTarget;
+        private int _pickedUp;
+
+        // give
+        private long _givePlayerId;
+        private string _giveItem;
+        private int _giveQty;
+
+        public CompanionTasks(ZNetView nview, Humanoid character, MonsterAI ai, CompanionInventory inventory)
         {
             _nview = nview;
             _character = character;
             _ai = ai;
+            _inventory = inventory;
         }
 
         private ZDO Zdo => _nview.GetZDO();
@@ -49,7 +70,7 @@ namespace ValheimCompanion.Companion
             get
             {
                 string task = CompanionState.GetTask(Zdo);
-                return task == Stay || task == GoTo || task == Attack ? task : Follow;
+                return task == Stay || task == GoTo || task == Attack || task == PickUp || task == Give ? task : Follow;
             }
         }
 
@@ -87,6 +108,25 @@ namespace ValheimCompanion.Companion
             SetTask(Attack, taskId);
         }
 
+        /// <summary>Collect ground items within <paramref name="radius"/> (optionally only one prefab).</summary>
+        public void CommandPickUp(string itemFilter, float radius, string taskId)
+        {
+            _pickupFilter = string.IsNullOrEmpty(itemFilter) ? null : itemFilter;
+            _pickupRadius = radius;
+            _pickupOrigin = _character.transform.position;
+            _pickupTarget = null;
+            _pickedUp = 0;
+            SetTask(PickUp, taskId);
+        }
+
+        public void CommandGive(long playerId, string item, int qty, string taskId)
+        {
+            _givePlayerId = playerId;
+            _giveItem = item;
+            _giveQty = qty;
+            SetTask(Give, taskId);
+        }
+
         private void SetTask(string task, string taskId)
         {
             CompanionState.SetTask(Zdo, task);
@@ -115,6 +155,12 @@ namespace ValheimCompanion.Companion
                 case Attack:
                     UpdateAttack();
                     break;
+                case PickUp:
+                    UpdatePickUp();
+                    break;
+                case Give:
+                    UpdateGive();
+                    break;
             }
         }
 
@@ -141,6 +187,15 @@ namespace ValheimCompanion.Companion
                     {
                         // Loaded after a restart, or the target vanished before we started.
                         CompanionState.SetTask(Zdo, Follow);
+                        _applied = null;
+                    }
+                    break;
+                case PickUp:
+                case Give:
+                    _deadline = Time.time + HandoverTimeout;
+                    if ((task == Give && _giveItem == null) || (task == PickUp && _pickupRadius <= 0f))
+                    {
+                        CompanionState.SetTask(Zdo, Follow); // runtime state lost (restart)
                         _applied = null;
                     }
                     break;
@@ -197,6 +252,105 @@ namespace ValheimCompanion.Companion
             }
             _ai.m_targetCreature = _attackTarget;
             _ai.SetAlerted(true);
+        }
+
+        private void UpdatePickUp()
+        {
+            if (!_pickupTarget)
+            {
+                _pickupTarget = NearestGroundItem();
+                if (!_pickupTarget)
+                {
+                    Finish("task_done", new JObject { ["task"] = PickUp, ["picked_up"] = _pickedUp });
+                    SetTask(Follow, null);
+                    return;
+                }
+                _ai.SetFollowTarget(_pickupTarget.gameObject);
+            }
+
+            if (!_inventory.Inventory.CanAddItem(_pickupTarget.m_itemData))
+            {
+                Finish("task_failed", new JObject { ["task"] = PickUp, ["reason"] = "inventory_full", ["picked_up"] = _pickedUp });
+                SetTask(Follow, null);
+                return;
+            }
+            if (Time.time > _deadline)
+            {
+                Finish("task_failed", new JObject { ["task"] = PickUp, ["reason"] = "timeout", ["picked_up"] = _pickedUp });
+                SetTask(Follow, null);
+                return;
+            }
+
+            if (Vector3.Distance(_pickupTarget.transform.position, _character.transform.position) <= PickupReach)
+            {
+                // Requests ownership of the drop if needed; the drop disappears once it's in our inventory.
+                int before = _pickupTarget.m_itemData.m_stack;
+                _pickupTarget.Pickup(_character);
+                if (!_pickupTarget || !_pickupTarget.m_nview.IsValid())
+                {
+                    _pickedUp += before;
+                    _pickupTarget = null;
+                }
+            }
+        }
+
+        private ItemDrop NearestGroundItem()
+        {
+            ItemDrop best = null;
+            float bestDist = float.MaxValue;
+            foreach (ItemDrop drop in ItemDrop.s_instances)
+            {
+                if (!drop || !drop.m_nview || !drop.m_nview.IsValid())
+                {
+                    continue;
+                }
+                if (_pickupFilter != null && CompanionInventory.PrefabName(drop.m_itemData) != _pickupFilter)
+                {
+                    continue;
+                }
+                if (Vector3.Distance(drop.transform.position, _pickupOrigin) > _pickupRadius)
+                {
+                    continue;
+                }
+                float d = Vector3.Distance(drop.transform.position, _character.transform.position);
+                if (d < bestDist)
+                {
+                    best = drop;
+                    bestDist = d;
+                }
+            }
+            return best;
+        }
+
+        private void UpdateGive()
+        {
+            Player player = Player.GetAllPlayers().Find(p => p.GetPlayerID() == _givePlayerId);
+            if (!player)
+            {
+                Finish("task_failed", new JObject { ["task"] = Give, ["reason"] = "player_not_nearby" });
+                SetTask(Follow, null);
+                return;
+            }
+            if (_ai.GetFollowTarget() != player.gameObject)
+            {
+                _ai.SetFollowTarget(player.gameObject);
+            }
+            if (Time.time > _deadline)
+            {
+                Finish("task_failed", new JObject { ["task"] = Give, ["reason"] = "timeout" });
+                SetTask(Follow, null);
+                return;
+            }
+            if (Vector3.Distance(player.transform.position, _character.transform.position) <= GiveReach)
+            {
+                int dropped = _inventory.Drop(_giveItem, _giveQty);
+                Finish(dropped > 0 ? "task_done" : "task_failed", new JObject
+                {
+                    ["task"] = Give, ["item"] = _giveItem, ["given"] = dropped, ["player"] = player.GetPlayerName(),
+                });
+                _giveItem = null;
+                SetTask(Follow, null);
+            }
         }
 
         private void Finish(string eventName, JObject data)
