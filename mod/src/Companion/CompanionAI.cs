@@ -108,6 +108,58 @@ namespace ValheimCompanion.Companion
             _nview.InvokeRPC(ZNetView.Everybody, RpcSay, text);
         }
 
+        private string _swingTrigger;
+        private bool _swingResolved;
+
+        /// <summary>
+        /// Owner only: play a swing for a tool hit. Uses the tool's own attack animation if this body's animator
+        /// has it, otherwise the first attack animation of an item it carries that the animator does know.
+        /// Triggers are synced to clients by ZSyncAnimation.
+        /// </summary>
+        public void PlaySwing(ItemDrop.ItemData tool)
+        {
+            if (!_swingResolved)
+            {
+                _swingResolved = true;
+                _swingTrigger = ResolveSwingTrigger(tool);
+                Jotunn.Logger.LogInfo($"{_character.m_name}: swing animation = {_swingTrigger ?? "(none available)"}");
+            }
+            if (_swingTrigger != null)
+            {
+                _character.m_zanim.SetTrigger(_swingTrigger);
+            }
+        }
+
+        private string ResolveSwingTrigger(ItemDrop.ItemData tool)
+        {
+            var triggers = new HashSet<string>();
+            foreach (Animator animator in GetComponentsInChildren<Animator>())
+            {
+                foreach (AnimatorControllerParameter p in animator.parameters)
+                {
+                    if (p.type == AnimatorControllerParameterType.Trigger)
+                    {
+                        triggers.Add(p.name);
+                    }
+                }
+            }
+            var candidates = new List<string> { tool.m_shared.m_attack?.m_attackAnimation };
+            foreach (ItemDrop.ItemData item in _character.GetInventory().GetAllItems())
+            {
+                candidates.Add(item.m_shared.m_attack?.m_attackAnimation);
+            }
+            candidates.AddRange(new[] { "swing_axe", "attack", "attack_melee", "swing_sledge" });
+            foreach (string c in candidates)
+            {
+                if (!string.IsNullOrEmpty(c) && triggers.Contains(c))
+                {
+                    return c;
+                }
+            }
+            Jotunn.Logger.LogInfo($"{_character.m_name}: animator triggers: {string.Join(", ", triggers)}");
+            return null;
+        }
+
         /// <summary>Owner only: show a "..." bubble while the agent thinks. The next Say replaces it.</summary>
         public void ShowThinking()
         {

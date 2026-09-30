@@ -26,7 +26,9 @@ namespace ValheimCompanion.Companion
         }
 
         private const float SearchInterval = 1f;
-        private const float SwingInterval = 1.3f;
+        private const float SwingInterval = 1.5f;
+        private const float HitDelay = 0.35f; // hit lands partway through the swing
+        private const float PlayerSafetyRange = 25f;
         // BaseAI.Follow stops moving once within 3 m of its target, so anything we walk up to must count
         // as reached a little beyond that, or the companion parks just out of reach forever.
         private const float Reach = 3.6f;
@@ -39,6 +41,9 @@ namespace ValheimCompanion.Companion
         private readonly Humanoid _character;
         private readonly MonsterAI _ai;
         private readonly CompanionInventory _inventory;
+        private readonly CompanionAI _companion;
+        private float _hitAt = -1f;
+        private ItemDrop.ItemData _swingTool;
 
         private string _item;
         private int _goal;
@@ -60,6 +65,7 @@ namespace ValheimCompanion.Companion
             _character = character;
             _ai = ai;
             _inventory = inventory;
+            _companion = character.GetComponent<CompanionAI>();
         }
 
         public string Item => _item;
@@ -178,11 +184,19 @@ namespace ValheimCompanion.Companion
                     return;
             }
 
+            if (_hitAt > 0f)
+            {
+                if (Time.time >= _hitAt)
+                {
+                    _hitAt = -1f;
+                    Hit(source, point, _swingTool);
+                }
+                return;
+            }
             if (Time.time < _nextSwing)
             {
                 return;
             }
-            _nextSwing = Time.time + SwingInterval;
 
             ItemDrop.ItemData tool = BestTool(source.Tool);
             if (tool == null)
@@ -194,17 +208,89 @@ namespace ValheimCompanion.Companion
             {
                 _character.EquipItem(tool);
             }
+            _nextSwing = Time.time + SwingInterval;
+            _hitAt = Time.time + HitDelay;
+            _swingTool = tool;
+            FaceTowards(point);
+            if (_companion)
+            {
+                _companion.PlaySwing(tool);
+            }
+        }
 
+        private void Hit(Source source, Vector3 point, ItemDrop.ItemData tool)
+        {
+            if (!IsUsable(source))
+            {
+                return;
+            }
+            HitData.DamageTypes damage = tool.GetDamage();
             var hit = new HitData
             {
-                m_damage = tool.GetDamage(),
+                m_damage = damage,
                 m_toolTier = (short)tool.m_shared.m_toolTier,
                 m_point = point,
-                m_dir = (point - _character.transform.position).normalized,
+                m_dir = FallDirection(source, point),
                 m_hitCollider = NearestCollider(source.Target, point),
             };
             hit.SetAttacker(_character);
+
+            // Warn before the blow that fells a standing tree.
+            if (source.Target is TreeBase tree && _companion)
+            {
+                float health = tree.m_nview.GetZDO().GetFloat(ZDOVars.s_health, tree.m_health);
+                if (health <= damage.m_chop)
+                {
+                    _companion.Say(TimberLines[Random.Range(0, TimberLines.Length)]);
+                }
+            }
             ((IDestructible)source.Target).Damage(hit);
+        }
+
+        private static readonly string[] TimberLines =
+        {
+            "Timber!", "TIMBER! Mind yourselves!", "Timber! Stand clear, professional at work!",
+        };
+
+        /// <summary>
+        /// A felled tree falls along the last hit's direction. Aim it away from nearby players and from the
+        /// companion itself so nobody gets flattened.
+        /// </summary>
+        private Vector3 FallDirection(Source source, Vector3 point)
+        {
+            Vector3 origin = source.Target.transform.position;
+            Vector3 away = Vector3.zero;
+            foreach (Player player in Player.GetAllPlayers())
+            {
+                Vector3 d = player.transform.position - origin;
+                d.y = 0f;
+                if (d.magnitude < PlayerSafetyRange && d.magnitude > 0.01f)
+                {
+                    away -= d.normalized * 2f; // players matter most
+                }
+            }
+            Vector3 self = _character.transform.position - origin;
+            self.y = 0f;
+            if (self.magnitude > 0.01f)
+            {
+                away -= self.normalized;
+            }
+            if (away.sqrMagnitude < 0.01f)
+            {
+                away = (point - _character.transform.position);
+                away.y = 0f;
+            }
+            return away.normalized;
+        }
+
+        private void FaceTowards(Vector3 point)
+        {
+            Vector3 d = point - _character.transform.position;
+            d.y = 0f;
+            if (d.sqrMagnitude > 0.01f)
+            {
+                _character.SetLookDir(d.normalized);
+            }
         }
 
         private Source FindSource()
@@ -427,15 +513,22 @@ namespace ValheimCompanion.Companion
         private Vector3 ClosestPoint(Component target)
         {
             Vector3 from = _character.transform.position;
+            if (target is TreeBase)
+            {
+                // A standing tree's colliders and bounds include the canopy; stand at the trunk.
+                Vector3 trunk = target.transform.position;
+                trunk.y = from.y;
+                return trunk;
+            }
             Vector3 best = target.transform.position;
             float bestDist = Vector3.Distance(best, from);
             foreach (Collider col in target.GetComponentsInChildren<Collider>())
             {
-                if (!col.enabled)
+                if (!col.enabled || col.isTrigger)
                 {
                     continue;
                 }
-                Vector3 p = col.bounds.ClosestPoint(from);
+                Vector3 p = SurfacePoint(col, from);
                 float d = Vector3.Distance(p, from);
                 if (d < bestDist)
                 {
@@ -444,6 +537,14 @@ namespace ValheimCompanion.Companion
                 }
             }
             return best;
+        }
+
+        /// <summary>Closest point on the collider itself where Unity supports it, else on its bounds.</summary>
+        private static Vector3 SurfacePoint(Collider col, Vector3 from)
+        {
+            bool exact = col is BoxCollider || col is SphereCollider || col is CapsuleCollider
+                         || (col is MeshCollider mesh && mesh.convex);
+            return exact ? col.ClosestPoint(from) : col.bounds.ClosestPoint(from);
         }
 
         private static Collider NearestCollider(Component target, Vector3 point)
