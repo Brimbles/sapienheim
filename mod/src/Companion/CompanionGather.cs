@@ -411,18 +411,27 @@ namespace ValheimCompanion.Companion
             }
         }
 
-        private void Consider(Source source, ref Source best, ref float bestDist)
+        // Take what's already cut before cutting anything new: the best tier wins, then the nearest in it.
+        private void Consider(Source source, ref Source best, ref float bestScore)
         {
             float d = Vector3.Distance(ClosestPoint(source.Target), _character.transform.position);
-            // Prefer things that need no tool, then the nearest.
-            if (source.Tool != Tool.None)
-            {
-                d += 15f;
-            }
-            if (d < bestDist)
+            float score = Tier(source.Target) * 10000f + d;
+            if (score < bestScore)
             {
                 best = source;
-                bestDist = d;
+                bestScore = score;
+            }
+        }
+
+        private static int Tier(Component target)
+        {
+            switch (target)
+            {
+                case ItemDrop _: return 0;   // loose drops
+                case Pickable _:             // branches, stones, berries
+                case TreeLog _: return 1;    // fallen logs
+                case TreeBase _: return 3;   // standing trees, only when nothing else is left
+                default: return 2;           // stumps, bushes, rocks
             }
         }
 

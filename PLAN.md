@@ -259,7 +259,7 @@ Each milestone ends with something playable. Acceptance criteria in **bold**.
 - [ ] `gather` action (chop trees, pick up drops, mine rocks).
   - Amounts: vague requests ("some wood") mean 20; "everything nearby" only when asked explicitly; hard cap of 100 items per gather (mod-enforced).
   - Wards: never chops or mines inside any active ward (anyone's, the master's included), so falling trees and hits can't damage a base. Picking up drops and harvesting (branches, berries, crops) are allowed there.
-  - [ ] Source priority when no `source` is given: loose drops, then fallen logs, then stumps, then standing trees only when nothing else is left. Today it just takes the nearest tool source.
+  - [x] Source priority when no `source` is given: loose drops, then pickables and fallen logs, then stumps, bushes and rocks, then standing trees only when nothing else is left. The nearest in the best tier wins.
 - [ ] `craft` using `ObjectDB` recipes + station-in-range checks.
 - [ ] Task queue with ids, progress, done/failed events.
 - **"Get 20 wood and make me a club" works end to end, including fetching from a chest.**
