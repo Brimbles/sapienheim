@@ -13,8 +13,8 @@ namespace ValheimCompanion.Companion
         // ---------- Wards ----------
 
         /// <summary>
-        /// Inside any active ward (guard stone), whoever owns it. Gathering never happens there, so the
-        /// companion doesn't chop, mine or harvest around anyone's base, including its master's.
+        /// Inside any active ward (guard stone), whoever owns it. The companion never chops or mines there,
+        /// so it can't damage anyone's base, including its master's.
         /// </summary>
         public static bool InWard(Vector3 point)
         {

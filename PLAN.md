@@ -257,7 +257,7 @@ Each milestone ends with something playable. Acceptance criteria in **bold**.
   - Persists through death. The inventory, including equipped items, is serialized into the respawn record (`CompanionRespawn`) and restored when he bounces back. Nothing is dropped.
 - [ ] Chest tools: `store_items`, `fetch_items`, chest registry.
 - [ ] `gather` action (chop trees, pick up drops, mine rocks).
-  - Wards: never gathers inside any active ward (anyone's, the master's included), so bases, crops and dropped items there are safe. An explicit `pick_up` still works.
+  - Wards: never chops or mines inside any active ward (anyone's, the master's included), so falling trees and hits can't damage a base. Picking up drops and harvesting (branches, berries, crops) are allowed there.
 - [ ] `craft` using `ObjectDB` recipes + station-in-range checks.
 - [ ] Task queue with ids, progress, done/failed events.
 - **"Get 20 wood and make me a club" works end to end, including fetching from a chest.**
