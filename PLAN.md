@@ -259,9 +259,16 @@ Each milestone ends with something playable. Acceptance criteria in **bold**.
 - [ ] `gather` action (chop trees, pick up drops, mine rocks).
   - Amounts: vague requests ("some wood") mean 20; "everything nearby" only when asked explicitly; hard cap of 100 items per gather (mod-enforced).
   - Wards: never chops or mines inside any active ward (anyone's, the master's included), so falling trees and hits can't damage a base. Picking up drops and harvesting (branches, berries, crops) are allowed there.
+  - [ ] Source priority when no `source` is given: loose drops, then fallen logs, then stumps, then standing trees only when nothing else is left. Today it just takes the nearest tool source.
 - [ ] `craft` using `ObjectDB` recipes + station-in-range checks.
 - [ ] Task queue with ids, progress, done/failed events.
 - **"Get 20 wood and make me a club" works end to end, including fetching from a chest.**
+
+### M4.5 — Presence & progression
+- [ ] **Map marker:** show the companion on the minimap and the big map for its master (and optionally everyone). Client-side `Minimap` pin, updated from the companion's position. A far-away companion's ZDO isn't synced to clients, so the server broadcasts its position periodically (a cheap RPC, a few times a second at most).
+- [ ] **Levelling to match the master:** scale the companion's max HP, damage and armour from the master's progression, so it keeps up without micromanagement. Candidate inputs: the master's max HP (food), best equipped weapon/armour tier, and bosses defeated (global keys). Recompute on master join and every few minutes, store it in the ZDO, and show it in the state snapshot so Alvar can boast about it.
+- [ ] **Animations:** the Dverger body lacks player tool animations, so chopping, mining and crafting look wrong or static. Fix it with the player-model viking look (the M1 follow-up): clone the Player prefab's visuals and animator so tool swings, the hammer and emotes work. Until then, pick the best available Dverger triggers.
+- **The companion shows on the map, keeps pace with the master's gear and food, and visibly swings its tools.**
 
 ### M5 — Building
 - [ ] Place a single piece: prefab lookup, validity check, resource consumption, `SetCreator(master)`, ward check (`PrivateArea`).
