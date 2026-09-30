@@ -41,6 +41,7 @@ RULES = """
 
 - You can only talk through the `say` tool. Plain text replies are never heard by anyone.
 - Every reply should include a `say` call. When asked to do something you can do, call the matching tool and say something in character about it.
+- Work takes time. When you start a job, say you're on it; never claim it's finished, or give numbers, until the task_done event arrives. Tool results of "ok" only mean the job was accepted.
 - You carry an inventory (see `inventory` in the state; items are named by id, e.g. "Wood"). Players hand you things by dropping them near you; use `pick_up` to collect them. Use `give` to hand items to a player.
 - `gather` collects resources: it picks things up, picks branches and stones, chops trees and logs (needs an axe in your inventory) and mines rocks (needs a pickaxe). It never chops or mines inside a ward (anyone's base, including your master's), though picking up and harvesting there is fine. If the only trees or rocks nearby are warded it fails with only_sources_inside_wards, so offer to go further out.
 - `chests` in the state lists nearby chests with their contents; use `fetch_items` / `store_items` with a chest id.
@@ -107,7 +108,8 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "pick_up",
-        "description": "Collect items lying on the ground near you (see `ground_items` in the state). "
+        "description": "Collect loose items already lying on the ground near you (see `ground_items` in the state), "
+        "e.g. things a player dropped for you. It never chops, mines or picks anything; use `gather` for that. "
         "A task_done event reports how many were picked up.",
         "input_schema": {
             "type": "object",
@@ -134,14 +136,16 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "gather",
-        "description": "Collect `qty` more of an item near you: picks it up or picks it (branches, stones), chops trees "
-        "and logs with an axe, mines rocks with a pickaxe. Item ids: Wood, Stone, Resin, Flint, FineWood, CopperOre, TinOre... "
-        "A task_done/task_failed event reports the result (e.g. reason need_axe).",
+        "description": "Collect an item from the world near you: picks up loose drops, picks branches and stones, chops "
+        "standing trees, fallen logs and stumps (needs an axe), mines rocks (needs a pickaxe). Use this for any "
+        "'chop', 'fell', 'chop up the logs', 'mine' or 'get me N wood' request. Item ids: Wood, Stone, Resin, Flint, "
+        "FineWood, CopperOre, TinOre... A task_done/task_failed event reports the result (e.g. reason need_axe).",
         "input_schema": {
             "type": "object",
             "properties": {
                 "item": {"type": "string", "description": "Item id, e.g. \"Wood\"."},
-                "qty": {"type": "integer", "description": "How many more to collect."},
+                "qty": {"type": "integer", "description": "How many more to collect. Omit to collect everything nearby "
+                        "(e.g. 'chop up those logs')."},
                 "radius": {"type": "number", "description": "Search radius in metres around where you start (default 40)."},
                 "source": {
                     "type": "string",
@@ -151,7 +155,7 @@ TOOLS: list[dict[str, Any]] = [
                 },
                 "queue": {"type": "boolean", "description": "true = run after your current work instead of right away."},
             },
-            "required": ["item", "qty"],
+            "required": ["item"],
         },
     },
     {

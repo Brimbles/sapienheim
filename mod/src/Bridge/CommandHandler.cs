@@ -163,10 +163,10 @@ namespace ValheimCompanion.Bridge
                 case "gather":
                 {
                     string item = (string)args["item"];
-                    int qty = args["qty"] != null ? (int)args["qty"] : 0;
-                    if (string.IsNullOrEmpty(item) || qty <= 0)
+                    int qty = args["qty"] != null ? (int)args["qty"] : 0; // 0 = everything nearby
+                    if (string.IsNullOrEmpty(item))
                     {
-                        return "need_item_and_qty";
+                        return "need_item";
                     }
                     float radius = args["radius"] != null ? Mathf.Clamp((float)args["radius"], 5f, 60f) : 40f;
                     string source = (string)args["source"];
@@ -174,7 +174,7 @@ namespace ValheimCompanion.Bridge
                     {
                         return "source_must_be_pick_chop_or_mine";
                     }
-                    return Queue(companion, args, $"gather({qty} {item})",
+                    return Queue(companion, args, $"gather({(qty > 0 ? qty.ToString() : "all")} {item})",
                         () => companion.Tasks.CommandGather(item, qty, radius, source, TaskId(args, cmdId)));
                 }
                 case "store_items":

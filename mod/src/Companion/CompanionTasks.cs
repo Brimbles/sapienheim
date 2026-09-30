@@ -499,7 +499,7 @@ namespace ValheimCompanion.Companion
             switch (_gather.Tick(out string reason))
             {
                 case CompanionGather.Status.Done:
-                    Complete(true, new JObject { ["task"] = Gather, ["item"] = _gather.Item, ["collected"] = _gather.Wanted });
+                    Complete(true, new JObject { ["task"] = Gather, ["item"] = _gather.Item, ["collected"] = _gather.Collected });
                     break;
                 case CompanionGather.Status.Failed:
                     Complete(false, new JObject

@@ -69,16 +69,21 @@ namespace ValheimCompanion.Companion
         }
 
         public string Item => _item;
-        public int Collected => _inventory.Count(_item) - (_goal - Wanted);
+        public int Collected => _inventory.Count(_item) - _startCount;
+        /// <summary>How many were asked for, or -1 for "everything nearby".</summary>
         public int Wanted { get; private set; }
+        private bool All => Wanted < 0;
+        private int _startCount;
 
+        /// <param name="qty">How many more to collect; 0 or less means everything nearby.</param>
         /// <param name="source">"pick", "chop", "mine" or null for anything.</param>
         public void Start(string item, int qty, float radius, string source = null)
         {
+            _startCount = _inventory.Count(item);
             _only = source == "pick" ? Tool.None : source == "chop" ? Tool.Axe : source == "mine" ? Tool.Pickaxe : (Tool?)null;
             _item = item;
-            Wanted = qty;
-            _goal = _inventory.Count(item) + qty;
+            Wanted = qty > 0 ? qty : -1;
+            _goal = qty > 0 ? _startCount + qty : int.MaxValue;
             _origin = _character.transform.position;
             _radius = radius;
             _target = null;
@@ -107,6 +112,15 @@ namespace ValheimCompanion.Companion
             if (count >= _goal)
             {
                 return Status.Done;
+            }
+            if (!HasRoomFor(_item))
+            {
+                if (All && Collected > 0)
+                {
+                    return Status.Done; // collected as much as fits
+                }
+                failReason = "inventory_full";
+                return Status.Failed;
             }
             if (count > _lastCount)
             {
@@ -142,6 +156,10 @@ namespace ValheimCompanion.Companion
                     // Give felled trees and fresh drops a moment to appear before giving up.
                     if (Time.time - _lastProgress > 8f)
                     {
+                        if (All && Collected > 0)
+                        {
+                            return Status.Done; // cleared everything nearby
+                        }
                         failReason = _blockedReason ?? (_skippedWarded ? "only_sources_inside_wards" : "no_source_nearby");
                         return Status.Failed;
                     }
@@ -484,6 +502,13 @@ namespace ValheimCompanion.Companion
         }
 
         private bool InRange(Vector3 p) => Vector3.Distance(p, _origin) <= _radius;
+
+        private bool HasRoomFor(string prefab)
+        {
+            GameObject go = ObjectDB.instance.GetItemPrefab(prefab);
+            ItemDrop drop = go ? go.GetComponent<ItemDrop>() : null;
+            return drop == null || _inventory.Inventory.CanAddItem(drop.m_itemData.Clone(), 1);
+        }
 
         private bool Warded(Vector3 p)
         {
