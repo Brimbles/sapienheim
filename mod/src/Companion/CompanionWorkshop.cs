@@ -8,7 +8,8 @@ namespace ValheimCompanion.Companion
     /// <summary>Server-side helpers for chests and crafting. No movement: CompanionTasks walks there first.</summary>
     internal static class CompanionWorkshop
     {
-        public const float Reach = 2.5f;
+        // Beyond BaseAI.Follow's 3 m stopping distance, see CompanionGather.Reach.
+        public const float Reach = 3.6f;
 
         // ---------- Wards ----------
 

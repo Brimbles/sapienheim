@@ -39,8 +39,9 @@ namespace ValheimCompanion.Companion
         private const float ArriveDistance = 3.5f;
         private const float GoToTimeout = 180f;
         private const float HandoverTimeout = 120f;
-        private const float PickupReach = 2.5f;
-        private const float GiveReach = 3.5f;
+        // Beyond BaseAI.Follow's 3 m stopping distance, see CompanionGather.Reach.
+        private const float PickupReach = 3.6f;
+        private const float GiveReach = 3.6f;
         private const int MaxQueue = 8;
         private const float CraftSeconds = 2f;
         private const float StationTimeout = 120f;
@@ -619,7 +620,7 @@ namespace ValheimCompanion.Companion
             {
                 _ai.SetFollowTarget(_waypoint);
             }
-            return Vector3.Distance(point, _character.transform.position) <= CompanionWorkshop.Reach + 0.5f;
+            return Vector3.Distance(point, _character.transform.position) <= CompanionWorkshop.Reach;
         }
 
         private Vector3 ClosestPoint(Component target)

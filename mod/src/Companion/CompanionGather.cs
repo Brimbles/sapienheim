@@ -27,7 +27,9 @@ namespace ValheimCompanion.Companion
 
         private const float SearchInterval = 1f;
         private const float SwingInterval = 1.3f;
-        private const float Reach = 2.5f;
+        // BaseAI.Follow stops moving once within 3 m of its target, so anything we walk up to must count
+        // as reached a little beyond that, or the companion parks just out of reach forever.
+        private const float Reach = 3.6f;
         private const float StuckSeconds = 90f;
         private const float MaxSeconds = 600f;
 
@@ -120,6 +122,12 @@ namespace ValheimCompanion.Companion
                 }
                 _nextSearch = Time.time + SearchInterval;
                 _target = FindSource();
+                if (_target != null)
+                {
+                    Jotunn.Logger.LogInfo($"{_character.m_name}: gather {_item} from {Utils.GetPrefabName(_target.Target.gameObject)} " +
+                                          $"({_target.Target.GetType().Name}, tool {_target.Tool}) " +
+                                          $"{Vector3.Distance(ClosestPoint(_target.Target), _character.transform.position):F1} m away");
+                }
                 if (_target == null)
                 {
                     // Give felled trees and fresh drops a moment to appear before giving up.
