@@ -10,6 +10,24 @@ namespace ValheimCompanion.Companion
     {
         public const float Reach = 2.5f;
 
+        // ---------- Wards ----------
+
+        /// <summary>
+        /// Inside any active ward (guard stone), whoever owns it. Gathering never happens there, so the
+        /// companion doesn't chop, mine or harvest around anyone's base, including its master's.
+        /// </summary>
+        public static bool InWard(Vector3 point)
+        {
+            foreach (PrivateArea ward in PrivateArea.m_allAreas)
+            {
+                if (ward && ward.IsEnabled() && ward.IsInside(point, 0f))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         // ---------- Chests ----------
 
         /// <summary>Containers the companion may use near a point, for the state snapshot.</summary>

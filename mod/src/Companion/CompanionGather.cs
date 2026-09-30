@@ -9,6 +9,7 @@ namespace ValheimCompanion.Companion
     /// stumps with an axe, or mining rocks with a pickaxe. What a source yields comes from its drop
     /// table, so "Wood", "Stone", "Resin", "CopperOre" and so on all work the same way.
     /// Hits are applied directly as HitData using the tool's damage and tier (no swing animation yet).
+    /// Nothing inside an active ward is touched: no chopping, mining, picking or taking items near a base.
     /// </summary>
     internal class CompanionGather
     {
@@ -48,6 +49,7 @@ namespace ValheimCompanion.Companion
         private float _lastProgress;
         private float _deadline;
         private string _blockedReason; // why sources exist but can't be used (e.g. need_axe)
+        private bool _skippedWarded;
 
         public CompanionGather(Humanoid character, MonsterAI ai, CompanionInventory inventory)
         {
@@ -122,7 +124,7 @@ namespace ValheimCompanion.Companion
                     // Give felled trees and fresh drops a moment to appear before giving up.
                     if (Time.time - _lastProgress > 8f)
                     {
-                        failReason = _blockedReason ?? "no_source_nearby";
+                        failReason = _blockedReason ?? (_skippedWarded ? "only_sources_inside_wards" : "no_source_nearby");
                         return Status.Failed;
                     }
                     return Status.Running;
@@ -196,6 +198,7 @@ namespace ValheimCompanion.Companion
         private Source FindSource()
         {
             _blockedReason = null;
+            _skippedWarded = false;
 
             // 1. Already on the ground.
             Source best = null;
@@ -203,7 +206,7 @@ namespace ValheimCompanion.Companion
             foreach (ItemDrop drop in ItemDrop.s_instances)
             {
                 if (drop && drop.m_nview && drop.m_nview.IsValid() && CompanionInventory.PrefabName(drop.m_itemData) == _item
-                    && InRange(drop.transform.position))
+                    && InRange(drop.transform.position) && !Warded(drop.transform.position))
                 {
                     Consider(new Source { Target = drop }, ref best, ref bestDist);
                 }
@@ -219,7 +222,7 @@ namespace ValheimCompanion.Companion
             for (int i = 0; i < n; i++)
             {
                 Source source = Classify(s_overlap[i]);
-                if (source == null || !seen.Add(source.Target) || !IsUsable(source))
+                if (source == null || !seen.Add(source.Target) || !IsUsable(source) || Warded(source.Target.transform.position))
                 {
                     continue;
                 }
@@ -374,6 +377,16 @@ namespace ValheimCompanion.Companion
         }
 
         private bool InRange(Vector3 p) => Vector3.Distance(p, _origin) <= _radius;
+
+        private bool Warded(Vector3 p)
+        {
+            if (!CompanionWorkshop.InWard(p))
+            {
+                return false;
+            }
+            _skippedWarded = true;
+            return true;
+        }
 
         private ItemDrop.ItemData BestTool(Tool kind)
         {

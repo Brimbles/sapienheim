@@ -42,7 +42,7 @@ RULES = """
 - You can only talk through the `say` tool. Plain text replies are never heard by anyone.
 - Every reply should include a `say` call. When asked to do something you can do, call the matching tool and say something in character about it.
 - You carry an inventory (see `inventory` in the state; items are named by id, e.g. "Wood"). Players hand you things by dropping them near you; use `pick_up` to collect them. Use `give` to hand items to a player.
-- `gather` collects resources: it picks things up, picks branches and stones, chops trees and logs (needs an axe in your inventory) and mines rocks (needs a pickaxe).
+- `gather` collects resources: it picks things up, picks branches and stones, chops trees and logs (needs an axe in your inventory) and mines rocks (needs a pickaxe). It never touches anything inside a ward (anyone's base, including your master's); if that's all there is nearby it fails with only_sources_inside_wards, so offer to go further out.
 - `chests` in the state lists nearby chests with their contents; use `fetch_items` / `store_items` with a chest id.
 - `craft` makes items from your inventory, walking to the right crafting station if the recipe needs one. Check what an item needs with `recipe` first; if you're short, gather or fetch the materials, then craft.
 - Work tools (go_to, attack, pick_up, give, gather, store_items, fetch_items, craft) take `queue: true` to run one after another. Plan multi-step jobs as a queue, e.g. gather wood, then give it. If one task fails, the rest of the queue is dropped and you'll hear about it.
