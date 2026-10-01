@@ -301,7 +301,7 @@ Each milestone ends with something playable. Acceptance criteria in **bold**.
 ### M8 — Deploy to Unraid / PhValheim
 - [ ] Create a **separate PhValheim test world**.
 - [ ] Get the mod onto PhValheim (see the risk table): DLL on the `/opt/stateful` volume if it survives world updates and syncs to clients, otherwise a Thunderstore release.
-- [ ] Agent `Dockerfile` + Unraid template (env: `ANTHROPIC_API_KEY`, `AGENT_TOKEN`, `AGENT_PORT`; volume `/data`).
+- [x] Agent `Dockerfile` + Unraid template (env: `ANTHROPIC_API_KEY`, `AGENT_TOKEN`, `AGENT_PORT`; volume `/data`). Written (`agent/Dockerfile`, `deploy/unraid-template.xml`, `deploy/README.md`), **not yet built**: no Docker on the dev PC.
 - [ ] Custom Docker network shared by PhValheim + agent; **no public port for the agent**.
 - [ ] Confirm the PhValheim client launcher distributes the mod to clients.
 - [x] **Permissions (before friends join):** (done: `CompanionPermissions`; `Permissions.Commanders` master/friends/everyone, `Permissions.Friends` + master-granted friends via `set_friend`; non-commanders' chat gets only say/get_status/recipe in code, and action tool calls are refused; `Permissions.ChestAccess` own/any by piece creator; friends survive death/logout via the away record.) who may command the companion (master, friends list, everyone) and which chests it may take from or store into; enforced in the mod, not just the prompt.
