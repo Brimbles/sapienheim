@@ -23,6 +23,7 @@ namespace ValheimCompanion.Companion
             public float Deadline;
             public string ReturnEvent;   // "respawned" / "logged_in" when coming back from the away record
             public JObject ReturnData;
+            public System.Action<bool> OnDone; // spawned (true) or gave up (false)
             public byte[] Inventory;     // carried over from the previous life
             public float NextDiagnostic;
         }
@@ -32,13 +33,21 @@ namespace ValheimCompanion.Companion
 
         public static void RequestSpawn(long sender, Vector3 pos, long masterId, string masterName,
                                         bool snapToGround = false, string returnEvent = null, JObject returnData = null,
-                                        byte[] inventory = null)
+                                        byte[] inventory = null, System.Action<bool> onDone = null)
         {
+            // cmp_spawn while the companion is away (dead, logged out, dismissed): bring it back, inventory and all,
+            // rather than creating a second, empty one.
+            if (returnEvent == null && CompanionRespawn.Away)
+            {
+                CompanionRespawn.ReturnNow(pos, sender);
+                return;
+            }
             if (FindExisting() != null)
             {
                 if (returnEvent != null)
                 {
-                    Jotunn.Logger.LogInfo($"Return ({returnEvent}) skipped: a companion already exists");
+                    Jotunn.Logger.LogInfo($"Return ({returnEvent}) deferred: a companion already exists");
+                    onDone?.Invoke(false);
                     return;
                 }
                 Rpcs.Reply(sender, "A companion already exists. Use cmp_despawn first.");
@@ -47,6 +56,7 @@ namespace ValheimCompanion.Companion
             if (s_pending != null)
             {
                 Rpcs.Reply(sender, "A spawn is already in progress.");
+                onDone?.Invoke(false);
                 return;
             }
             Jotunn.Logger.LogInfo($"Spawn requested at {pos:F0} for '{masterName}' ({masterId})");
@@ -54,6 +64,7 @@ namespace ValheimCompanion.Companion
             {
                 Pos = pos, SnapToGround = snapToGround, MasterId = masterId, MasterName = masterName, Sender = sender,
                 Deadline = Time.time + SpawnTimeout, ReturnEvent = returnEvent, ReturnData = returnData, Inventory = inventory,
+                OnDone = onDone,
             };
             // On a dedicated server the area must be loaded around the spawn point first.
             ZoneKeeper.SetPendingAnchor(pos);
@@ -62,28 +73,18 @@ namespace ValheimCompanion.Companion
         public static void Despawn(long sender)
         {
             ZDO zdo = FindExisting();
-            if (zdo == null)
+            if (zdo == null && !CompanionRespawn.Away)
             {
                 Rpcs.Reply(sender, "No companion to despawn.");
                 return;
             }
-            ZNetView view = ZNetScene.instance.FindInstance(zdo);
-            if (view)
-            {
-                ZNetScene.instance.Destroy(view.gameObject);
-            }
-            else
-            {
-                zdo.SetOwner(ZDOMan.GetSessionID());
-                ZDOMan.instance.DestroyZDO(zdo);
-            }
-            ZoneKeeper.Instance?.Forget();
-            CompanionRespawn.Clear();
-            Jotunn.Logger.LogInfo("Companion despawned");
-            Rpcs.Reply(sender, "Companion despawned.");
+            // Never lose the inventory: dismissing keeps everything for the next cmp_spawn.
+            CompanionRespawn.Dismiss(zdo);
+            Jotunn.Logger.LogInfo("Companion despawned (dismissed; inventory kept)");
+            Rpcs.Reply(sender, "Companion dismissed. Their things are kept; cmp_spawn brings them back.");
         }
 
-        private static ZDO FindExisting()
+        public static ZDO FindExisting()
         {
             if (ZoneKeeper.IsActive)
             {
@@ -144,6 +145,7 @@ namespace ValheimCompanion.Companion
                 ZoneKeeper.SetPendingAnchor(null);
                 Jotunn.Logger.LogWarning("Spawn timed out waiting for the area to load");
                 Rpcs.Reply(req.Sender, "Spawn timed out waiting for the area to load.");
+                req.OnDone?.Invoke(false);
                 return;
             }
             if (!zoneLoaded || !areaLoaded)
@@ -163,6 +165,7 @@ namespace ValheimCompanion.Companion
             go.GetComponent<CompanionAI>().InitNew(name, req.MasterId, req.MasterName, req.Inventory);
 
             Jotunn.Logger.LogInfo($"Spawned companion {name} for '{req.MasterName}' at {pos:F0}");
+            req.OnDone?.Invoke(true);
             if (req.ReturnEvent != null)
             {
                 AgentClient.SendEvent(req.ReturnEvent, req.ReturnData ?? new JObject());

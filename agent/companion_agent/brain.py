@@ -274,6 +274,11 @@ class Brain:
             # Off duty while nobody is online: no LLM call; mentioned when it logs back in.
             self.notes.append("logged_out: everyone was offline for a while, so you went off duty")
             log.info("logged_out %s", event.data)
+        elif event.name == "summoned":
+            await self.take_turn(
+                "(An admin has summoned you back into the world next to them, with all your belongings. React in character.)",
+                history_line="(Alvar was summoned back)",
+            )
         elif event.name == "logged_in":
             await self.take_turn(
                 "(A player has logged in and you're back on duty beside them. Greet them in character, and if anything "

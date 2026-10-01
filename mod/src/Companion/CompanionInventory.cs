@@ -94,6 +94,42 @@ namespace ValheimCompanion.Companion
             return true;
         }
 
+        /// <summary>
+        /// Take over an inventory saved elsewhere (the away record). <paramref name="replace"/>: it's a newer copy of
+        /// our own inventory, so it replaces ours. Otherwise it belongs to another life of the companion: merge it in,
+        /// and drop anything that doesn't fit at our feet rather than lose it.
+        /// </summary>
+        public void Absorb(byte[] saved, bool replace)
+        {
+            if (replace)
+            {
+                _character.UnequipAllItems();
+                Inventory.Load(new ZPackage(saved));
+                foreach (ItemDrop.ItemData item in Inventory.GetAllItems())
+                {
+                    if (item.m_equipped)
+                    {
+                        item.m_equipped = false;
+                        _character.EquipItem(item, triggerEquipEffects: false);
+                    }
+                }
+                return;
+            }
+
+            var incoming = new Inventory("cmp_absorb", null, 8, 16);
+            incoming.Load(new ZPackage(saved));
+            Vector3 pos = _character.transform.position + Vector3.up;
+            foreach (ItemDrop.ItemData item in incoming.GetAllItems())
+            {
+                ItemDrop.ItemData copy = item.Clone();
+                copy.m_equipped = false;
+                if (!Inventory.CanAddItem(copy) || !Inventory.AddItem(copy))
+                {
+                    ItemDrop.DropItem(copy, copy.m_stack, pos, Quaternion.identity);
+                }
+            }
+        }
+
         public int Count(string prefab)
         {
             int total = 0;

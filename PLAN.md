@@ -255,6 +255,7 @@ Each milestone ends with something playable. Acceptance criteria in **bold**.
 ### M4 — Inventory & crafting
 - [ ] Companion inventory (ZDO-persisted), `give`/`take` interaction with players.
   - Persists through death. The inventory, including equipped items, is serialized into the respawn record (`CompanionRespawn`) and restored when he bounces back. Nothing is dropped.
+  - **Never lost (hard rule).** Every way of leaving the world (death, logout, `cmp_despawn` = dismiss) writes the away record from the ZDO copy of the inventory. The record is deleted only after a successful return, and is written atomically; an unreadable record is set aside as `.corrupt`, never dropped. `cmp_spawn` while away brings the same companion back instead of a new empty one. A return that finds a companion already in the world gives it the inventory: same ZDO (stale copy after a crash) = replace with the newer record; different companion = merge, overflow dropped at its feet.
 - [ ] Chest tools: `store_items`, `fetch_items`, chest registry.
 - [ ] `gather` action (chop trees, pick up drops, mine rocks).
   - Amounts: vague requests ("some wood") mean 20; "everything nearby" only when asked explicitly; hard cap of 100 items per gather (mod-enforced).
