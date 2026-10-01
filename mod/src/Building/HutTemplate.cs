@@ -22,7 +22,11 @@ namespace ValheimCompanion.Building
         public static int ClampWidth(int width) => Mathf.Clamp(width, 1, 5);
 
         /// <summary>Footprint half-extents in metres (x, z), including a margin for the workbench and walls.</summary>
-        public static Vector2 HalfExtents(int width) => new Vector2(width + 3f, Depth + 1.5f);
+        public static Vector2 HalfExtents(int width) => new Vector2(width + FloorMarginX, Depth + FloorMarginZ);
+
+        // Margin around the floor inside the site box: room for the workbench beside it and the eaves.
+        private const float FloorMarginX = 3f;
+        private const float FloorMarginZ = 1.5f;
 
         public static List<BuildStep> Generate(int width, Vector3 origin, float facingYaw)
         {
@@ -51,6 +55,21 @@ namespace ValheimCompanion.Building
             Vector3 bench = origin + facing * new Vector3(halfW + 1.8f, 0f, 0f);
             float benchY = ZoneSystem.instance.GetGroundHeight(bench, out float h) ? h - origin.y : 0f;
             Add("piece_workbench", halfW + 1.8f, benchY, 0f, -90f);
+
+            // Posts: a floor tile only gets support if it touches the ground or rests on something that does, and
+            // an unsupported piece breaks within seconds, before its neighbours exist. So under every tile that
+            // would float, first sink a 2 m pole (pivot at its middle) into the ground, its top at the floor.
+            for (int i = 0; i < width; i++)
+            {
+                for (int j = 0; j < Depth; j++)
+                {
+                    Vector3 cell = origin + facing * new Vector3(CellX(i), 0f, CellZ(j));
+                    if (ZoneSystem.instance.GetGroundHeight(cell, out float g) && origin.y - g > PostGap)
+                    {
+                        Add("wood_pole2", CellX(i), -1f, CellZ(j), 0f);
+                    }
+                }
+            }
 
             // Floor.
             for (int i = 0; i < width; i++)
@@ -127,7 +146,9 @@ namespace ValheimCompanion.Building
             return false;
         }
 
-        private const float MaxHeightRange = 1.0f;
+        // Posts are 2 m, so the floor can sit up to ~1.5 m above the lowest ground under it.
+        private const float MaxHeightRange = 1.5f;
+        private const float PostGap = 0.15f;
 
         private static bool CheckSite(Vector3 centre, Vector2 half, Quaternion facing, out float floorY, out string why)
         {
@@ -149,7 +170,11 @@ namespace ValheimCompanion.Building
                         why = "too_close_to_water";
                         return false;
                     }
-                    floorY = Mathf.Max(floorY, h);
+                    // The floor sits at the highest ground under the floor itself (not the margin around it).
+                    if (Mathf.Abs(x) <= half.x - FloorMarginX && Mathf.Abs(z) <= half.y - FloorMarginZ)
+                    {
+                        floorY = Mathf.Max(floorY, h);
+                    }
                     minY = Mathf.Min(minY, h);
                 }
             }

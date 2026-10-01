@@ -119,6 +119,8 @@ async def scenario_build(r: Runner) -> None:
     if "Hammer" not in have:
         await r.cmd("recipe", item="Hammer")
         await r.task("craft a hammer", "craft", item="Hammer")
+    if have.get("Wood", 0) < 70:
+        await r.task("gather wood for the hut", "gather", item="Wood", qty=70 - have.get("Wood", 0))
     res = await r.cmd("build", template="hut", width=2)
     if not res.ok:
         r.results.append(("build hut", f"rejected: {res.error} {res.data}"))
@@ -137,7 +139,17 @@ async def scenario_build(r: Runner) -> None:
     await r.cmd("save_world")
 
 
-SCENARIOS = {"m4": scenario_m4, "pieces": scenario_pieces, "build": scenario_build}
+async def scenario_inspect(r: Runner) -> None:
+    """Print the pieces and ground heights around a point: scenario.py inspect x y z"""
+    x, y, z = (float(v) for v in sys.argv[2:5])
+    near = await r.conn.command("pieces_near", pos=[x, y, z], radius=12)
+    for p in sorted((near.data or {}).get("pieces", []), key=lambda p: (p["piece"], p["pos"])):
+        log.info("  %-20s pos=%s yaw=%s support=%s creator=%s", p["piece"], p["pos"], p["yaw"], p["support"], p["creator"])
+    for g in (near.data or {}).get("ground", []):
+        log.info("  ground %s", g)
+
+
+SCENARIOS = {"m4": scenario_m4, "pieces": scenario_pieces, "build": scenario_build, "inspect": scenario_inspect}
 
 
 async def run(scenario: str) -> None:

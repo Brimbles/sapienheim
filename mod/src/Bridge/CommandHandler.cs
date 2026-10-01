@@ -76,7 +76,20 @@ namespace ValheimCompanion.Bridge
                         ["creator"] = wnt.GetComponent<Piece>()?.GetCreator() ?? 0,
                     });
                 }
-                Result(cmdId, true, null, new JObject { ["pieces"] = found });
+                // Ground height on a 2 m grid around the centre, to understand support problems.
+                var ground = new JArray();
+                for (int gx = -4; gx <= 4; gx += 2)
+                {
+                    for (int gz = -4; gz <= 4; gz += 2)
+                    {
+                        Vector3 gp = centre + new Vector3(gx, 0f, gz);
+                        if (ZoneSystem.instance.GetGroundHeight(gp, out float gh))
+                        {
+                            ground.Add(new JArray(Round(gp.x), Round(gh), Round(gp.z)));
+                        }
+                    }
+                }
+                Result(cmdId, true, null, new JObject { ["pieces"] = found, ["ground"] = ground });
                 return;
             }
 
