@@ -21,6 +21,7 @@ from typing import Any
 import anthropic
 
 from companion_agent.connection import ModConnection
+from companion_agent.memory import Memory
 from companion_agent.protocol import Event
 
 log = logging.getLogger("companion_agent.brain")
@@ -29,7 +30,6 @@ CHAT_MODEL = os.environ.get("AGENT_CHAT_MODEL", "claude-haiku-4-5")
 PLAN_MODEL = os.environ.get("AGENT_PLAN_MODEL", "claude-sonnet-5-5")
 CALLS_PER_MINUTE = int(os.environ.get("AGENT_CALLS_PER_MINUTE", "10"))
 MAX_STEPS_PER_TURN = 5
-HISTORY_TURNS = 20
 
 # Messages that probably need multi-step planning go to the stronger model.
 PLAN_PATTERN = re.compile(r"\b(build|craft|plan|gather|collect|fetch|make me|go to|and then|then)\b", re.I)
@@ -51,6 +51,7 @@ RULES = """
 - Work tools (go_to, attack, pick_up, give, gather, store_items, fetch_items, craft, build, resume_build) take `queue: true` to run one after another. Plan multi-step jobs as a queue, e.g. gather wood, then give it. If one task fails, the rest of the queue is dropped and you'll hear about it.
 - You'll be told when queued work finishes or fails. Report back in character; if something failed (e.g. need_axe), say what you need.
 - `build` puts up a structure from a template (right now: "hut", a small wooden hut with a workbench, floor, walls, a door and a roof). You choose the template, its size and roughly where; the build code picks level ground there, clears bushes and places every piece. It needs a hammer (craft one: Wood 3, Stone 2) and wood: about 28 + 16 per width cell (a 2-wide hut is about 60). If it fails with missing_materials, gather or fetch what's missing and then call resume_build. The pieces belong to your master.
+- Memory: you keep a long-term memory between sessions (shown as "What you remember"). Use `remember` for things worth keeping: what players like, promises, plans, notable events. Use `name_place` when asked to remember a location, and `go_to` with `place` to go back there.
 - You can't build other kinds of structure yet (forts, villages, roads, portals). Say so in character.
 - Example plan for "get 20 wood and make me a club": recipe(Club) -> gather(Wood, enough for the club plus 20, queue) -> craft(Club, queue) -> give(Club to the player, queue) -> give(Wood, 20, queue). Say what you're about to do first.
 - Never attack players or tamed animals. Use the `id` values from the `nearby` list for `attack`.
@@ -93,6 +94,7 @@ TOOLS: list[dict[str, Any]] = [
                 "x": {"type": "number"},
                 "z": {"type": "number"},
                 "player": {"type": "string", "description": "Go to this player's position instead of x/z."},
+                "place": {"type": "string", "description": "Go to a named place you remember (see Named places)."},
                 "queue": {"type": "boolean", "description": "true = run after your current work instead of right away."},
             },
         },
@@ -241,6 +243,31 @@ TOOLS: list[dict[str, Any]] = [
         "input_schema": {"type": "object", "properties": {"queue": {"type": "boolean", "description": "true = run after your current work instead of right away."},}},
     },
     {
+        "name": "remember",
+        "description": "Write something to your long-term memory (kept between sessions): a player's preference, a promise, "
+        "a plan, a notable event.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "fact": {"type": "string", "description": "One short sentence."},
+                "player": {"type": "string", "description": "The player it's about, if any."},
+            },
+            "required": ["fact"],
+        },
+    },
+    {
+        "name": "name_place",
+        "description": "Remember a location under a name (e.g. 'base', 'the lake', 'copper rocks') so you can go_to it later.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "at": {"type": "string", "description": "'here' (where you are) or a player's name (where they are). Default: here."},
+            },
+            "required": ["name"],
+        },
+    },
+    {
         "name": "get_status",
         "description": "Get a fresh state snapshot (your health, task, nearby creatures, players, environment).",
         "input_schema": {"type": "object", "properties": {}},
@@ -272,12 +299,22 @@ class CallBudget:
 
 
 class Brain:
-    def __init__(self, conn: ModConnection, client: anthropic.AsyncAnthropic, budget: CallBudget | None = None) -> None:
+    def __init__(
+        self,
+        conn: ModConnection,
+        client: anthropic.AsyncAnthropic,
+        budget: CallBudget | None = None,
+        memory: Memory | None = None,
+    ) -> None:
         self.conn = conn
         self.client = client
         self.budget = budget or CallBudget(CALLS_PER_MINUTE)
-        self.history: deque[dict[str, Any]] = deque(maxlen=HISTORY_TURNS * 2)
+        self.memory = memory or Memory()  # in-memory only unless a world's memory is passed in
         self.notes: list[str] = []  # events since the last turn, e.g. "arrived at go_to target"
+
+    @property
+    def history(self) -> list[dict[str, Any]]:
+        return self.memory.history
 
     async def on_event(self, event: Event) -> None:
         if event.name == "player_chat":
@@ -322,6 +359,7 @@ class Brain:
         player = data.get("player", "someone")
         text = str(data.get("text", "")).strip() or "(says your name to get your attention)"
         log.info("chat from %s (%s): %s", player, data.get("via"), text)
+        self.memory.note_player_seen(player)
         line = f"{player} says to you: {text}"
         model = PLAN_MODEL if PLAN_PATTERN.search(text) else CHAT_MODEL
         await self.take_turn(line, history_line=line, model=model)
@@ -335,6 +373,9 @@ class Brain:
 
         state = await self.conn.request_state()
         content = prompt
+        remembered = self.memory.context_block()
+        if remembered:
+            content += "\n\nWhat you remember:\n" + remembered
         if self.notes:
             content += "\n\nSince you last spoke:\n" + "\n".join(f"- {n}" for n in self.notes)
             self.notes.clear()
@@ -342,12 +383,28 @@ class Brain:
 
         spoken, actions = await self.run_turn(model, content)
 
-        # History keeps plain text only: the prompt line and what Alvar said/did.
-        self.history.append({"role": "user", "content": history_line})
+        # History keeps plain text only: the prompt line and what Alvar said/did. It's persisted with the memory.
         summary = " ".join(spoken) or "(said nothing)"
         if actions:
             summary += f" [did: {', '.join(actions)}]"
-        self.history.append({"role": "assistant", "content": summary})
+        self.memory.add_exchange(history_line, summary)
+        if self.memory.needs_compaction() and self.budget.available():
+            await self.memory.compact(self._summarise)
+
+    async def _summarise(self, previous: str, messages: list[dict[str, Any]]) -> str:
+        """Fold old conversation into the running summary (one cheap call)."""
+        self.budget.consume()
+        transcript = "\n".join(f"{m['role']}: {m['content']}" for m in messages)
+        response = await self.client.messages.create(
+            model=CHAT_MODEL,
+            max_tokens=600,
+            system="You maintain a companion character's memory. Write a compact third-person summary (max ~120 words) "
+            "of what happened, merging the previous summary with the new conversation. Keep names, places, promises "
+            "and preferences; drop small talk.",
+            messages=[{"role": "user", "content": f"Previous summary:\n{previous or '(none)'}\n\nNew conversation:\n{transcript}"}],
+        )
+        text = " ".join(b.text for b in response.content if b.type == "text").strip()
+        return text or previous
 
     async def run_turn(self, model: str, content: str) -> tuple[list[str], list[str]]:
         messages: list[dict[str, Any]] = [*self.history, {"role": "user", "content": content}]
@@ -409,6 +466,18 @@ class Brain:
 
     async def _execute(self, block: Any, spoken: list[str], actions: list[str]) -> dict[str, Any]:
         name, args = block.name, dict(block.input or {})
+        if name == "remember":
+            self.memory.remember(str(args.get("fact", "")), args.get("player"))
+            actions.append(f"remember({args.get('fact')})")
+            return _tool_result(block.id, "remembered")
+        if name == "name_place":
+            return await self._name_place(block.id, args, actions)
+        if name == "go_to" and args.get("place"):
+            where = self.memory.place(str(args.pop("place")))
+            if where is None:
+                known = ", ".join(p["name"] for p in self.memory.data["places"].values()) or "none yet"
+                return _tool_result(block.id, f"failed: unknown_place (known: {known})", error=True)
+            args["x"], args["z"] = where
         if name == "get_status":
             state = await self.conn.request_state()
             return _tool_result(block.id, json.dumps(state) if state else "state unavailable", error=state is None)
@@ -424,6 +493,25 @@ class Brain:
             return _tool_result(block.id, json.dumps(data) if data else "ok")
         detail = f" {json.dumps(data)}" if data else ""
         return _tool_result(block.id, f"failed: {result.error}{detail}", error=True)
+
+
+    async def _name_place(self, tool_id: str, args: dict[str, Any], actions: list[str]) -> dict[str, Any]:
+        place, at = str(args.get("name", "")).strip(), str(args.get("at") or "here").strip()
+        if not place:
+            return _tool_result(tool_id, "failed: need a name", error=True)
+        state = await self.conn.request_state() or {}
+        pos = None
+        if at.lower() in ("here", "me", ""):
+            pos = (state.get("self") or {}).get("pos")
+        else:
+            for p in state.get("players", []):
+                if p.get("name", "").lower() == at.lower():
+                    pos = p.get("pos")
+        if not pos:
+            return _tool_result(tool_id, f"failed: don't know where '{at}' is", error=True)
+        self.memory.set_place(place, pos[0], pos[2])
+        actions.append(f"name_place({place})")
+        return _tool_result(tool_id, f"remembered '{place}' at x={pos[0]}, z={pos[2]}")
 
 
 def _worth_reporting(event: Event) -> bool:

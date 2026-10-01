@@ -282,7 +282,7 @@ Each milestone ends with something playable. Acceptance criteria in **bold**.
 - **"Build a small hut here facing the lake" results in a complete, structurally valid hut, fetching materials as needed.**
 
 ### M6 — Memory & personality
-- [ ] Persona file; rolling conversation summary; facts store (player preferences, named places, base location).
+- [x] Persona file; rolling conversation summary; facts store (player preferences, named places, base location). (`agent/companion_agent/memory.py`: one JSON file per world in `agent/data/`; history persisted, oldest 20 messages folded into a summary by Haiku past 40; `remember`, `name_place` and `go_to(place)` tools; a "What you remember" block in each turn.)
 - [ ] Proactive events: dusk, low HP, idle too long, master nearby after absence.
 - [ ] **Per-player memory:** knows each player on the server, what they've done together, and has opinions about them.
 - [ ] **Skaldic Hour:** each in-game evening, a short saga of the day's events (fights, deaths, builds, journeys), told from the agent's event log. A revival of his cancelled mead-hall show.

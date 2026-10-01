@@ -77,7 +77,7 @@ async def _wait_for(predicate, timeout=2.0):
 
 async def _run(script, chat_texts, expect_commands, budget=None, token="secret", expect_llm_calls=0):
     client = FakeClient(script)
-    main.brain_factory = lambda conn: Brain(conn, client, budget)
+    main.brain_factory = lambda conn, world: Brain(conn, client, budget)
     server = await asyncio.start_server(main.handle_mod, "127.0.0.1", 0)
     port = server.sockets[0].getsockname()[1]
     reader, writer = await asyncio.open_connection("127.0.0.1", port)

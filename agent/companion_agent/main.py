@@ -16,6 +16,7 @@ import anthropic
 from companion_agent import __version__
 from companion_agent.brain import Brain
 from companion_agent.connection import ModConnection
+from companion_agent.memory import Memory
 from companion_agent.protocol import Event, Hello, HelloAck, parse
 
 log = logging.getLogger("companion_agent")
@@ -45,12 +46,12 @@ LINE_LIMIT = 8 * 1024 * 1024
 EVENT_QUEUE_SIZE = 5
 
 
-def default_brain_factory(conn: ModConnection) -> Brain:
-    return Brain(conn, anthropic.AsyncAnthropic())
+def default_brain_factory(conn: ModConnection, world: str) -> Brain:
+    return Brain(conn, anthropic.AsyncAnthropic(), memory=Memory.for_world(world))
 
 
 # Tests swap this for a Brain with a fake LLM client.
-brain_factory: Callable[[ModConnection], Brain] = default_brain_factory
+brain_factory: Callable[[ModConnection, str], Brain] = default_brain_factory
 
 
 async def _event_worker(brain: Brain, queue: "asyncio.Queue[Event]") -> None:
@@ -78,7 +79,7 @@ async def handle_mod(reader: asyncio.StreamReader, writer: asyncio.StreamWriter)
         conn = ModConnection(writer)
         await conn.send(HelloAck(agent_version=__version__))
         queue: asyncio.Queue[Event] = asyncio.Queue(maxsize=EVENT_QUEUE_SIZE)
-        worker = asyncio.create_task(_event_worker(brain_factory(conn), queue))
+        worker = asyncio.create_task(_event_worker(brain_factory(conn, hello.world or "world"), queue))
 
         while line := await reader.readline():
             msg = parse(line)
