@@ -301,6 +301,23 @@ Each milestone ends with something playable. Acceptance criteria in **bold**.
 - [ ] Confirm the PhValheim client launcher distributes the mod to clients.
 - **Companion runs on the test world with friends connected, and keeps working overnight.**
 
+### M9 — Settlements & roads
+Builds on M5 (placement, blueprints, templates) and M6 (named places).
+- [ ] **Roads with the pave tool:** route between two named places (settlements) over the heightmap, avoiding water and steep slopes, then level and pave along it by placing the hoe's terrain modifiers, as a player does. Needs a hoe; consumes stamina-equivalent time; respects wards.
+- [ ] **Procedural villages:** a layout generator (centre, building plots, connecting paths, optional fence ring) using M5 templates, with variety from size, building choice and orientation. The LLM chooses *what* and *where* ("a village of 4 huts by the lake"); code places every piece. Materials are gathered or fetched as needed.
+- **"Build a small village by the lake and pave a road to it from base" produces a varied, connected settlement.**
+
+### M10 — Expeditions & travel
+- [ ] **Long-range missions:** send the companion far away to do a job (e.g. build something). The trip is split into legs, because pathfinding only works inside the loaded area; ZoneKeeper loads and generates terrain ahead of it. It reports progress through the agent, shows on the map (M4.5) and handles hazards (water, cliffs, fights). On a mission, death respawns it at the mission site, or ends the mission and reports, instead of respawning beside the master. Limit: the server simulates one place at a time, so one companion on one mission.
+- [ ] **Portals (use):** creatures can't use portals in vanilla, so the server moves the companion itself. It walks into a portal; the server finds the paired portal by tag and moves it there; ZoneKeeper loads the destination. It obeys the no-ore rule (won't teleport with non-teleportable items).
+- [ ] **Portals (build):** after M5, build a portal at a remote spot with a chosen tag, return home and tell the master the tag so they can build the matching portal.
+- [ ] **Boats (spike first):** join the master on a ship. The AI can't path onto a moving ship, so "board" places it on the deck and holds it there. Unknown: whether a server-owned character stays stable on a ship steered by a client.
+- **"Go north, build a portal tagged 'north', and come back" works with no player nearby, and the companion can ride along on the master's boat.**
+
+### M11 — Fishing
+- [ ] **Simulated fishing:** vanilla fishing (cast, float, reel) is player-driven, so the companion fishes in simulation instead. Needs a rod and bait in its inventory; stands at the water's edge with a fishing animation; catches arrive over time according to biome and bait, consuming bait.
+- **"Go catch some fish" returns fish appropriate to the biome and bait.**
+
 ### Later
 - Voice (STT/TTS), multiple companions, skills/stamina emulation, companion-to-companion chat, Thunderstore release.
 
