@@ -17,7 +17,6 @@ An LLM-powered NPC companion for Valheim that can talk, follow, fight, gather, c
 ### Non-goals (for now)
 - A second Steam account / bot player client / computer-use (screen + input) control.
 - The LLM controlling movement frame by frame.
-- Public Thunderstore release (maybe later).
 
 ---
 
@@ -99,7 +98,8 @@ sapienheim/
 │  │  ├─ Net/Rpcs.cs            # CMP_Say, CMP_PlayerChat, ...
 │  │  ├─ Chat/ChatPatches.cs    # Harmony patches capturing player chat
 │  │  └─ World/ZoneKeeper.cs    # keep companion zone loaded when no players
-│  └─ blueprints/               # starter blueprints
+│  ├─ blueprints/               # starter blueprints
+│  └─ thunderstore/             # package files (manifest, icon, README, changelog)
 ├─ agent/                       # Python agent
 │  ├─ pyproject.toml
 │  ├─ companion_agent/
@@ -300,7 +300,7 @@ Each milestone ends with something playable. Acceptance criteria in **bold**.
 
 ### M8 — Deploy to Unraid / PhValheim
 - [ ] Create a **separate PhValheim test world**.
-- [ ] Get the mod onto PhValheim (see the risk table): DLL on the `/opt/stateful` volume if it survives world updates and syncs to clients, otherwise a Thunderstore release.
+- [ ] Get the mod onto PhValheim by **publishing it to Thunderstore** as `Sapienheim` (decided over hand-copying a DLL onto the `/opt/stateful` volume: Thunderstore is PhValheim's supported route, and its launcher gives players the same version). [x] Packaging: Release builds write `mod/bin/thunderstore/Sapienheim-<version>.zip` from `mod/thunderstore/` (manifest, icon, README, changelog). [ ] First upload, after the play-test.
 - [x] Agent `Dockerfile` + Unraid template (env: `ANTHROPIC_API_KEY`, `AGENT_TOKEN`, `AGENT_PORT`; volume `/data`). Written (`agent/Dockerfile`, `deploy/unraid-template.xml`, `deploy/README.md`), **not yet built**: no Docker on the dev PC.
 - [ ] Custom Docker network shared by PhValheim + agent; **no public port for the agent**.
 - [ ] Confirm the PhValheim client launcher distributes the mod to clients.
@@ -360,7 +360,7 @@ Make the offline simulation (M7) earn its keep.
 - [x] **Status dashboard:** (http://127.0.0.1:7778, localhost only; `agent/companion_agent/dashboard.py` + `status.py`; spend estimated from API usage at Haiku $1/$5 and Sonnet 5.5 $2/$10 per MTok.) a small web page served by the agent showing the companion's location, inventory, task queue, recent events and today's Claude API spend.
 
 ### Later
-- Voice (STT/TTS), multiple companions, skills/stamina emulation, companion-to-companion chat, Thunderstore release.
+- Voice (STT/TTS), multiple companions, skills/stamina emulation, companion-to-companion chat.
 
 ---
 
@@ -374,7 +374,7 @@ Make the offline simulation (M7) earn its keep.
 | LLM cost when running 24/7 | Event-driven calls, Haiku by default, per-hour budget, offline budget mode |
 | LLM spatial reasoning for builds | Blueprints/templates only; the LLM picks from named options |
 | Valheim updates breaking Harmony patches | Keep patches few and isolated; pin the game version on the server |
-| PhValheim custom mod support: its README documents only Thunderstore/Hexium mods and `custom_configs/`, with no custom DLLs | Spike before M8: test whether a DLL dropped into the world's `BepInEx/plugins` on the `/opt/stateful` volume survives a world update and reaches clients. Fallback: publish the mod to Thunderstore |
+| PhValheim custom mod support: its README documents only Thunderstore/Hexium mods and `custom_configs/`, with no custom DLLs | **Resolved:** publish the mod to Thunderstore. Every change needs a release, so iterate on the local dev server and publish tested versions. The package is public; it holds no secrets (token in server config, API key in the agent). |
 | Chat addressing (how does a message reach the companion?) | Decided in M2: both. `@Name ...` (e.g. `@Alvar`) works from anywhere. Plain chat counts when the speaker is within 10 m and no other player is that close to them. The server re-checks both. |
 | Security of the agent port | Private Docker network, shared secret, never exposed publicly |
 

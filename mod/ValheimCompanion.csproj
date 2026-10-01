@@ -36,4 +36,24 @@
     <Message Importance="high" Text="Deployed $(AssemblyName) to %(_DeployRoot.Identity)\BepInEx\plugins" Condition="'@(_DeployRoot)' != ''" />
     <Warning Text="No BepInEx install found to deploy to; check mod/Environment.props" Condition="'@(_DeployRoot)' == ''" />
   </Target>
+
+  <!-- Release builds also produce the Thunderstore upload: bin/thunderstore/Sapienheim-<version>.zip.
+       The version comes from Plugin.PluginVersion, so bump it there (and add a CHANGELOG entry) before a release. -->
+  <Target Name="ThunderstorePackage" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
+    <PropertyGroup>
+      <_PluginSource>$([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)\src\Plugin.cs'))</_PluginSource>
+      <_PackageVersion>$([System.Text.RegularExpressions.Regex]::Match($(_PluginSource), 'PluginVersion = "(\d+\.\d+\.\d+)"').Groups[1].Value)</_PackageVersion>
+      <_StageDir>$(BaseIntermediateOutputPath)thunderstore\</_StageDir>
+      <_PackageZip>$(MSBuildProjectDirectory)\bin\thunderstore\Sapienheim-$(_PackageVersion).zip</_PackageZip>
+      <_Manifest>$([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)\thunderstore\manifest.json').Replace('{VERSION}', $(_PackageVersion)))</_Manifest>
+    </PropertyGroup>
+    <Error Text="Couldn't read PluginVersion (x.y.z) from src/Plugin.cs" Condition="'$(_PackageVersion)' == ''" />
+    <RemoveDir Directories="$(_StageDir)" />
+    <Copy SourceFiles="thunderstore\icon.png;thunderstore\README.md;thunderstore\CHANGELOG.md;$(TargetDir)$(TargetName).dll" DestinationFolder="$(_StageDir)" />
+    <!-- ASCII: no UTF-8 byte-order mark, which JSON parsers can reject; Escape keeps any ; in the text intact. -->
+    <WriteLinesToFile File="$(_StageDir)manifest.json" Lines="$([MSBuild]::Escape($(_Manifest)))" Overwrite="true" Encoding="us-ascii" />
+    <MakeDir Directories="$(MSBuildProjectDirectory)\bin\thunderstore" />
+    <ZipDirectory SourceDirectory="$(_StageDir)" DestinationFile="$(_PackageZip)" Overwrite="true" />
+    <Message Importance="high" Text="Thunderstore package: $(_PackageZip)" />
+  </Target>
 </Project>

@@ -1,11 +1,11 @@
 # Deploying to Unraid / PhValheim
 
 Three pieces need to be in place:
-- the **ValheimCompanion** mod on the PhValheim server (Linux), with the same DLL in every player's game;
+- the **Sapienheim** mod, published on Thunderstore and installed by PhValheim on the server (Linux) and every player's game;
 - the **agent** container;
 - a **private Docker network** joining them.
 
-> Status: written but **not yet tried**. Docker wasn't available on the dev PC, so the image hasn't been built yet. Do this on a separate PhValheim **test world** first.
+> Status: written but **not yet tried**. Docker wasn't available on the dev PC, so the image hasn't been built yet, and the mod isn't published yet. Do this on a separate PhValheim **test world** first.
 
 ## 1. Private network
 On Unraid, open a terminal:
@@ -22,18 +22,29 @@ Edit the **PhValheim** container: set *Network Type* to `Custom: sapienheim` and
 2. Copy `deploy/unraid-template.xml` to `/boot/config/plugins/dockerMan/templates-user/my-sapienheim-agent.xml`.
 3. Docker → **Add Container** → template **sapienheim-agent**, then fill in:
    - **Claude API key** (masked).
-   - **Agent token:** a long random string, for example `openssl rand -base64 24`. Use the same value in the mod config (step 3).
+   - **Agent token:** a long random string, for example `openssl rand -base64 24`. Use the same value in the mod config (section 4).
    - **Memory / data:** `/mnt/user/appdata/sapienheim-agent`.
    - **Dashboard:** only map it if you want it on your LAN.
 4. Start it. Its log should say `listening on 0.0.0.0:7777`.
 
-## 3. Mod on the PhValheim server
-PhValheim installs mods from Thunderstore and Hexium, so a custom DLL is the open question. Spike it on the test world:
+## 3. Publish the mod to Thunderstore
+PhValheim installs mods from Thunderstore, and its launcher gives every player the same version, so the mod goes there as the package **Sapienheim**.
 
-1. Find the test world's BepInEx folder on the `/opt/stateful` volume and drop in:
-   - `ValheimCompanion.dll` under `BepInEx/plugins/ValheimCompanion/`.
-   - **Jötunn** from Thunderstore (add it in PhValheim's mod picker; that's the supported route).
-2. Put the server config in the world's `BepInEx/config/` as `com.sapienheim.valheimcompanion.cfg`. **Check this:** it holds the token, so it must **not** be sent to clients. If PhValheim syncs `BepInEx/config` to players, use its server-only config location instead (check the PhValheim docs; the name `custom_configs_secure` is unverified). It needs:
+1. Bump `PluginVersion` in `mod/src/Plugin.cs` and add a section to `mod/thunderstore/CHANGELOG.md`. Thunderstore never accepts the same version twice.
+2. Build in Release:
+   ```sh
+   dotnet build mod/ValheimCompanion.csproj -c Release
+   ```
+   This writes `mod/bin/thunderstore/Sapienheim-<version>.zip`, containing `manifest.json` (version filled in), `icon.png`, `README.md`, `CHANGELOG.md` and the DLL. The package files live in `mod/thunderstore/`.
+3. The first time only: sign in at thunderstore.io and create a team.
+4. Upload the zip at thunderstore.io → **Upload**, choosing the **Valheim** community and fitting categories (for example Server-side and Client-side). The upload page validates the zip.
+5. Keep developing against the local dev server. Only publish when a version has passed `TESTING.md`.
+
+The dependencies are BepInExPack_Valheim and Jötunn, at the versions in `mod/thunderstore/manifest.json`. Keep the Jötunn version in step with `JotunnLib` in the `.csproj`.
+
+## 4. Mod on the PhValheim server
+1. On a **test world**, add **Sapienheim** in PhValheim's mod picker. It brings Jötunn and BepInEx with it.
+2. Start the world once, so the mod writes its default config. Then fill in `com.sapienheim.valheimcompanion.cfg` in the world's `BepInEx/config/`:
    ```ini
    [Agent]
    Host = sapienheim-agent      ; the agent container's name on the sapienheim network
@@ -49,16 +60,15 @@ PhValheim installs mods from Thunderstore and Hexium, so a custom DLL is the ope
    Friends =                    ; comma-separated player names
    ChestAccess = own
    ```
+   **Check this:** the file holds the token, so it must **not** be sent to players. If PhValheim syncs `BepInEx/config` to clients, use its server-only config location instead (check the PhValheim docs).
 3. Restart the world and check its log for:
-   - `ValheimCompanion 0.1.0 loaded (headless=True)`
+   - `ValheimCompanion <version> loaded (headless=True)`
    - `LocalPlayerGuards: made 5 vanilla owner-side methods safe…`
    - `Connected to agent`
-4. Update the world in PhValheim (for example add or remove any mod) and check **whether the DLL survives**.
-5. Join with the PhValheim launcher and check **whether the DLL reaches clients**. Every player needs the same mod; the mod enforces this.
+4. Update the world in PhValheim (for example add or remove a mod). Check that the config edits survive, and so does the companion's away record in `BepInEx/config/sapienheim/`, which holds its inventory while it's logged out.
+5. Join with the PhValheim launcher. The mod should arrive automatically. Every player needs the same version; Jötunn enforces this.
 
-If PhValheim won't keep or distribute the DLL, the fallback is publishing the mod to Thunderstore (see PLAN.md, risks).
-
-## 4. First run on Linux
+## 5. First run on Linux
 Watch the world log for anything different from the Windows dev server, especially:
 - **path or case-sensitivity errors**, which affect the away-record file under `BepInEx/config/sapienheim/`;
 - `NullReferenceException`s from **headless-only code paths**;
