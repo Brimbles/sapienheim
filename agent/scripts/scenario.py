@@ -100,7 +100,16 @@ async def scenario_m4(r: Runner) -> None:
     await r.cmd("save_world")
 
 
-SCENARIOS = {"m4": scenario_m4}
+async def scenario_pieces(r: Runner) -> None:
+    """Dump build-piece geometry (snap points) and costs, for designing templates."""
+    await r.cmd("save_world")
+    res = await r.conn.command("piece_info", filter="")
+    out = Path(__file__).resolve().parent / "pieces.json"
+    out.write_text(json.dumps(res.data, indent=1), encoding="utf-8")
+    r.results.append(("piece_info", f"{len((res.data or {}).get('pieces', []))} pieces -> {out.name}"))
+
+
+SCENARIOS = {"m4": scenario_m4, "pieces": scenario_pieces}
 
 
 async def run(scenario: str) -> None:
@@ -141,7 +150,7 @@ async def run(scenario: str) -> None:
             writer.close()
             done.set()
 
-    server = await asyncio.start_server(handle, agent_main.HOST, agent_main.PORT)
+    server = await asyncio.start_server(handle, agent_main.HOST, agent_main.PORT, limit=agent_main.LINE_LIMIT)
     log.info("scenario %s waiting for the mod on %s:%d", scenario, agent_main.HOST, agent_main.PORT)
     async with server:
         await done.wait()

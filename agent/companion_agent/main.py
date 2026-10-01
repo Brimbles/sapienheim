@@ -40,6 +40,8 @@ PORT = int(os.environ.get("AGENT_PORT", "7777"))
 TOKEN = os.environ.get("AGENT_TOKEN", "")
 
 HANDSHAKE_TIMEOUT = 10.0
+# asyncio's default line limit is 64 KB; command results and state snapshots can be bigger.
+LINE_LIMIT = 8 * 1024 * 1024
 EVENT_QUEUE_SIZE = 5
 
 
@@ -107,7 +109,7 @@ async def main() -> None:
         raise SystemExit("AGENT_TOKEN must be set")
     if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
         raise SystemExit("No Claude credentials: add ANTHROPIC_API_KEY=... to agent/.env (never commit it)")
-    server = await asyncio.start_server(handle_mod, HOST, PORT)
+    server = await asyncio.start_server(handle_mod, HOST, PORT, limit=LINE_LIMIT)
     log.info("listening on %s:%d", HOST, PORT)
     async with server:
         await server.serve_forever()

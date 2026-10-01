@@ -34,3 +34,4 @@ mod/Environment.props
 
 # Decompiled game code (copyrighted, reference only)
 .decompiled/
+agent/scripts/pieces.json

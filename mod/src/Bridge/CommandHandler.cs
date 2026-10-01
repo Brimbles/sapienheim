@@ -35,6 +35,22 @@ namespace ValheimCompanion.Bridge
             string action = (string)msg["action"];
             JObject args = msg["args"] as JObject ?? new JObject();
 
+            if (action == "piece_info")
+            {
+                // Testing/design command: geometry and costs of build pieces (filter = substring of the prefab name).
+                string filter = ((string)args["filter"] ?? "").ToLowerInvariant();
+                var list = new JArray();
+                foreach (string name in Building.PieceCatalog.Names)
+                {
+                    if (filter.Length == 0 || name.ToLowerInvariant().Contains(filter))
+                    {
+                        list.Add(Building.PieceCatalog.Describe(Building.PieceCatalog.Get(name)));
+                    }
+                }
+                Result(cmdId, true, null, new JObject { ["pieces"] = list });
+                return;
+            }
+
             if (action == "save_world")
             {
                 // Operator/testing command (not an LLM tool): the same save as the admin "save" console command.
