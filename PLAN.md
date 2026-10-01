@@ -283,6 +283,9 @@ Each milestone ends with something playable. Acceptance criteria in **bold**.
 ### M6 — Memory & personality
 - [ ] Persona file; rolling conversation summary; facts store (player preferences, named places, base location).
 - [ ] Proactive events: dusk, low HP, idle too long, master nearby after absence.
+- [ ] **Per-player memory:** knows each player on the server, what they've done together, and has opinions about them.
+- [ ] **Skaldic Hour:** each in-game evening, a short saga of the day's events (fights, deaths, builds, journeys), told from the agent's event log. A revival of his cancelled mead-hall show.
+- [ ] **Commemorations:** after milestones (boss kills, first iron, a finished settlement), writes a runestone or sign at the base.
 - **The companion remembers named places and past conversations across server restarts.**
 
 ### M7 — Offline operation
@@ -299,13 +302,24 @@ Each milestone ends with something playable. Acceptance criteria in **bold**.
 - [ ] Agent `Dockerfile` + Unraid template (env: `ANTHROPIC_API_KEY`, `AGENT_TOKEN`, `AGENT_PORT`; volume `/data`).
 - [ ] Custom Docker network shared by PhValheim + agent; **no public port for the agent**.
 - [ ] Confirm the PhValheim client launcher distributes the mod to clients.
+- [ ] **Permissions (before friends join):** who may command the companion (master, friends list, everyone) and which chests it may take from or store into; enforced in the mod, not just the prompt.
 - **Companion runs on the test world with friends connected, and keeps working overnight.**
 
 ### M9 — Settlements & roads
 Builds on M5 (placement, blueprints, templates) and M6 (named places).
 - [ ] **Roads with the pave tool:** route between two named places (settlements) over the heightmap, avoiding water and steep slopes, then level and pave along it by placing the hoe's terrain modifiers, as a player does. Needs a hoe; consumes stamina-equivalent time; respects wards.
-- [ ] **Procedural villages:** a layout generator (centre, building plots, connecting paths, optional fence ring) using M5 templates, with variety from size, building choice and orientation. The LLM chooses *what* and *where* ("a village of 4 huts by the lake"); code places every piece. Materials are gathered or fetched as needed.
-- **"Build a small village by the lake and pave a road to it from base" produces a varied, connected settlement.**
+- [ ] **Settlement generator:** each settlement type is data: site rules, a layout of zones and how they connect, a template set, and growth stages so it can be expanded later. The LLM chooses *type*, *size* and *rough area* ("a small port in that bay"); code picks the exact site, lays it out with variety (plot choice, building mix, orientation) and places every piece. Materials are gathered or fetched as needed. Each settlement becomes a named place (M6) that roads and portals can connect.
+
+  | Type | Site | Layout & contents |
+  |---|---|---|
+  | Village | flat ground | homes around a centre, paths between them, optional fence |
+  | Small fort | high ground preferred | palisade ring with gate, watchtowers, central hall, ditch or raised earth |
+  | Farm | flat Meadows/Plains | cultivated and planted fields, fencing, barn/storage, beehives |
+  | Port | shoreline | dock/pier into the water, boathouse, fishing hut, storage, road inland |
+  | Outpost | anywhere | small shelter, workbench, chest, portal (pairs with M10 expeditions) |
+  | Mining camp | next to a deposit | shelter, smelter/kiln, storage, portal home (no ore through portals, so smelt on site) |
+
+- **"Build a small fort on that hill and a port in the bay, and pave a road between them" produces two distinct, connected settlements.**
 
 ### M10 — Expeditions & travel
 - [ ] **Long-range missions:** send the companion far away to do a job (e.g. build something). The trip is split into legs, because pathfinding only works inside the loaded area; ZoneKeeper loads and generates terrain ahead of it. It reports progress through the agent, shows on the map (M4.5) and handles hazards (water, cliffs, fights). On a mission, death respawns it at the mission site, or ends the mission and reports, instead of respawning beside the master. Limit: the server simulates one place at a time, so one companion on one mission.
@@ -322,6 +336,24 @@ Builds on M5 (placement, blueprints, templates) and M6 (named places).
 ### M11 — Fishing
 - [ ] **Simulated fishing:** vanilla fishing (cast, float, reel) is player-driven, so the companion fishes in simulation instead. Needs a rod and bait in its inventory; stands at the water's edge with a fishing animation; catches arrive over time according to biome and bait, consuming bait.
 - **"Go catch some fish" returns fish appropriate to the biome and bait.**
+
+### M12 — Base keeper
+Make the offline simulation (M7) earn its keep.
+- [ ] **Chores routine while players are away:** refuel fires, kilns and smelters, harvest and replant crops, repair damage (`repair_nearby`), feed tamed animals. Builds on M4's `refuel` / `load_smelter` ideas.
+- [ ] **Corpse runs:** "fetch my gravestone": walk to where the master died, collect the items from the tombstone and bring them back.
+- [ ] **Storehouse tidying:** sort chest contents into sensible groups and label chests with signs.
+- [ ] **Guard duty:** patrol the base at night, fight off raids (random events), report afterwards.
+- **Leave the base overnight and come back to lit fires, smelted ore, replanted fields and a report of anything that attacked.**
+
+### M13 — Adventuring helper
+- [ ] **Scouting:** "find me copper" / "look for a crypt": explore and drop map pins for points of interest (pairs with M10 missions).
+- [ ] **Pack mule:** follow on trips carrying the overflow, then deposit it in base chests when home.
+- [ ] **Boss prep:** knows each boss's summoning requirements, gathers the items and reminds the master what's missing.
+- [ ] **Cooking:** cook meat on a fire or at the cauldron, hand over food before fights.
+
+### M14 — Remote access
+- [ ] **Discord bridge (agent-side):** chat with and command the companion from Discord; "while you were away" summaries; alerts when the base is attacked or a mission finishes.
+- [ ] **Status dashboard:** a small web page served by the agent showing the companion's location, inventory, task queue, recent events and today's Claude API spend.
 
 ### Later
 - Voice (STT/TTS), multiple companions, skills/stamina emulation, companion-to-companion chat, Thunderstore release.
