@@ -92,7 +92,8 @@ namespace ValheimCompanion.Companion
         /// owned by someone else: its deferred PickupUpdate casts the requester to Player and throws. Instead
         /// ask for ownership and retry on later ticks. Returns true once the item is in our inventory.
         /// </summary>
-        public bool TryPickup(ItemDrop drop)
+        /// <param name="max">Take at most this many from the stack, leaving the rest on the ground.</param>
+        public bool TryPickup(ItemDrop drop, int max = int.MaxValue)
         {
             if (!drop || !drop.m_nview || !drop.m_nview.IsValid())
             {
@@ -104,6 +105,17 @@ namespace ValheimCompanion.Companion
                 return false;
             }
             drop.Load();
+            if (max > 0 && max < drop.m_itemData.m_stack)
+            {
+                ItemDrop.ItemData part = drop.m_itemData.Clone();
+                part.m_stack = max;
+                if (Inventory.CanAddItem(part) && Inventory.AddItem(part))
+                {
+                    drop.m_itemData.m_stack -= max;
+                    drop.Save();
+                }
+                return true;
+            }
             _character.Pickup(drop.gameObject, autoequip: false, autoPickupDelay: false);
             if (drop && drop.m_nview && drop.m_nview.IsValid())
             {

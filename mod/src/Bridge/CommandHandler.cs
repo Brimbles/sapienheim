@@ -35,6 +35,14 @@ namespace ValheimCompanion.Bridge
             string action = (string)msg["action"];
             JObject args = msg["args"] as JObject ?? new JObject();
 
+            if (action == "save_world")
+            {
+                // Operator/testing command (not an LLM tool): the same save as the admin "save" console command.
+                ZNet.instance.RPC_Save(null);
+                Result(cmdId, true);
+                return;
+            }
+
             CompanionAI companion = CompanionAI.FindOwned();
             if (!companion)
             {
@@ -231,7 +239,7 @@ namespace ValheimCompanion.Bridge
                     // A queued craft may be waiting on a gather; materials are checked when it runs.
                     if (!IsQueued(args))
                     {
-                        JObject missing = CompanionWorkshop.Missing(recipe, qty, companion.Inventory);
+                        JObject missing = CompanionWorkshop.Missing(recipe, station, qty, companion.Inventory);
                         if (missing.Count > 0)
                         {
                             data = new JObject { ["missing"] = missing };
@@ -270,10 +278,12 @@ namespace ValheimCompanion.Bridge
 
         private static JObject DescribeRecipe(Recipe recipe, CompanionAI companion)
         {
+            CraftingStation station = CompanionWorkshop.FindStation(recipe, companion.transform.position, StationSearchRange, out string stationError);
             var materials = new JObject();
             foreach (Piece.Requirement req in recipe.m_resources)
             {
-                if (req.m_resItem)
+                // A fresh craft uses a normal station (or none), so skip upgrade-only ingredients.
+                if (CompanionWorkshop.Applies(req, recipe.m_craftingStation ? recipe.m_craftingStation : null))
                 {
                     materials[req.m_resItem.gameObject.name] = req.GetAmount(1);
                 }
@@ -289,10 +299,9 @@ namespace ValheimCompanion.Bridge
             if (recipe.m_craftingStation)
             {
                 info["min_station_level"] = recipe.m_minStationLevel;
-                CompanionWorkshop.FindStation(recipe, companion.transform.position, StationSearchRange, out string stationError);
                 info["station_nearby"] = stationError == null;
             }
-            JObject missing = CompanionWorkshop.Missing(recipe, 1, companion.Inventory);
+            JObject missing = CompanionWorkshop.Missing(recipe, station ? station : recipe.m_craftingStation, 1, companion.Inventory);
             if (missing.Count > 0)
             {
                 info["missing"] = missing;

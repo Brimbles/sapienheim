@@ -209,7 +209,12 @@ namespace ValheimCompanion.Companion
             switch (source.Target)
             {
                 case ItemDrop drop:
-                    _inventory.TryPickup(drop);
+                    // Take only what's still needed from a big ground stack (e.g. 8 of a stack of 50).
+                    _inventory.TryPickup(drop, All ? int.MaxValue : _goal - _inventory.Count(_item));
+                    if (!All && _inventory.Count(_item) >= _goal)
+                    {
+                        _target = null;
+                    }
                     return;
                 case Pickable pickable:
                     pickable.Interact(_character, false, false);

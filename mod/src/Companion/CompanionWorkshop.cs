@@ -219,13 +219,27 @@ namespace ValheimCompanion.Companion
             return null;
         }
 
+        /// <summary>
+        /// Whether a recipe ingredient applies to a fresh craft (quality 1), mirroring Player.HaveRequirementItems:
+        /// upgrade-only ingredients (m_upgraderResource, e.g. "Upgrader0Weapon") apply only at an upgrade station,
+        /// and zero amounts don't count.
+        /// </summary>
+        public static bool Applies(Piece.Requirement req, CraftingStation station)
+        {
+            if (!req.m_resItem || req.GetAmount(1) <= 0)
+            {
+                return false;
+            }
+            return station ? station.m_upgrader == req.m_upgraderResource : !req.m_upgraderResource;
+        }
+
         /// <summary>Materials missing to craft <paramref name="times"/> times, by item id (empty when we have enough).</summary>
-        public static JObject Missing(Recipe recipe, int times, CompanionInventory inventory)
+        public static JObject Missing(Recipe recipe, CraftingStation station, int times, CompanionInventory inventory)
         {
             var missing = new JObject();
             foreach (Piece.Requirement req in recipe.m_resources)
             {
-                if (!req.m_resItem)
+                if (!Applies(req, station))
                 {
                     continue;
                 }
@@ -241,7 +255,7 @@ namespace ValheimCompanion.Companion
         }
 
         /// <summary>Consume the materials for one craft and add the result. Caller has checked Missing().</summary>
-        public static bool CraftOnce(Recipe recipe, CompanionInventory inventory, string crafterName)
+        public static bool CraftOnce(Recipe recipe, CraftingStation station, CompanionInventory inventory, string crafterName)
         {
             Inventory inv = inventory.Inventory;
             if (!inv.CanAddItem(recipe.m_item.m_itemData.Clone(), recipe.m_amount))
@@ -250,7 +264,7 @@ namespace ValheimCompanion.Companion
             }
             foreach (Piece.Requirement req in recipe.m_resources)
             {
-                if (req.m_resItem)
+                if (Applies(req, station))
                 {
                     inv.RemoveItem(req.m_resItem.m_itemData.m_shared.m_name, req.GetAmount(1));
                 }

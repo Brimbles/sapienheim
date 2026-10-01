@@ -689,13 +689,13 @@ namespace ValheimCompanion.Companion
             }
             _nextCraft = Time.time + CraftSeconds;
 
-            JObject missing = CompanionWorkshop.Missing(_recipe, 1, _inventory);
+            JObject missing = CompanionWorkshop.Missing(_recipe, _station, 1, _inventory);
             if (missing.Count > 0)
             {
                 FailCraft("missing_materials", missing);
                 return;
             }
-            if (!CompanionWorkshop.CraftOnce(_recipe, _inventory, _character.m_name))
+            if (!CompanionWorkshop.CraftOnce(_recipe, _station, _inventory, _character.m_name))
             {
                 FailCraft("inventory_full");
                 return;

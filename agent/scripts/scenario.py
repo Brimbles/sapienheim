@@ -78,9 +78,13 @@ class Runner:
 async def scenario_m4(r: Runner) -> None:
     s = await r.state()
     await r.cmd("recipe", item="Club")
+    before = {i["item"]: i["qty"] for i in s.get("self", {}).get("inventory", [])}.get("Wood", 0)
     await r.task("gather 8 wood (any source)", "gather", item="Wood", qty=8)
+    after = {i["item"]: i["qty"] for i in (await r.state()).get("self", {}).get("inventory", [])}.get("Wood", 0)
+    r.results.append(("  -> wood gained for qty 8", str(after - before)))
     await r.task("gather all fallen logs within 30 m", "gather", item="Wood", source="logs", radius=30)
     await r.task("gather 5 stone (pick only)", "gather", item="Stone", qty=5, source="pick")
+    await r.cmd("recipe", item="Club")
     await r.task("craft a club", "craft", item="Club")
 
     s = await r.state()
@@ -93,6 +97,7 @@ async def scenario_m4(r: Runner) -> None:
         r.results.append(("chest store/fetch", "skipped: no chest within 30 m"))
     await r.task("queue: gather 3 wood then craft a club", "gather", item="Wood", qty=3)
     await r.state()
+    await r.cmd("save_world")
 
 
 SCENARIOS = {"m4": scenario_m4}
