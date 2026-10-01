@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Newtonsoft.Json.Linq;
 using UnityEngine;
 using ValheimCompanion.Bridge;
+using ValheimCompanion.Building;
 
 namespace ValheimCompanion.Companion
 {
@@ -18,6 +19,7 @@ namespace ValheimCompanion.Companion
     /// <item><c>gather</c>: collect N of an item by picking, chopping or mining (<see cref="CompanionGather"/>).</item>
     /// <item><c>store</c> / <c>fetch</c>: walk to a chest and move items into or out of it.</item>
     /// <item><c>craft</c>: walk to the recipe's crafting station (if any) and craft N of an item.</item>
+    /// <item><c>build</c>: place a template's pieces one by one, as a player would with a hammer.</item>
     /// </list>
     /// Combat pre-empts everything: an aggressive enemy nearby pauses the current task until it is dead,
     /// gone or has fled, then the task resumes with its clocks shifted by the pause.
@@ -37,6 +39,7 @@ namespace ValheimCompanion.Companion
         public const string Store = "store";
         public const string Fetch = "fetch";
         public const string Craft = "craft";
+        public const string Build = "build";
 
         private const float ArriveDistance = 3.5f;
         private const float GoToTimeout = 180f;
@@ -50,6 +53,9 @@ namespace ValheimCompanion.Companion
         private const float BattleCryCooldown = 30f;
         private const float CraftSeconds = 2f;
         private const float StationTimeout = 120f;
+        private const float BuildReach = 5f;
+        private const float PlaceInterval = 1.2f;
+        private const float BuildStepTimeout = 60f;
         public const float MaxGoToDistance = 500f;
 
         private class Queued
@@ -101,6 +107,14 @@ namespace ValheimCompanion.Companion
         private int _crafted;
         private float _nextCraft;
 
+        // build: the remaining plan survives a failure so resume_build can carry on
+        private Queue<BuildStep> _buildPlan;
+        private string _buildName;
+        private int _buildPlaced;
+        private int _buildTotal;
+        private float _nextPlace;
+        private float _stepDeadline;
+
         public CompanionTasks(ZNetView nview, Humanoid character, MonsterAI ai, CompanionInventory inventory)
         {
             _nview = nview;
@@ -128,6 +142,7 @@ namespace ValheimCompanion.Companion
                     case Store:
                     case Fetch:
                     case Craft:
+                    case Build:
                         return task;
                     default:
                         return Follow;
@@ -160,6 +175,10 @@ namespace ValheimCompanion.Companion
             if (Current == Gather && _gather.Active)
             {
                 return new JObject { ["item"] = _gather.Item, ["collected"] = _gather.Collected, ["wanted"] = _gather.Wanted };
+            }
+            if (Current == Build && _buildPlan != null)
+            {
+                return new JObject { ["build"] = _buildName, ["placed"] = _buildPlaced, ["total"] = _buildTotal };
             }
             if (Current == Craft && _recipe)
             {
@@ -260,6 +279,46 @@ namespace ValheimCompanion.Companion
             SetTask(Craft, taskId);
         }
 
+        public void CommandBuild(string name, List<BuildStep> plan, string taskId)
+        {
+            _buildName = name;
+            _buildPlan = new Queue<BuildStep>(plan);
+            _buildPlaced = 0;
+            _buildTotal = plan.Count;
+            _nextPlace = 0f;
+            _stepDeadline = 0f;
+            SetTask(Build, taskId);
+        }
+
+        /// <summary>Carry on with a build that stopped (e.g. for materials). Returns false if there is none.</summary>
+        public bool CommandResumeBuild(string taskId)
+        {
+            if (_buildPlan == null || _buildPlan.Count == 0)
+            {
+                return false;
+            }
+            _nextPlace = 0f;
+            _stepDeadline = 0f;
+            SetTask(Build, taskId);
+            return true;
+        }
+
+        public bool HasUnfinishedBuild => _buildPlan != null && _buildPlan.Count > 0;
+
+        /// <summary>Materials needed to finish the current or paused build.</summary>
+        public JObject UnfinishedBuildMissing()
+        {
+            var names = new List<string>();
+            if (_buildPlan != null)
+            {
+                foreach (BuildStep s in _buildPlan)
+                {
+                    names.Add(s.Piece);
+                }
+            }
+            return Builder.Missing(names, _inventory);
+        }
+
         private void StayHere()
         {
             Zdo.Set(CompanionState.KeyTaskPos, _character.transform.position);
@@ -320,6 +379,9 @@ namespace ValheimCompanion.Companion
                 case Craft:
                     UpdateCraft();
                     break;
+                case Build:
+                    UpdateBuild();
+                    break;
             }
         }
 
@@ -336,7 +398,8 @@ namespace ValheimCompanion.Companion
                         || (task == PickUp && _pickupRadius <= 0f)
                         || (task == Gather && !_gather.Active)
                         || ((task == Store || task == Fetch) && !_chest)
-                        || (task == Craft && !_recipe);
+                        || (task == Craft && !_recipe)
+                        || (task == Build && (_buildPlan == null || _buildPlan.Count == 0));
             if (lost)
             {
                 CompanionState.SetTask(Zdo, Follow);
@@ -708,6 +771,108 @@ namespace ValheimCompanion.Companion
                 _recipe = null;
                 Complete(true, data);
             }
+        }
+
+        private void UpdateBuild()
+        {
+            if (_buildPlan.Count == 0)
+            {
+                var done = new JObject { ["task"] = Build, ["build"] = _buildName, ["placed"] = _buildPlaced };
+                _buildPlan = null;
+                Complete(true, done);
+                return;
+            }
+
+            BuildStep step = _buildPlan.Peek();
+            Piece piece = PieceCatalog.Get(step.Piece);
+            if (!piece)
+            {
+                Jotunn.Logger.LogWarning($"Build: unknown piece {step.Piece}, skipping");
+                _buildPlan.Dequeue();
+                return;
+            }
+
+            // Walk within building reach of the spot.
+            if (_stepDeadline <= 0f)
+            {
+                _stepDeadline = Time.time + BuildStepTimeout;
+            }
+            Vector3 stand = step.Pos;
+            if (ZoneSystem.instance.GetGroundHeight(stand, out float ground))
+            {
+                stand.y = ground;
+            }
+            if (!_waypoint)
+            {
+                _waypoint = new GameObject("CompanionWaypoint");
+            }
+            _waypoint.transform.position = stand;
+            if (_ai.GetFollowTarget() != _waypoint)
+            {
+                _ai.SetFollowTarget(_waypoint);
+            }
+            Vector3 delta = step.Pos - _character.transform.position;
+            delta.y = 0f;
+            if (delta.magnitude > BuildReach)
+            {
+                if (Time.time > _stepDeadline)
+                {
+                    FailBuild("cant_reach_build_site");
+                }
+                return;
+            }
+            if (Time.time < _nextPlace)
+            {
+                return;
+            }
+
+            long masterId = CompanionState.GetMaster(Zdo);
+            string error = Builder.CheckPlace(piece, step.Pos, masterId, _inventory);
+            if (error != null)
+            {
+                FailBuild(error);
+                return;
+            }
+            JObject missing = Builder.Missing(new[] { step.Piece }, _inventory);
+            if (missing.Count > 0)
+            {
+                FailBuild("missing_materials", UnfinishedBuildMissing());
+                return;
+            }
+
+            ItemDrop.ItemData hammer = Builder.FindHammer(_inventory);
+            if (!_character.IsItemEquiped(hammer))
+            {
+                _character.EquipItem(hammer);
+            }
+            Vector3 look = step.Pos - _character.transform.position;
+            look.y = 0f;
+            if (look.sqrMagnitude > 0.01f)
+            {
+                _character.SetLookDir(look.normalized);
+            }
+            _character.GetComponent<CompanionAI>()?.PlaySwing(hammer);
+
+            Builder.Place(piece, step.Pos, step.Rot, masterId, _inventory);
+            _buildPlan.Dequeue();
+            _buildPlaced++;
+            _nextPlace = Time.time + PlaceInterval;
+            _stepDeadline = 0f;
+        }
+
+        private void FailBuild(string reason, JObject missing = null)
+        {
+            var data = new JObject
+            {
+                ["task"] = Build, ["build"] = _buildName, ["reason"] = reason,
+                ["placed"] = _buildPlaced, ["remaining"] = _buildPlan?.Count ?? 0,
+                ["can_resume"] = HasUnfinishedBuild,
+            };
+            if (missing != null)
+            {
+                data["missing"] = missing;
+            }
+            Complete(false, data);
         }
 
         private void FailCraft(string reason, JObject missing = null)

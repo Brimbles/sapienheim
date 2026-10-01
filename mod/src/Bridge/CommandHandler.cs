@@ -51,6 +51,35 @@ namespace ValheimCompanion.Bridge
                 return;
             }
 
+            if (action == "pieces_near")
+            {
+                // Testing command: build pieces within a radius of a point, with structural support.
+                JArray at = args["pos"] as JArray;
+                Vector3 centre = at != null && at.Count == 3 ? new Vector3((float)at[0], (float)at[1], (float)at[2]) : Vector3.zero;
+                float radius = args["radius"] != null ? (float)args["radius"] : 10f;
+                var found = new JArray();
+                foreach (WearNTear wnt in WearNTear.GetAllInstances())
+                {
+                    if (!wnt || !wnt.m_nview || !wnt.m_nview.IsValid() || Vector3.Distance(wnt.transform.position, centre) > radius)
+                    {
+                        continue;
+                    }
+                    ZDO z = wnt.m_nview.GetZDO();
+                    Vector3 p = wnt.transform.position;
+                    found.Add(new JObject
+                    {
+                        ["piece"] = Utils.GetPrefabName(wnt.gameObject),
+                        ["pos"] = new JArray(Round(p.x), Round(p.y), Round(p.z)),
+                        ["yaw"] = Mathf.Round(wnt.transform.eulerAngles.y),
+                        ["support"] = Round(z.GetFloat(ZDOVars.s_support, -1f)),
+                        ["health"] = Round(z.GetFloat(ZDOVars.s_health, -1f)),
+                        ["creator"] = wnt.GetComponent<Piece>()?.GetCreator() ?? 0,
+                    });
+                }
+                Result(cmdId, true, null, new JObject { ["pieces"] = found });
+                return;
+            }
+
             if (action == "save_world")
             {
                 // Operator/testing command (not an LLM tool): the same save as the admin "save" console command.
@@ -264,6 +293,80 @@ namespace ValheimCompanion.Bridge
                     }
                     return Queue(companion, args, $"craft({qty} {recipe.m_item.gameObject.name})",
                         () => companion.Tasks.CommandCraft(recipe, station, qty, TaskId(args, cmdId)));
+                }
+                case "build":
+                {
+                    string template = (string)args["template"] ?? "hut";
+                    if (template != "hut")
+                    {
+                        return "unknown_template";
+                    }
+                    int width = Building.HutTemplate.ClampWidth(args["width"] != null ? (int)args["width"] : 3);
+
+                    // Where: near a player, or near the companion.
+                    Vector3 near = companion.transform.position;
+                    string nearPlayer = (string)args["near"];
+                    if (!string.IsNullOrEmpty(nearPlayer))
+                    {
+                        if (!TryFindPlayer(nearPlayer, out _, out _, out near))
+                        {
+                            return "player_not_found";
+                        }
+                    }
+                    // Facing: the front (door) faces the companion's current position unless given.
+                    float facing;
+                    if (args["facing"] != null)
+                    {
+                        facing = (float)args["facing"];
+                    }
+                    else
+                    {
+                        Vector3 toUs = companion.transform.position - near;
+                        facing = toUs.sqrMagnitude > 1f ? Quaternion.LookRotation(-new Vector3(toUs.x, 0f, toUs.z)).eulerAngles.y : companion.transform.eulerAngles.y + 180f;
+                    }
+                    if (!Building.HutTemplate.FindSite(width, near, facing, 25f, out Vector3 origin, out string siteError))
+                    {
+                        return siteError;
+                    }
+                    var plan = Building.HutTemplate.Generate(width, origin, facing);
+                    var pieceNames = new System.Collections.Generic.List<string>();
+                    foreach (var step in plan)
+                    {
+                        pieceNames.Add(step.Piece);
+                    }
+                    JObject missingMaterials = Building.Builder.Missing(pieceNames, companion.Inventory);
+                    data = new JObject
+                    {
+                        ["template"] = template, ["width"] = width, ["pieces"] = plan.Count,
+                        ["site"] = new JArray(Mathf.Round(origin.x), Mathf.Round(origin.y), Mathf.Round(origin.z)),
+                    };
+                    if (missingMaterials.Count > 0 && !IsQueued(args))
+                    {
+                        data["missing"] = missingMaterials;
+                        return "missing_materials";
+                    }
+                    if (Building.Builder.FindHammer(companion.Inventory) == null && !IsQueued(args))
+                    {
+                        return "need_hammer";
+                    }
+                    string name = $"hut {width}x{Building.HutTemplate.Depth}";
+                    return Queue(companion, args, $"build({name})",
+                        () => companion.Tasks.CommandBuild(name, plan, TaskId(args, cmdId)));
+                }
+                case "resume_build":
+                {
+                    if (!companion.Tasks.HasUnfinishedBuild)
+                    {
+                        return "no_unfinished_build";
+                    }
+                    JObject missingNow = companion.Tasks.UnfinishedBuildMissing();
+                    if (missingNow.Count > 0 && !IsQueued(args))
+                    {
+                        data = new JObject { ["missing"] = missingNow };
+                        return "missing_materials";
+                    }
+                    return Queue(companion, args, "resume_build",
+                        () => companion.Tasks.CommandResumeBuild(TaskId(args, cmdId)));
                 }
                 default:
                     return "unknown_action";

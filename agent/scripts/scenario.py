@@ -53,6 +53,9 @@ class Runner:
         while not self.events.empty():
             self.events.get_nowait()
         r = await self.cmd(action, **args)
+        return await self.task_wait(name, r)
+
+    async def task_wait(self, name: str, r) -> str:
         if not r.ok:
             self.results.append((name, f"rejected: {r.error}"))
             return "rejected"
@@ -109,7 +112,32 @@ async def scenario_pieces(r: Runner) -> None:
     r.results.append(("piece_info", f"{len((res.data or {}).get('pieces', []))} pieces -> {out.name}"))
 
 
-SCENARIOS = {"m4": scenario_m4, "pieces": scenario_pieces}
+async def scenario_build(r: Runner) -> None:
+    """Craft a hammer, build a small hut, then check every piece is still standing once support settles."""
+    s = await r.state()
+    have = {i["item"]: i["qty"] for i in s.get("self", {}).get("inventory", [])}
+    if "Hammer" not in have:
+        await r.cmd("recipe", item="Hammer")
+        await r.task("craft a hammer", "craft", item="Hammer")
+    res = await r.cmd("build", template="hut", width=2)
+    if not res.ok:
+        r.results.append(("build hut", f"rejected: {res.error} {res.data}"))
+        return
+    site = res.data["site"]
+    expected = res.data["pieces"]
+    await r.task_wait("build a 2-cell hut", res)
+    await asyncio.sleep(20)  # let WearNTear support settle; unsupported pieces would break by now
+    near = await r.conn.command("pieces_near", pos=site, radius=10)
+    pieces = (near.data or {}).get("pieces", [])
+    mine = [p for p in pieces if p["creator"] != 0]
+    for p in sorted(mine, key=lambda p: (p["piece"], p["pos"][1])):
+        log.info("  %-20s pos=%s yaw=%s support=%s health=%s", p["piece"], p["pos"], p["yaw"], p["support"], p["health"])
+    r.results.append(("pieces standing after 20 s", f"{len(mine)} of {expected}"))
+    await r.state()
+    await r.cmd("save_world")
+
+
+SCENARIOS = {"m4": scenario_m4, "pieces": scenario_pieces, "build": scenario_build}
 
 
 async def run(scenario: str) -> None:
