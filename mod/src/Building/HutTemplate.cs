@@ -175,7 +175,7 @@ namespace ValheimCompanion.Building
         private const float PostGap = 0.15f;
         private const float MaxClearableSize = 3f;
 
-        private static bool IsSmall(Destructible d)
+        internal static bool IsSmall(Destructible d)
         {
             var bounds = new Bounds(d.transform.position, Vector3.zero);
             foreach (Collider c in d.GetComponentsInChildren<Collider>())

@@ -44,6 +44,7 @@ namespace ValheimCompanion.Companion
         public const string Craft = "craft";
         public const string Build = "build";
         public const string UsePortal = "portal";
+        public const string Repair = "repair";
 
         private const float ArriveDistance = 3.5f;
         private const float GoToTimeout = 180f;
@@ -63,7 +64,14 @@ namespace ValheimCompanion.Companion
         private const float PortalReach = 2.5f;
         private const float PortalWalkTimeout = 240f;
         private const float ArrivalTimeout = 30f;
-        public const float MaxGoToDistance = 500f;
+        public const float MaxGoToDistance = 5000f;
+        public const float PortalSearchDistance = 500f;
+        // Long trips go in legs: pathfinding only covers the loaded area around the companion, which ZoneKeeper
+        // moves along with it.
+        private const float LegLength = 48f;
+        private const float LegReached = 4f;
+        private const float ProgressWindow = 20f;
+        private const int MaxDetours = 6;
 
         private class Queued
         {
@@ -122,6 +130,17 @@ namespace ValheimCompanion.Companion
         private float _nextPlace;
         private float _stepDeadline;
 
+        // repair
+        private Queue<Piece> _repairPlan;
+        private int _repaired;
+        private int _repairSkipped;
+
+        // go_to legs
+        private bool _hasLeg;
+        private float _bestDist;
+        private float _lastProgress;
+        private int _detours;
+
         // portal
         private PortalNetwork.Portal? _portal;
         private bool _inTransit;
@@ -157,6 +176,7 @@ namespace ValheimCompanion.Companion
                     case Craft:
                     case Build:
                     case UsePortal:
+                    case Repair:
                         return task;
                     default:
                         return Follow;
@@ -193,6 +213,10 @@ namespace ValheimCompanion.Companion
             if (Current == Build && _buildPlan != null)
             {
                 return new JObject { ["build"] = _buildName, ["placed"] = _buildPlaced, ["total"] = _buildTotal };
+            }
+            if (Current == Repair && _repairPlan != null)
+            {
+                return new JObject { ["repaired"] = _repaired, ["remaining"] = _repairPlan.Count };
             }
             if (Current == Craft && _recipe)
             {
@@ -336,6 +360,16 @@ namespace ValheimCompanion.Companion
             return Builder.Missing(names, _inventory);
         }
 
+        public void CommandRepair(List<Piece> damaged, int skipped, string taskId)
+        {
+            _repairPlan = new Queue<Piece>(damaged);
+            _repaired = 0;
+            _repairSkipped = skipped;
+            _nextPlace = 0f;
+            _stepDeadline = 0f;
+            SetTask(Repair, taskId);
+        }
+
         public void CommandUsePortal(PortalNetwork.Portal portal, string taskId)
         {
             _portal = portal;
@@ -409,6 +443,9 @@ namespace ValheimCompanion.Companion
                 case UsePortal:
                     UpdatePortal();
                     break;
+                case Repair:
+                    UpdateRepair();
+                    break;
             }
         }
 
@@ -427,7 +464,8 @@ namespace ValheimCompanion.Companion
                         || ((task == Store || task == Fetch) && !_chest)
                         || (task == Craft && !_recipe)
                         || (task == Build && (_buildPlan == null || _buildPlan.Count == 0))
-                        || (task == UsePortal && _portal == null);
+                        || (task == UsePortal && _portal == null)
+                        || (task == Repair && _repairPlan == null);
             if (lost)
             {
                 CompanionState.SetTask(Zdo, Follow);
@@ -441,11 +479,19 @@ namespace ValheimCompanion.Companion
                     _ai.SetPatrolPoint(Zdo.GetVec3(CompanionState.KeyTaskPos, _character.transform.position));
                     break;
                 case GoTo:
+                {
+                    Vector3 goal = Zdo.GetVec3(CompanionState.KeyTaskPos, _character.transform.position);
                     _waypoint = new GameObject("CompanionWaypoint");
-                    _waypoint.transform.position = Zdo.GetVec3(CompanionState.KeyTaskPos, _character.transform.position);
+                    _waypoint.transform.position = goal;
                     _ai.SetFollowTarget(_waypoint);
-                    _deadline = Time.time + GoToTimeout;
+                    // Generous for long trips (about 1 m/s with detours), but never less than the old fixed limit.
+                    _deadline = Time.time + Mathf.Max(GoToTimeout, Flat(goal - _character.transform.position) + 60f);
+                    _hasLeg = false;
+                    _bestDist = float.MaxValue;
+                    _lastProgress = Time.time;
+                    _detours = 0;
                     break;
+                }
                 case PickUp:
                 case Give:
                     _deadline = Time.time + HandoverTimeout;
@@ -575,25 +621,100 @@ namespace ValheimCompanion.Companion
 
         private void UpdateGoTo()
         {
-            Vector3 goal = _waypoint.transform.position;
-            // Snap the waypoint to the ground once the terrain there is loaded (Follow uses 3D distance).
-            if (ZoneSystem.instance.GetGroundHeight(goal, out float height))
+            Vector3 here = _character.transform.position;
+            Vector3 goal = Zdo.GetVec3(CompanionState.KeyTaskPos, here);
+            if (ZoneSystem.instance.GetGroundHeight(goal, out float goalHeight))
             {
-                goal.y = height;
-                _waypoint.transform.position = goal;
+                goal.y = goalHeight;
             }
-
-            Vector3 delta = goal - _character.transform.position;
-            delta.y = 0f;
-            if (delta.magnitude <= ArriveDistance)
+            float remaining = Flat(goal - here);
+            if (remaining <= ArriveDistance)
             {
                 Complete(true, new JObject { ["task"] = GoTo, ["pos"] = Pos(goal) }, afterwards: Stay);
+                return;
             }
-            else if (Time.time > _deadline)
+            if (Time.time > _deadline)
             {
-                Complete(false, new JObject { ["task"] = GoTo, ["reason"] = "timeout", ["remaining_m"] = Mathf.Round(delta.magnitude) }, afterwards: Stay);
+                Complete(false, new JObject { ["task"] = GoTo, ["reason"] = "timeout", ["remaining_m"] = Mathf.Round(remaining) }, afterwards: Stay);
+                return;
+            }
+
+            // Progress towards the goal itself; stalled for a while means stuck (cliff, river, dense forest).
+            if (remaining < _bestDist - 2f)
+            {
+                _bestDist = remaining;
+                _lastProgress = Time.time;
+                _detours = 0;
+            }
+            bool stuck = Time.time - _lastProgress > ProgressWindow;
+            if (stuck)
+            {
+                if (++_detours > MaxDetours)
+                {
+                    Complete(false, new JObject { ["task"] = GoTo, ["reason"] = "stuck", ["remaining_m"] = Mathf.Round(remaining), ["pos"] = Pos(here) }, afterwards: Stay);
+                    return;
+                }
+                _lastProgress = Time.time;
+                _hasLeg = false;
+            }
+
+            // Next leg: the goal itself when close, else a point up to LegLength towards it on dry land (a detour
+            // swings off to alternate sides, wider each time).
+            Vector3 leg = _waypoint.transform.position;
+            if (!_hasLeg || Flat(leg - here) <= LegReached)
+            {
+                if (remaining <= LegLength && _detours == 0)
+                {
+                    leg = goal;
+                }
+                else if (!NextLeg(here, goal, out leg))
+                {
+                    Complete(false, new JObject { ["task"] = GoTo, ["reason"] = "water_in_the_way", ["remaining_m"] = Mathf.Round(remaining), ["pos"] = Pos(here) }, afterwards: Stay);
+                    return;
+                }
+                _hasLeg = true;
+                _waypoint.transform.position = leg;
+            }
+            // Snap the leg to the ground once the terrain there is loaded (Follow uses 3D distance).
+            if (ZoneSystem.instance.GetGroundHeight(leg, out float legHeight) && Mathf.Abs(leg.y - legHeight) > 0.1f)
+            {
+                leg.y = legHeight;
+                _waypoint.transform.position = leg;
             }
         }
+
+        /// <summary>A dry-land point towards the goal: straight on if possible, else turning further each side.</summary>
+        private bool NextLeg(Vector3 here, Vector3 goal, out Vector3 leg)
+        {
+            Vector3 dir = goal - here;
+            dir.y = 0f;
+            dir.Normalize();
+            float length = Mathf.Min(LegLength, Flat(goal - here));
+            // A detour starts at an angle and alternates sides: 40°, -40°, 80°, -80°...
+            float start = _detours == 0 ? 0f : 40f * ((_detours + 1) / 2) * (_detours % 2 == 1 ? 1f : -1f);
+            foreach (float extra in new[] { 0f, 20f, -20f, 40f, -40f, 60f, -60f, 90f, -90f })
+            {
+                foreach (float scale in new[] { 1f, 0.5f })
+                {
+                    Vector3 p = here + Quaternion.Euler(0f, start + extra, 0f) * dir * (length * scale);
+                    if (!ZoneSystem.instance.GetGroundHeight(p, out float h))
+                    {
+                        leg = p; // not loaded yet: head that way and see
+                        leg.y = here.y;
+                        return true;
+                    }
+                    if (h > ZoneSystem.instance.m_waterLevel + 0.2f)
+                    {
+                        leg = new Vector3(p.x, h, p.z);
+                        return true;
+                    }
+                }
+            }
+            leg = here;
+            return false;
+        }
+
+        private static float Flat(Vector3 v) => new Vector2(v.x, v.z).magnitude;
 
         private void UpdateAttack()
         {
@@ -892,6 +1013,97 @@ namespace ValheimCompanion.Companion
             Builder.Place(piece, step.Pos, step.Rot, masterId, _inventory);
             _buildPlan.Dequeue();
             _buildPlaced++;
+            _nextPlace = Time.time + PlaceInterval;
+            _stepDeadline = 0f;
+        }
+
+        /// <summary>Walk up to each damaged piece and repair it with the hammer, as a player does (free).</summary>
+        private void UpdateRepair()
+        {
+            Piece piece = null;
+            while (_repairPlan.Count > 0 && !piece)
+            {
+                piece = _repairPlan.Peek();
+                if (!piece || !Builder.NeedsRepair(piece, CompanionState.GetMaster(Zdo), out _))
+                {
+                    _repairPlan.Dequeue(); // gone, or repaired by someone else meanwhile
+                    piece = null;
+                }
+            }
+            if (!piece)
+            {
+                var done = new JObject { ["task"] = Repair, ["repaired"] = _repaired };
+                if (_repairSkipped > 0)
+                {
+                    done["skipped"] = _repairSkipped;
+                }
+                _repairPlan = null;
+                Complete(true, done);
+                return;
+            }
+            ItemDrop.ItemData hammer = Builder.FindHammer(_inventory);
+            if (hammer == null)
+            {
+                _repairPlan = null;
+                Complete(false, new JObject { ["task"] = Repair, ["reason"] = "need_hammer", ["repaired"] = _repaired });
+                return;
+            }
+
+            if (!_waypoint)
+            {
+                _waypoint = new GameObject("CompanionWaypoint");
+            }
+            Vector3 stand = piece.transform.position;
+            if (ZoneSystem.instance.GetGroundHeight(stand, out float ground))
+            {
+                stand.y = ground;
+            }
+            _waypoint.transform.position = stand;
+            if (_ai.GetFollowTarget() != _waypoint)
+            {
+                _ai.SetFollowTarget(_waypoint);
+            }
+            if (_stepDeadline <= 0f)
+            {
+                _stepDeadline = Time.time + BuildStepTimeout;
+            }
+            Vector3 delta = piece.transform.position - _character.transform.position;
+            delta.y = 0f;
+            if (delta.magnitude > BuildReach)
+            {
+                if (Time.time > _stepDeadline)
+                {
+                    _repairPlan.Dequeue(); // can't get to it (e.g. up on a roof); carry on with the rest
+                    _repairSkipped++;
+                    _stepDeadline = 0f;
+                }
+                return;
+            }
+            if (Time.time < _nextPlace)
+            {
+                return;
+            }
+            if (Builder.CheckRepair(piece, CompanionState.GetMaster(Zdo)) != null)
+            {
+                _repairPlan.Dequeue();
+                _repairSkipped++;
+                return;
+            }
+            if (!_character.IsItemEquiped(hammer))
+            {
+                _character.EquipItem(hammer);
+            }
+            if (delta.sqrMagnitude > 0.01f)
+            {
+                _character.SetLookDir(delta.normalized);
+            }
+            _character.GetComponent<CompanionAI>()?.PlaySwing(hammer);
+            if (piece.GetComponent<WearNTear>().Repair())
+            {
+                piece.m_placeEffect.Create(piece.transform.position, piece.transform.rotation);
+                _repaired++;
+            }
+            _repairPlan.Dequeue();
             _nextPlace = Time.time + PlaceInterval;
             _stepDeadline = 0f;
         }

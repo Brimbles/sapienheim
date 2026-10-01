@@ -178,9 +178,81 @@ async def scenario_portal(r: Runner) -> None:
     await r.cmd("save_world")
 
 
+async def scenario_walls(r: Runner) -> None:
+    """Fence ring with a gate, a stakewall line, then damage them and have the companion repair them.
+    Optional: scenario.py walls dx dz moves that far first (away from the test hut)."""
+    s = await r.state()
+    if len(sys.argv) >= 4:
+        here = s["self"]["pos"]
+        await r.task("walk to open ground", "go_to", x=here[0] + float(sys.argv[2]), z=here[2] + float(sys.argv[3]))
+        s = await r.state()
+    have = {i["item"]: i["qty"] for i in s.get("self", {}).get("inventory", [])}
+    if "Hammer" not in have:
+        await r.task("craft a hammer", "craft", item="Hammer")
+    if have.get("Wood", 0) < 60:
+        await r.task("gather wood for walls", "gather", item="Wood", qty=60 - have.get("Wood", 0))
+
+    built = []
+    for label, args in [
+        ("fence ring 12 m", {"template": "fence", "shape": "ring", "size": 12}),
+        ("stakewall line 10 m", {"template": "wall", "shape": "line", "size": 10}),
+    ]:
+        res = await r.cmd("build", **args)
+        if not res.ok:
+            r.results.append((label, f"rejected: {res.error} {res.data}"))
+            continue
+        await r.task_wait(label, res)
+        r.results.append((f"  {label} plan", f"{res.data['pieces']} pieces, gaps {res.data.get('gaps', {})}"))
+        built.append((label, res.data["site"], res.data["pieces"]))
+
+    await asyncio.sleep(20)  # let support settle
+    for label, site, expected in built:
+        near = await r.conn.command("pieces_near", pos=site, radius=12)
+        mine = [p for p in (near.data or {}).get("pieces", []) if p["creator"] != 0 and p["piece"] != "piece_workbench"]
+        kinds = {}
+        for p in mine:
+            kinds[p["piece"]] = kinds.get(p["piece"], 0) + 1
+        r.results.append((f"{label}: standing after 20 s", f"{kinds} (planned {expected} incl. benches)"))
+
+    if built:
+        site = built[0][1]
+
+        async def healths():
+            near = await r.conn.command("pieces_near", pos=site, radius=12)
+            return {tuple(p["pos"]): p["health"] for p in (near.data or {}).get("pieces", []) if p["creator"] != 0}
+
+        dmg = await r.cmd("debug_damage", pos=site, radius=12, fraction=0.4)
+        damaged = await healths()  # 40% of full; a fresh piece reports -1 until its health is first set
+        r.results.append(("pieces damaged for the repair test", str((dmg.data or {}).get("damaged"))))
+        await r.task("repair nearby", "repair_nearby", x=site[0], z=site[2], radius=12)
+        after = await healths()
+        repaired = [k for k, h in damaged.items() if h >= 0 and after.get(k, -1) > h * 2]
+        r.results.append(("pieces back to full health after repair", f"{len(repaired)} of {len(damaged)}"))
+    await r.state()
+    await r.cmd("save_world")
+
+
+async def scenario_longwalk(r: Runner) -> None:
+    """Walk far in legs and back: scenario.py longwalk dx dz (offset from where the companion stands)."""
+    dx, dz = (float(v) for v in sys.argv[2:4])
+    s = await r.state()
+    start = s["self"]["pos"]
+    goal = (start[0] + dx, start[2] + dz)
+    t0 = time.monotonic()
+    outcome = await r.task(f"walk {round((dx * dx + dz * dz) ** 0.5)} m", "go_to", x=goal[0], z=goal[1])
+    s = await r.state()
+    pos = s["self"]["pos"]
+    r.results.append(("  out", f"{outcome} in {time.monotonic() - t0:.0f} s, ended at {pos}, goal {goal}"))
+    t0 = time.monotonic()
+    outcome = await r.task("walk back", "go_to", x=start[0], z=start[2])
+    s = await r.state()
+    r.results.append(("  back", f"{outcome} in {time.monotonic() - t0:.0f} s, ended at {s['self']['pos']}, start {start}"))
+    await r.cmd("save_world")
+
+
 SCENARIOS = {
     "m4": scenario_m4, "pieces": scenario_pieces, "build": scenario_build, "inspect": scenario_inspect,
-    "portal": scenario_portal,
+    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk,
 }
 
 

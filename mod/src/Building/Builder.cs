@@ -102,6 +102,67 @@ namespace ValheimCompanion.Building
             return missing;
         }
 
+        /// <summary>A damaged piece built by a player that a hammer could repair right now.</summary>
+        public static bool NeedsRepair(Piece piece, long masterId, out WearNTear wnt)
+        {
+            wnt = piece ? piece.GetComponent<WearNTear>() : null;
+            if (!wnt || !wnt.m_nview || !wnt.m_nview.IsValid() || !piece.IsPlacedByPlayer())
+            {
+                return false;
+            }
+            return wnt.m_nview.GetZDO().GetFloat(ZDOVars.s_health, wnt.m_health) < wnt.m_health - 0.5f;
+        }
+
+        /// <summary>Why the companion can't repair this piece (station out of range, ward), or null if it can.</summary>
+        public static string CheckRepair(Piece piece, long masterId)
+        {
+            if (piece.m_craftingStation && !CraftingStation.HaveBuildStationInRange(piece.m_craftingStation.m_name, piece.transform.position))
+            {
+                return "need_station";
+            }
+            return WardAllows(piece.transform.position, masterId) ? null : "ward_forbids";
+        }
+
+        /// <summary>Damaged player-built pieces within <paramref name="radius"/>, in a short walking order.</summary>
+        public static List<Piece> FindDamaged(Vector3 origin, float radius, long masterId, out int unreachable)
+        {
+            var all = new List<Piece>();
+            Piece.GetAllPiecesInRadius(origin, radius, all);
+            var damaged = new List<Piece>();
+            unreachable = 0;
+            foreach (Piece p in all)
+            {
+                if (!NeedsRepair(p, masterId, out _))
+                {
+                    continue;
+                }
+                if (CheckRepair(p, masterId) != null)
+                {
+                    unreachable++;
+                    continue;
+                }
+                damaged.Add(p);
+            }
+            // Nearest neighbour from the origin.
+            var ordered = new List<Piece>();
+            Vector3 at = origin;
+            while (damaged.Count > 0)
+            {
+                int best = 0;
+                for (int i = 1; i < damaged.Count; i++)
+                {
+                    if ((damaged[i].transform.position - at).sqrMagnitude < (damaged[best].transform.position - at).sqrMagnitude)
+                    {
+                        best = i;
+                    }
+                }
+                at = damaged[best].transform.position;
+                ordered.Add(damaged[best]);
+                damaged.RemoveAt(best);
+            }
+            return ordered;
+        }
+
         /// <summary>Take the materials and place the piece. Caller has checked CheckPlace and materials.</summary>
         public static GameObject Place(Piece piece, Vector3 pos, Quaternion rot, long masterId, CompanionInventory inventory)
         {

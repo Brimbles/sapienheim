@@ -31,10 +31,15 @@ Things that can't be tested headlessly because they need a player in the world. 
 
 - Note: the **first** test hut, at about (80, −314), is half collapsed. That's what exposed the floating-floor bug, which is now fixed with posts. Knock it down with your hammer if you like.
 
+- [ ] `@Alvar put a fence around the hut`, then `@Alvar build a palisade wall in a line here`. The fence is a ring with a gate facing you; any gaps (trees, the hut) are reported, not built through.
+- [ ] Hit a few of your walls with a weapon, then `@Alvar repair the base`. He walks round with the hammer and fixes them.
+- Note: the headless test left a **fence ring with a gate** (and three stakewall sections inside it) at about (141, −313), 40 m north-east of the test hut. Headlessly: 20 of 20 fence pieces standing, 4 gaps for trees and rocks, 24 of 24 damaged pieces repaired.
+
 ## 4b2. Named places, portals and travel
 - [ ] `@Alvar build a hut here called Testville` (he needs ~60 wood and a hammer), walk away, then `@Alvar travel to Testville`.
 - [ ] Build two portals with the same tag, one near you and one far away (e.g. at another base). Then `@Alvar go through the portal`, or name a place near the far end and `@Alvar travel to <place>`: he walks to the near portal, comes out of the far one and walks the rest.
 - [ ] Give him some copper ore and ask again: he should refuse, because ore can't go through portals.
+- [ ] Name a place 1-2 km away (`@Alvar remember this spot as Far Field`), come back, then `@Alvar travel to Far Field`. With no portals he walks there in legs; across open water he stops and says so.
 - [ ] Shut him in the hut and call him: he opens the door (or steps through the doorway) to come out.
 - Note: the headless tests left **test portals** (tags `sapien-test…`) next to the test hut at about (115, −345), and their partners around (170, −284). Feel free to remove them.
 

@@ -15,7 +15,7 @@ namespace ValheimCompanion.Companion
     {
         private const float StuckSeconds = 2f;
         private const float StuckDistance = 0.3f;
-        private const float DoorRange = 3f;
+        private const float DoorRange = 4f;
         private const float Cooldown = 4f;
 
         private readonly Humanoid _character;
@@ -33,6 +33,19 @@ namespace ValheimCompanion.Companion
             _nview = nview;
             _character = character;
             _ai = ai;
+        }
+
+        /// <summary>Under a roof: then any goal outside is through the door, whichever wall it lies beyond.</summary>
+        private static bool Indoors(Vector3 pos)
+        {
+            foreach (RaycastHit hit in Physics.RaycastAll(pos + Vector3.up * 0.5f, Vector3.up, 5f, ~0, QueryTriggerInteraction.Ignore))
+            {
+                if (hit.collider.GetComponentInParent<Piece>())
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         /// <summary>Is the goal on the other side of this doorway from us? Only then is stepping through useful.</summary>
@@ -77,10 +90,11 @@ namespace ValheimCompanion.Companion
                 return;
             }
             _nextTry = Time.time + Cooldown;
+            bool indoors = Indoors(pos);
 
             // Opened a door already and still stuck: step through it.
             if (_opened && _opened.m_nview && _opened.m_nview.IsValid() && Time.time - _openedAt >= StepThroughAfter
-                && Vector3.Distance(_opened.transform.position, pos) <= DoorRange && GoalBeyond(_opened, pos, goal.transform.position))
+                && Vector3.Distance(_opened.transform.position, pos) <= DoorRange && (indoors || GoalBeyond(_opened, pos, goal.transform.position)))
             {
                 StepThrough(_opened, pos);
                 _opened = null;
@@ -99,7 +113,7 @@ namespace ValheimCompanion.Companion
                 {
                     continue; // not ours to open
                 }
-                if (!GoalBeyond(door, pos, goal.transform.position))
+                if (!indoors && !GoalBeyond(door, pos, goal.transform.position))
                 {
                     continue; // the goal is on our side of this door; it's not what's in the way
                 }

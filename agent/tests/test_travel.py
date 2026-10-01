@@ -48,8 +48,14 @@ def test_long_trip_uses_the_portal_that_gets_closest():
     assert "via portal 'far east'" in result["content"]
 
 
-def test_far_without_portals_is_refused():
+def test_long_walk_without_portals_goes_on_foot():
     result, sent = travel(Conn((0, 0), []), (3000, 0))
+    assert sent[-1] == ("go_to", {"x": 3000.0, "z": 0.0, "queue": False})
+    assert "long walk" in result["content"]
+
+
+def test_beyond_walking_range_without_portals_is_refused():
+    result, sent = travel(Conn((0, 0), []), (6000, 0))
     assert result["is_error"] and "too_far" in result["content"]
     assert not any(a == "go_to" for a, _ in sent)
 
@@ -58,6 +64,23 @@ def test_portal_that_doesnt_help_is_ignored():
     portals = [portal("1:3", "detour", (200, 0), (900, 900), 200)]
     result, sent = travel(Conn((0, 0), portals), (300, 0))
     assert sent[-1][0] == "go_to" and not any(a == "use_portal" for a, _ in sent)
+
+
+def test_wall_around_a_named_place_sends_its_position():
+    conn = Conn((0, 0), [])
+    b = Brain(conn, client=None)
+    b.memory.set_place("Lakeside Lodge", 500.0, 600.0)
+    block = SimpleNamespace(type="tool_use", id="t1", name="build", input={"template": "wall", "around": "lakeside lodge"})
+    asyncio.run(b._execute(block, [], []))
+    assert conn.sent[0] == ("build", {"template": "wall", "x": 500.0, "z": 600.0})
+
+
+def test_repair_around_unknown_place_fails_without_calling_the_mod():
+    conn = Conn((0, 0), [])
+    block = SimpleNamespace(type="tool_use", id="t1", name="repair_nearby", input={"around": "nowhere"})
+    result = asyncio.run(Brain(conn, client=None)._execute(block, [], []))
+    assert result["is_error"] and "unknown_place" in result["content"]
+    assert conn.sent == []
 
 
 def test_named_build_becomes_a_place():

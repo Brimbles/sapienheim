@@ -117,6 +117,29 @@ namespace ValheimCompanion.Bridge
                 return;
             }
 
+            if (action == "debug_damage")
+            {
+                // Testing command: knock player-built pieces near a point down to a fraction of their health. Not an LLM tool.
+                JArray at = args["pos"] as JArray;
+                Vector3 centre = at != null && at.Count == 3 ? new Vector3((float)at[0], (float)at[1], (float)at[2]) : Vector3.zero;
+                float radius = args["radius"] != null ? (float)args["radius"] : 10f;
+                float fraction = args["fraction"] != null ? (float)args["fraction"] : 0.5f;
+                int damaged = 0;
+                foreach (WearNTear wnt in WearNTear.GetAllInstances())
+                {
+                    Piece piece = wnt ? wnt.GetComponent<Piece>() : null;
+                    if (!piece || !piece.IsPlacedByPlayer() || !wnt.m_nview || !wnt.m_nview.IsValid() || !wnt.m_nview.IsOwner()
+                        || Vector3.Distance(wnt.transform.position, centre) > radius)
+                    {
+                        continue;
+                    }
+                    wnt.m_nview.GetZDO().Set(ZDOVars.s_health, wnt.m_health * fraction);
+                    damaged++;
+                }
+                Result(cmdId, true, null, new JObject { ["damaged"] = damaged });
+                return;
+            }
+
             if (action == "save_world")
             {
                 // Operator/testing command (not an LLM tool): a world save. Calls ZNet.Save directly: RPC_Save's
@@ -339,6 +362,10 @@ namespace ValheimCompanion.Bridge
                 case "build":
                 {
                     string template = (string)args["template"] ?? "hut";
+                    if (Building.LineTemplate.IsKind(template))
+                    {
+                        return BuildLine(companion, template, args, cmdId, out data);
+                    }
                     if (template != "hut")
                     {
                         return "unknown_template";
@@ -398,6 +425,36 @@ namespace ValheimCompanion.Bridge
                     return Queue(companion, args, $"build({name})",
                         () => companion.Tasks.CommandBuild(name, plan, TaskId(args, cmdId)));
                 }
+                case "repair_nearby":
+                {
+                    Vector3 around = companion.transform.position;
+                    string nearWho = (string)args["near"];
+                    if (!string.IsNullOrEmpty(nearWho) && !TryFindPlayer(nearWho, out _, out _, out around))
+                    {
+                        return "player_not_found";
+                    }
+                    if (args["x"] != null && args["z"] != null)
+                    {
+                        around = new Vector3((float)args["x"], around.y, (float)args["z"]);
+                    }
+                    float radius = Mathf.Clamp(args["radius"] != null ? (float)args["radius"] : 30f, 5f, 60f);
+                    if (Building.Builder.FindHammer(companion.Inventory) == null && !IsQueued(args))
+                    {
+                        return "need_hammer";
+                    }
+                    var damaged = Building.Builder.FindDamaged(around, radius, CompanionState.GetMaster(companion.ZDO), out int cant);
+                    data = new JObject { ["damaged"] = damaged.Count };
+                    if (cant > 0)
+                    {
+                        data["cant_repair"] = cant; // a workbench out of range, or a ward
+                    }
+                    if (damaged.Count == 0)
+                    {
+                        return cant > 0 ? "cant_repair_any" : "nothing_to_repair";
+                    }
+                    return Queue(companion, args, "repair_nearby",
+                        () => companion.Tasks.CommandRepair(damaged, cant, TaskId(args, cmdId)));
+                }
                 case "resume_build":
                 {
                     if (!companion.Tasks.HasUnfinishedBuild)
@@ -433,7 +490,7 @@ namespace ValheimCompanion.Bridge
                 {
                     Travel.PortalNetwork.Portal? portal = args["portal_id"] != null
                         ? Travel.PortalNetwork.Find((string)args["portal_id"])
-                        : Travel.PortalNetwork.Nearest(companion.transform.position, (string)args["tag"], CompanionTasks.MaxGoToDistance);
+                        : Travel.PortalNetwork.Nearest(companion.transform.position, (string)args["tag"], CompanionTasks.PortalSearchDistance);
                     if (portal == null)
                     {
                         return "no_paired_portal_found";
@@ -442,7 +499,7 @@ namespace ValheimCompanion.Bridge
                     {
                         return "portal_unpaired";
                     }
-                    if (Vector3.Distance(portal.Value.Zdo.GetPosition(), companion.transform.position) > CompanionTasks.MaxGoToDistance)
+                    if (Vector3.Distance(portal.Value.Zdo.GetPosition(), companion.transform.position) > CompanionTasks.PortalSearchDistance)
                     {
                         return "portal_too_far";
                     }
@@ -671,6 +728,76 @@ namespace ValheimCompanion.Bridge
         }
 
         // Day fraction: 0 = midnight, 0.5 = noon. Valheim nights run roughly 0.8 -> 0.2.
+        /// <summary>A wall or fence: a ring with a gate around a spot, or a straight line across it.</summary>
+        private static string BuildLine(CompanionAI companion, string template, JObject args, string cmdId, out JObject data)
+        {
+            data = null;
+            bool ring = ((string)args["shape"] ?? "ring") != "line";
+            int size = Building.LineTemplate.ClampSize(args["size"] != null ? (int)args["size"] : (ring ? 12 : 10));
+
+            // The centre: a spot (from a named place), a player, or the companion itself.
+            Vector3 centre = companion.transform.position;
+            string nearPlayer = (string)args["near"];
+            if (!string.IsNullOrEmpty(nearPlayer) && !TryFindPlayer(nearPlayer, out _, out _, out centre))
+            {
+                return "player_not_found";
+            }
+            if (args["x"] != null && args["z"] != null)
+            {
+                centre = new Vector3((float)args["x"], centre.y, (float)args["z"]);
+            }
+            // The front (gate, or the face of a line) faces the companion unless given.
+            float facing;
+            Vector3 toUs = companion.transform.position - centre;
+            toUs.y = 0f;
+            if (args["facing"] != null)
+            {
+                facing = (float)args["facing"];
+            }
+            else
+            {
+                facing = toUs.sqrMagnitude > 1f ? Quaternion.LookRotation(-toUs).eulerAngles.y : companion.transform.eulerAngles.y + 180f;
+            }
+            bool gate = args["gate"] != null ? (bool)args["gate"] : ring;
+
+            var plan = Building.LineTemplate.Generate(template, ring, size, centre, facing, gate,
+                CompanionState.GetMaster(companion.ZDO), out var skipped);
+            var pieceNames = new System.Collections.Generic.List<string>();
+            foreach (var step in plan)
+            {
+                if (step.Clear == null)
+                {
+                    pieceNames.Add(step.Piece);
+                }
+            }
+            data = new JObject
+            {
+                ["template"] = template, ["shape"] = ring ? "ring" : "line", ["size"] = size,
+                ["pieces"] = pieceNames.Count, ["clear_first"] = plan.Count - pieceNames.Count,
+                ["site"] = new JArray(Mathf.Round(centre.x), Mathf.Round(centre.y), Mathf.Round(centre.z)),
+            };
+            if (skipped.Count > 0)
+            {
+                data["gaps"] = JObject.FromObject(skipped); // sections left out, by reason
+            }
+            if (pieceNames.Count == 0)
+            {
+                return "nowhere_to_build";
+            }
+            JObject missingMaterials = Building.Builder.Missing(pieceNames, companion.Inventory);
+            if (missingMaterials.Count > 0 && !IsQueued(args))
+            {
+                data["missing"] = missingMaterials;
+                return "missing_materials";
+            }
+            if (Building.Builder.FindHammer(companion.Inventory) == null && !IsQueued(args))
+            {
+                return "need_hammer";
+            }
+            string name = $"{template} {(ring ? $"ring {size}x{size} m" : $"line {size} m")}";
+            return Queue(companion, args, $"build({name})", () => companion.Tasks.CommandBuild(name, plan, TaskId(args, cmdId)));
+        }
+
         private static string TimeOfDay(float f)
         {
             if (EnvMan.IsNight()) return "night";

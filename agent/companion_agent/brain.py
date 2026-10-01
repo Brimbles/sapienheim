@@ -32,7 +32,9 @@ CHAT_MODEL = os.environ.get("AGENT_CHAT_MODEL", "claude-haiku-4-5")
 PLAN_MODEL = os.environ.get("AGENT_PLAN_MODEL", "claude-sonnet-5-5")
 CALLS_PER_MINUTE = int(os.environ.get("AGENT_CALLS_PER_MINUTE", "10"))
 MAX_STEPS_PER_TURN = 5
-MAX_WALK = 500.0          # the mod's single go_to limit
+MAX_WALK = 5000.0         # the mod's go_to limit (long walks go in legs)
+PORTAL_REACH = 500.0      # the mod only uses portals within this distance
+LONG_WALK = 500.0         # beyond this, warn that the trip takes a while and may hit water
 PORTAL_OVERHEAD = 20.0    # metres-equivalent cost of using a portal
 
 # Messages that probably need multi-step planning go to the stronger model.
@@ -92,7 +94,8 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "go_to",
-        "description": "Walk to a point (x, z) or to where a player currently is, then stay there. Max 500 m. "
+        "description": "Walk to a point (x, z) or to where a player currently is, then stay there. Max 5000 m; long "
+        "walks go in legs and fail with water_in_the_way (no boat yet) or stuck if the way is blocked. "
         "A task_done or task_failed event arrives later.",
         "input_schema": {
             "type": "object",
@@ -228,20 +231,43 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "build",
-        "description": "Build a structure from a template near you or near a player. Templates: hut (small wooden hut: "
-        "workbench, floor, walls with a door, gable roof; width 1-5 cells of 2 m, depth 4 m). Needs a hammer and wood "
-        "(about 28 + 16 per width cell). Rejected straight away with missing_materials (and what's missing) or need_hammer "
-        "unless queued. task_done/task_failed reports the result; a failed build can be continued with resume_build.",
+        "description": "Build a structure from a template near you, near a player, or around a named place. Templates: "
+        "hut (small wooden hut: workbench, floor, walls with a door, gable roof; width 1-5 cells of 2 m, depth 4 m; about "
+        "28 + 16 wood per width cell); wall (2 m stakewall palisade, 2 wood per metre, 12 for the gate); fence (1 m "
+        "roundpole fence, 0.5 wood per metre, 4 for the gate). Walls and fences go in a square ring with a gate facing "
+        "you (shape=ring, e.g. around a base) or a straight line facing you (shape=line); spots blocked by trees, "
+        "buildings, water or wards are left as gaps (reported as gaps). Needs a hammer. Rejected straight away with "
+        "missing_materials (and what's missing) or need_hammer unless queued. task_done/task_failed reports the result; "
+        "a failed build can be continued with resume_build.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "template": {"type": "string", "enum": ["hut"]},
-                "width": {"type": "integer", "description": "Width in 2 m cells, 1-5 (default 3)."},
+                "template": {"type": "string", "enum": ["hut", "wall", "fence"]},
+                "width": {"type": "integer", "description": "hut: width in 2 m cells, 1-5 (default 3)."},
+                "shape": {"type": "string", "enum": ["ring", "line"], "description": "wall/fence: ring (default) or line."},
+                "size": {"type": "integer", "description": "wall/fence: ring side or line length in metres, 4-40 (default 12 for a ring, 10 for a line)."},
+                "gate": {"type": "boolean", "description": "wall/fence: include a gate (default: yes for a ring, no for a line)."},
+                "around": {"type": "string", "description": "wall/fence: centre it on this named place."},
                 "near": {"type": "string", "description": "Build near this player instead of near you."},
                 "name": {"type": "string", "description": "Name for the settlement (e.g. 'Lakeside Lodge'); it becomes a named place you can travel to."},
                 "queue": {"type": "boolean", "description": "true = run after your current work instead of right away."},
             },
             "required": ["template"],
+        },
+    },
+    {
+        "name": "repair_nearby",
+        "description": "Repair damaged buildings (anything players built) with your hammer, around you, a player or a "
+        "named place. Free, like a player's repairs, but needs a hammer and a workbench in range of each piece. "
+        "task_done reports how many were repaired.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "radius": {"type": "number", "description": "Metres, 5-60 (default 30)."},
+                "near": {"type": "string", "description": "Around this player instead of you."},
+                "around": {"type": "string", "description": "Around this named place."},
+                "queue": {"type": "boolean", "description": "true = run after your current work instead of right away."},
+            },
         },
     },
     {
@@ -591,6 +617,13 @@ class Brain:
         if name == "travel":
             return await self._travel(block.id, args, actions)
         settlement = args.pop("name", None) if name == "build" else None
+        if name in ("build", "repair_nearby") and args.get("around"):
+            where = self.memory.place(str(args.pop("around")))
+            if where is None:
+                known = ", ".join(p["name"] for p in self.memory.data["places"].values()) or "none yet"
+                return _tool_result(block.id, f"failed: unknown_place (known: {known})", error=True)
+            args["x"], args["z"] = where
+            settlement = None  # building around a place doesn't rename it
         if name == "go_to" and args.get("place"):
             where = self.memory.place(str(args.pop("place")))
             if where is None:
@@ -637,7 +670,7 @@ class Brain:
         portals = await self.conn.command("portals")
         best, best_cost = None, direct
         for p in (getattr(portals, "data", None) or {}).get("portals", []):
-            if not p.get("paired") or p.get("dist", 1e9) > MAX_WALK:
+            if not p.get("paired") or p.get("dist", 1e9) > PORTAL_REACH:
                 continue
             cost = _dist(me, (p["pos"][0], p["pos"][2])) + _dist((p["exit"][0], p["exit"][2]), dest) + PORTAL_OVERHEAD
             if cost < best_cost and _dist((p["exit"][0], p["exit"][2]), dest) <= MAX_WALK:
@@ -657,6 +690,8 @@ class Brain:
             if not r.ok:
                 return _tool_result(tool_id, f"failed: {r.error}", error=True)
             route = f"on foot, {round(direct)} m"
+            if direct > LONG_WALK:
+                route += " (a long walk: several minutes, and water in the way would stop it)"
         else:
             return _tool_result(
                 tool_id, f"failed: too_far ({round(direct)} m) and no portal route; suggest building portals", error=True
@@ -697,7 +732,7 @@ def _worth_reporting(event: Event) -> bool:
     if event.name == "task_failed":
         return True
     return event.data.get("queue_remaining", 0) == 0 and event.data.get("task") in (
-        "gather", "give", "pick_up", "craft", "store", "fetch", "build", "go_to", "portal"
+        "gather", "give", "pick_up", "craft", "store", "fetch", "build", "go_to", "portal", "repair"
     )
 
 

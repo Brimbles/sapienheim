@@ -33,6 +33,7 @@ namespace ValheimCompanion.Companion
         // as reached a little beyond that, or the companion parks just out of reach forever.
         private const float Reach = 3.6f;
         private const float StuckSeconds = 90f;
+        private const float TargetGiveUp = 20f; // can't get within reach of a source (up on a roof, behind a wall): try another
         private const float MaxSeconds = 600f;
         // Hard limit per gather, including "everything nearby", so a vague request can't strip a hillside.
         public const int MaxItems = 100;
@@ -62,6 +63,8 @@ namespace ValheimCompanion.Companion
         private bool _skippedWarded;
         private string _sourceFilter; // pick | logs | trees | chop | mine | null; loose drops are always collected
         private bool _loggedSearch;
+        private float _targetSince;
+        private readonly HashSet<Component> _unreachable = new HashSet<Component>();
 
         public CompanionGather(Humanoid character, MonsterAI ai, CompanionInventory inventory)
         {
@@ -96,6 +99,7 @@ namespace ValheimCompanion.Companion
             _lastProgress = Time.time;
             _deadline = Time.time + MaxSeconds;
             _nextSearch = 0f;
+            _unreachable.Clear();
         }
 
         public bool Active => _item != null;
@@ -162,6 +166,7 @@ namespace ValheimCompanion.Companion
                 _target = FindSource();
                 if (_target != null)
                 {
+                    _targetSince = Time.time;
                     Jotunn.Logger.LogInfo($"{_character.m_name}: gather {_item} from {Utils.GetPrefabName(_target.Target.gameObject)} " +
                                           $"({_target.Target.GetType().Name}, tool {_target.Tool}) " +
                                           $"{Vector3.Distance(ClosestPoint(_target.Target), _character.transform.position):F1} m away");
@@ -186,7 +191,14 @@ namespace ValheimCompanion.Companion
             MoveTowards(closest);
             if (Vector3.Distance(closest, _character.transform.position) <= Reach)
             {
+                _targetSince = Time.time;
                 Act(_target, closest);
+            }
+            else if (Time.time - _targetSince > TargetGiveUp)
+            {
+                Jotunn.Logger.LogInfo($"{_character.m_name}: can't reach {Utils.GetPrefabName(_target.Target.gameObject)}, trying another");
+                _unreachable.Add(_target.Target);
+                _target = null;
             }
             return Status.Running;
         }
@@ -429,6 +441,10 @@ namespace ValheimCompanion.Companion
         // Take what's already cut before cutting anything new: the best tier wins, then the nearest in it.
         private void Consider(Source source, ref Source best, ref float bestScore)
         {
+            if (_unreachable.Contains(source.Target))
+            {
+                return;
+            }
             float d = Vector3.Distance(ClosestPoint(source.Target), _character.transform.position);
             float score = Tier(source.Target) * 10000f + d;
             if (score < bestScore)
