@@ -35,6 +35,14 @@ namespace ValheimCompanion.Companion
             _ai = ai;
         }
 
+        /// <summary>Is the goal on the other side of this doorway from us? Only then is stepping through useful.</summary>
+        private static bool GoalBeyond(Door door, Vector3 pos, Vector3 goal)
+        {
+            Vector3 normal = door.transform.forward;
+            normal.y = 0f;
+            return Mathf.Sign(Vector3.Dot(normal, pos - door.transform.position)) != Mathf.Sign(Vector3.Dot(normal, goal - door.transform.position));
+        }
+
         private void StepThrough(Door door, Vector3 pos)
         {
             Vector3 normal = door.transform.forward;
@@ -72,7 +80,7 @@ namespace ValheimCompanion.Companion
 
             // Opened a door already and still stuck: step through it.
             if (_opened && _opened.m_nview && _opened.m_nview.IsValid() && Time.time - _openedAt >= StepThroughAfter
-                && Vector3.Distance(_opened.transform.position, pos) <= DoorRange)
+                && Vector3.Distance(_opened.transform.position, pos) <= DoorRange && GoalBeyond(_opened, pos, goal.transform.position))
             {
                 StepThrough(_opened, pos);
                 _opened = null;
@@ -90,6 +98,10 @@ namespace ValheimCompanion.Companion
                 if (!Builder.WardAllows(door.transform.position, master))
                 {
                     continue; // not ours to open
+                }
+                if (!GoalBeyond(door, pos, goal.transform.position))
+                {
+                    continue; // the goal is on our side of this door; it's not what's in the way
                 }
                 if (door.m_nview.GetZDO().GetInt(ZDOVars.s_state) != 0)
                 {

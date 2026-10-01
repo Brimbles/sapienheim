@@ -119,8 +119,9 @@ namespace ValheimCompanion.Bridge
 
             if (action == "save_world")
             {
-                // Operator/testing command (not an LLM tool): the same save as the admin "save" console command.
-                ZNet.instance.RPC_Save(null);
+                // Operator/testing command (not an LLM tool): a world save. Calls ZNet.Save directly: RPC_Save's
+                // save-throttle check (HardSaveBlock) throws on a dedicated server within 60 s of the last save.
+                ZNet.instance.Save(sync: false, saveOtherPlayerProfiles: true, waitForNextFrame: false);
                 Result(cmdId, true);
                 return;
             }
