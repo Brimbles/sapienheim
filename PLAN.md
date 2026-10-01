@@ -309,6 +309,7 @@ Each milestone ends with something playable. Acceptance criteria in **bold**.
 
 ### M9 — Settlements & roads
 Builds on M5 (placement, blueprints, templates) and M6 (named places).
+- [x] **Named settlements:** `build(..., name=...)` saves the site as a named place; `travel` goes there (walking up to 500 m, or via portals).
 - [ ] **Roads with the pave tool:** route between two named places (settlements) over the heightmap, avoiding water and steep slopes, then level and pave along it by placing the hoe's terrain modifiers, as a player does. Needs a hoe; consumes stamina-equivalent time; respects wards.
 - [ ] **Settlement generator:** each settlement type is data: site rules, a layout of zones and how they connect, a template set, and growth stages so it can be expanded later. The LLM chooses *type*, *size* and *rough area* ("a small port in that bay"); code picks the exact site, lays it out with variety (plot choice, building mix, orientation) and places every piece. Materials are gathered or fetched as needed. Each settlement becomes a named place (M6) that roads and portals can connect.
 
@@ -325,7 +326,7 @@ Builds on M5 (placement, blueprints, templates) and M6 (named places).
 
 ### M10 — Expeditions & travel
 - [ ] **Long-range missions:** send the companion far away to do a job (e.g. build something). The trip is split into legs, because pathfinding only works inside the loaded area; ZoneKeeper loads and generates terrain ahead of it. It reports progress through the agent, shows on the map (M4.5) and handles hazards (water, cliffs, fights). On a mission, death respawns it at the mission site, or ends the mission and reports, instead of respawning beside the master. Limit: the server simulates one place at a time, so one companion on one mission.
-- [ ] **Portals (use):** creatures can't use portals in vanilla, so the server moves the companion itself. It walks into a portal; the server finds the paired portal by tag and moves it there; ZoneKeeper loads the destination. It obeys the no-ore rule (won't teleport with non-teleportable items).
+- [x] **Portals (use):** (done: `PortalNetwork` + `portal` task; verified headlessly, arriving 1 m from the partner portal on loaded ground. `travel(place)` in the agent routes through the portal pair that makes a trip shortest. Doors: the companion opens keyless doors its master may use and steps through doorways the navmesh won't route through.) creatures can't use portals in vanilla, so the server moves the companion itself. It walks into a portal; the server finds the paired portal by tag and moves it there; ZoneKeeper loads the destination. It obeys the no-ore rule (won't teleport with non-teleportable items).
 - [ ] **Portals (build):** after M5, build a portal at a remote spot with a chosen tag, return home and tell the master the tag so they can build the matching portal.
 - [ ] **Boats:** join the master on a ship the way a player does.
   1. **Swim out** to the ship. Enable swimming for the companion; MonsterAI avoids water by default.
