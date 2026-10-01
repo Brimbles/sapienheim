@@ -153,7 +153,7 @@ async def scenario_portal(r: Runner) -> None:
     """Place two tagged portals, wait for the game to pair them, send the companion through, check where he lands."""
     s = await r.state()
     here = s["self"]["pos"]
-    tag = "sapien-test"
+    tag = f"sapien-test-{int(time.time()) % 100000}"
     a = await r.cmd("debug_place", piece="portal_wood", pos=[here[0] + 6, here[2]], yaw=90, tag=tag)
     b = await r.cmd("debug_place", piece="portal_wood", pos=[here[0] + 60, here[2] + 60], yaw=0, tag=tag)
     if not (a.ok and b.ok):

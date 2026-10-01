@@ -8,6 +8,8 @@ namespace ValheimCompanion.Companion
     /// When it is trying to move but hasn't for a couple of seconds, it opens a closed door next to it, if the door
     /// takes no key and any ward there permits its master (the rule a player gets, judged for the master since
     /// Door.Interact's own ward check uses the local player, which a server doesn't have).
+    /// The navmesh often still won't route through a player-built doorway, so if it's still stuck a few seconds after
+    /// opening the door, it steps through: it's moved to just beyond the doorway on the far side.
     /// </summary>
     internal class CompanionDoors
     {
@@ -22,12 +24,33 @@ namespace ValheimCompanion.Companion
         private Vector3 _lastPos;
         private float _stillSince;
         private float _nextTry;
+        private Door _opened;
+        private float _openedAt;
+        private const float StepThroughAfter = 3f;
 
         public CompanionDoors(ZNetView nview, Humanoid character, MonsterAI ai)
         {
             _nview = nview;
             _character = character;
             _ai = ai;
+        }
+
+        private void StepThrough(Door door, Vector3 pos)
+        {
+            Vector3 normal = door.transform.forward;
+            normal.y = 0f;
+            normal.Normalize();
+            float side = Mathf.Sign(Vector3.Dot(normal, pos - door.transform.position));
+            Vector3 beyond = door.transform.position - normal * side * 1.6f;
+            if (ZoneSystem.instance.GetSolidHeight(beyond, out float h))
+            {
+                beyond.y = h + 0.1f;
+            }
+            _character.m_body.linearVelocity = Vector3.zero;
+            _character.transform.position = beyond;
+            _lastPos = beyond;
+            _stillSince = Time.time;
+            Jotunn.Logger.LogInfo($"{_character.m_name}: stepped through the doorway to {beyond:F0}");
         }
 
         public void Update()
@@ -47,6 +70,15 @@ namespace ValheimCompanion.Companion
             }
             _nextTry = Time.time + Cooldown;
 
+            // Opened a door already and still stuck: step through it.
+            if (_opened && _opened.m_nview && _opened.m_nview.IsValid() && Time.time - _openedAt >= StepThroughAfter
+                && Vector3.Distance(_opened.transform.position, pos) <= DoorRange)
+            {
+                StepThrough(_opened, pos);
+                _opened = null;
+                return;
+            }
+
             long master = CompanionState.GetMaster(_nview.GetZDO());
             foreach (Collider col in Physics.OverlapSphere(pos, DoorRange))
             {
@@ -55,12 +87,20 @@ namespace ValheimCompanion.Companion
                 {
                     continue;
                 }
-                if (door.m_nview.GetZDO().GetInt(ZDOVars.s_state) != 0 || !Builder.WardAllows(door.transform.position, master))
+                if (!Builder.WardAllows(door.transform.position, master))
                 {
-                    continue; // already open, or not ours to open
+                    continue; // not ours to open
+                }
+                if (door.m_nview.GetZDO().GetInt(ZDOVars.s_state) != 0)
+                {
+                    StepThrough(door, pos); // already open and still stuck: the navmesh won't route through it
+                    return;
                 }
                 bool forward = Vector3.Dot(door.transform.forward, (pos - door.transform.position).normalized) < 0f;
                 door.m_nview.InvokeRPC("UseDoor", forward);
+                _opened = door;
+                _openedAt = Time.time;
+                _nextTry = Time.time + StepThroughAfter; // check again soon
                 Jotunn.Logger.LogInfo($"{_character.m_name}: opened a door to get out");
                 return;
             }
