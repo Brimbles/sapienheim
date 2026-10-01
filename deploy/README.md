@@ -33,7 +33,7 @@ PhValheim installs mods from Thunderstore and Hexium, so a custom DLL is the ope
 1. Find the test world's BepInEx folder on the `/opt/stateful` volume and drop in:
    - `ValheimCompanion.dll` under `BepInEx/plugins/ValheimCompanion/`.
    - **Jötunn** from Thunderstore (add it in PhValheim's mod picker; that's the supported route).
-2. Put the server config in PhValheim's **server-only** config folder, `custom_configs_secure/`. It persists across updates and is never sent to clients, which matters because it holds the token. Name it `com.sapienheim.valheimcompanion.cfg`, with:
+2. Put the server config in the world's `BepInEx/config/` as `com.sapienheim.valheimcompanion.cfg`. **Check this:** it holds the token, so it must **not** be sent to clients. If PhValheim syncs `BepInEx/config` to players, use its server-only config location instead (check the PhValheim docs; the name `custom_configs_secure` is unverified). It needs:
    ```ini
    [Agent]
    Host = sapienheim-agent      ; the agent container's name on the sapienheim network
