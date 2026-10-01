@@ -24,6 +24,7 @@ namespace ValheimCompanion
         public static ConfigEntry<int> RespawnSeconds;
         public static ConfigEntry<int> OfflineMinutes;
         public static ConfigEntry<string> OfflineMode;
+        public static ConfigEntry<string> MapMarker;
 
         private Harmony _harmony;
 
@@ -40,6 +41,9 @@ namespace ValheimCompanion
                 "What 'off duty' means: logout = leave the world and log back in beside the master when someone joins; " +
                 "idle = freeze in place and resume when someone joins (server only).",
                 new AcceptableValueList<string>("logout", "idle")));
+            MapMarker = Config.Bind("Companion", "MapMarker", "everyone", new ConfigDescription(
+                "Who sees the companion on the minimap and big map: everyone, master (only its master) or off (server only).",
+                new AcceptableValueList<string>("everyone", "master", "off")));
             // Only the server role uses these; clients never talk to the agent.
             AgentHost = Config.Bind("Agent", "Host", "127.0.0.1", "Hostname of the companion agent (server only).");
             AgentPort = Config.Bind("Agent", "Port", 7777, "TCP port of the companion agent (server only).");
@@ -58,6 +62,7 @@ namespace ValheimCompanion
             gameObject.AddComponent<ZoneKeeper>();
             gameObject.AddComponent<CompanionSpawner>();
             gameObject.AddComponent<Bridge.AgentClient>();
+            gameObject.AddComponent<Net.CompanionMapMarker>();
 
             Jotunn.Logger.LogInfo($"{PluginName} {PluginVersion} loaded (headless={Jotunn.Managers.GUIManager.IsHeadless()})");
         }
