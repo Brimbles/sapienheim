@@ -274,10 +274,10 @@ Each milestone ends with something playable. Acceptance criteria in **bold**.
 - **The companion shows on the map, keeps pace with the master's gear and food, visibly swings its tools, and never wears out his gear.**
 
 ### M5 — Building
-- [ ] Place a single piece: prefab lookup, validity check, resource consumption, `SetCreator(master)`, ward check (`PrivateArea`).
+- [x] Place a single piece: prefab lookup, validity check, resource consumption, `SetCreator(master)`, ward check (`PrivateArea`). (`Builder`, player-equivalent `Player.PlacePiece`; hammer + station-in-range + ward-permits-master rules.)
 - [ ] Blueprint format: evaluate reusing **PlanBuild**'s blueprint format **(verify)**; loader + 2–3 starter blueprints.
-- [ ] Incremental build task: walk to piece → hammer animation → place → repeat; pause on missing materials.
-- [ ] `build_template` generators (hut, wall line, fence).
+- [x] Incremental build task: walk to piece → hammer animation → place → repeat; pause on missing materials (`resume_build` continues). Clears small obstacles from the site first.
+- [ ] `build_template` generators (hut, wall line, fence). **Hut done** (`HutTemplate`): site finder (level within 1.5 m, clear of buildings/trees/big rocks, above water), support posts under floating floor tiles, workbench, floor, walls + door, 26° gable roof. Verified headlessly: 24/24 pieces standing after support settles. Wall line and fence still to do.
 - [ ] `repair_nearby`.
 - **"Build a small hut here facing the lake" results in a complete, structurally valid hut, fetching materials as needed.**
 

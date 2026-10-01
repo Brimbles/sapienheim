@@ -48,9 +48,10 @@ RULES = """
 - `chests` in the state lists nearby chests with their contents; use `fetch_items` / `store_items` with a chest id.
 - `craft` makes items from your inventory, walking to the right crafting station if the recipe needs one. Check what an item needs with `recipe` first; if you're short, gather or fetch the materials, then craft.
 - You automatically drop whatever you're doing to fight aggressive enemies nearby, then carry on. No tool call is needed for that.
-- Work tools (go_to, attack, pick_up, give, gather, store_items, fetch_items, craft) take `queue: true` to run one after another. Plan multi-step jobs as a queue, e.g. gather wood, then give it. If one task fails, the rest of the queue is dropped and you'll hear about it.
+- Work tools (go_to, attack, pick_up, give, gather, store_items, fetch_items, craft, build, resume_build) take `queue: true` to run one after another. Plan multi-step jobs as a queue, e.g. gather wood, then give it. If one task fails, the rest of the queue is dropped and you'll hear about it.
 - You'll be told when queued work finishes or fails. Report back in character; if something failed (e.g. need_axe), say what you need.
-- You cannot yet build structures. If asked, say so in character (a "project for next season", say) instead of pretending.
+- `build` puts up a structure from a template (right now: "hut", a small wooden hut with a workbench, floor, walls, a door and a roof). You choose the template, its size and roughly where; the build code picks level ground there, clears bushes and places every piece. It needs a hammer (craft one: Wood 3, Stone 2) and wood: about 28 + 16 per width cell (a 2-wide hut is about 60). If it fails with missing_materials, gather or fetch what's missing and then call resume_build. The pieces belong to your master.
+- You can't build other kinds of structure yet (forts, villages, roads, portals). Say so in character.
 - Example plan for "get 20 wood and make me a club": recipe(Club) -> gather(Wood, enough for the club plus 20, queue) -> craft(Club, queue) -> give(Club to the player, queue) -> give(Wood, 20, queue). Say what you're about to do first.
 - Never attack players or tamed animals. Use the `id` values from the `nearby` list for `attack`.
 - Positions are [x, y, z] in metres; `go_to` takes x and z.
@@ -216,6 +217,28 @@ TOOLS: list[dict[str, Any]] = [
             },
             "required": ["item"],
         },
+    },
+    {
+        "name": "build",
+        "description": "Build a structure from a template near you or near a player. Templates: hut (small wooden hut: "
+        "workbench, floor, walls with a door, gable roof; width 1-5 cells of 2 m, depth 4 m). Needs a hammer and wood "
+        "(about 28 + 16 per width cell). Rejected straight away with missing_materials (and what's missing) or need_hammer "
+        "unless queued. task_done/task_failed reports the result; a failed build can be continued with resume_build.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "template": {"type": "string", "enum": ["hut"]},
+                "width": {"type": "integer", "description": "Width in 2 m cells, 1-5 (default 3)."},
+                "near": {"type": "string", "description": "Build near this player instead of near you."},
+                "queue": {"type": "boolean", "description": "true = run after your current work instead of right away."},
+            },
+            "required": ["template"],
+        },
+    },
+    {
+        "name": "resume_build",
+        "description": "Continue a build that stopped (e.g. after fetching the missing materials).",
+        "input_schema": {"type": "object", "properties": {"queue": {"type": "boolean", "description": "true = run after your current work instead of right away."},}},
     },
     {
         "name": "get_status",
@@ -408,7 +431,7 @@ def _worth_reporting(event: Event) -> bool:
     if event.name == "task_failed":
         return True
     return event.data.get("queue_remaining", 0) == 0 and event.data.get("task") in (
-        "gather", "give", "pick_up", "craft", "store", "fetch"
+        "gather", "give", "pick_up", "craft", "store", "fetch", "build"
     )
 
 
