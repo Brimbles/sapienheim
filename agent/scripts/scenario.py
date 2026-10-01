@@ -149,7 +149,39 @@ async def scenario_inspect(r: Runner) -> None:
         log.info("  ground %s", g)
 
 
-SCENARIOS = {"m4": scenario_m4, "pieces": scenario_pieces, "build": scenario_build, "inspect": scenario_inspect}
+async def scenario_portal(r: Runner) -> None:
+    """Place two tagged portals, wait for the game to pair them, send the companion through, check where he lands."""
+    s = await r.state()
+    here = s["self"]["pos"]
+    tag = "sapien-test"
+    a = await r.cmd("debug_place", piece="portal_wood", pos=[here[0] + 6, here[2]], yaw=90, tag=tag)
+    b = await r.cmd("debug_place", piece="portal_wood", pos=[here[0] + 60, here[2] + 60], yaw=0, tag=tag)
+    if not (a.ok and b.ok):
+        r.results.append(("place portals", "failed"))
+        return
+    target = b.data["pos"]
+    for _ in range(30):  # the server pairs portals with matching tags periodically
+        listing = await r.conn.command("portals")
+        mine = [p for p in (listing.data or {}).get("portals", []) if p["tag"] == tag]
+        if mine and all(p["paired"] for p in mine):
+            break
+        await asyncio.sleep(2)
+    r.results.append(("portals paired", str([p["paired"] for p in mine])))
+    await r.task("use the portal", "use_portal", tag=tag)
+    s = await r.state()
+    pos = s["self"]["pos"]
+    gap = ((pos[0] - target[0]) ** 2 + (pos[2] - target[2]) ** 2) ** 0.5
+    r.results.append(("distance from the far portal after", f"{gap:.1f} m (pos {pos}, portal {target})"))
+    await asyncio.sleep(5)
+    s = await r.state()
+    r.results.append(("height 5 s later (didn't fall through)", str(s["self"]["pos"][1])))
+    await r.cmd("save_world")
+
+
+SCENARIOS = {
+    "m4": scenario_m4, "pieces": scenario_pieces, "build": scenario_build, "inspect": scenario_inspect,
+    "portal": scenario_portal,
+}
 
 
 async def run(scenario: str) -> None:

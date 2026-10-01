@@ -93,6 +93,30 @@ namespace ValheimCompanion.Bridge
                 return;
             }
 
+            if (action == "debug_place")
+            {
+                // Testing command: place a piece with no rules or materials (e.g. two tagged portals). Not an LLM tool.
+                Piece dp = Building.PieceCatalog.Get((string)args["piece"] ?? "");
+                JArray at = args["pos"] as JArray;
+                if (!dp || at == null || at.Count < 2)
+                {
+                    Result(cmdId, false, "need_piece_and_pos");
+                    return;
+                }
+                var p = new Vector3((float)at[0], 0f, (float)at[at.Count - 1]);
+                p.y = at.Count == 3 ? (float)at[1] : (ZoneSystem.instance.GetGroundHeight(p, out float gy) ? gy : 0f);
+                Quaternion rot = Quaternion.Euler(0f, args["yaw"] != null ? (float)args["yaw"] : 0f, 0f);
+                GameObject go = Building.Builder.Place(dp, p, rot, 0L, null);
+                string tag = (string)args["tag"];
+                ZNetView nv = go.GetComponent<ZNetView>();
+                if (!string.IsNullOrEmpty(tag) && nv)
+                {
+                    nv.GetZDO().Set(ZDOVars.s_tag, tag);
+                }
+                Result(cmdId, true, null, new JObject { ["id"] = nv ? nv.GetZDO().m_uid.ToString() : "", ["pos"] = new JArray(Round(p.x), Round(p.y), Round(p.z)) });
+                return;
+            }
+
             if (action == "save_world")
             {
                 // Operator/testing command (not an LLM tool): the same save as the admin "save" console command.
@@ -383,6 +407,34 @@ namespace ValheimCompanion.Bridge
                     }
                     return Queue(companion, args, "resume_build",
                         () => companion.Tasks.CommandResumeBuild(TaskId(args, cmdId)));
+                }
+                case "portals":
+                    data = new JObject { ["portals"] = Travel.PortalNetwork.Describe(companion.transform.position) };
+                    return null;
+                case "use_portal":
+                {
+                    Travel.PortalNetwork.Portal? portal = args["portal_id"] != null
+                        ? Travel.PortalNetwork.Find((string)args["portal_id"])
+                        : Travel.PortalNetwork.Nearest(companion.transform.position, (string)args["tag"], CompanionTasks.MaxGoToDistance);
+                    if (portal == null)
+                    {
+                        return "no_paired_portal_found";
+                    }
+                    if (portal.Value.Target == null)
+                    {
+                        return "portal_unpaired";
+                    }
+                    if (Vector3.Distance(portal.Value.Zdo.GetPosition(), companion.transform.position) > CompanionTasks.MaxGoToDistance)
+                    {
+                        return "portal_too_far";
+                    }
+                    if (!IsQueued(args) && !Travel.PortalNetwork.Teleportable(companion.Inventory.Inventory, portal.Value.Zdo, out string blocking))
+                    {
+                        return "carrying_non_teleportable:" + blocking;
+                    }
+                    Travel.PortalNetwork.Portal chosen = portal.Value;
+                    return Queue(companion, args, $"use_portal({chosen.Tag})",
+                        () => companion.Tasks.CommandUsePortal(chosen, TaskId(args, cmdId)));
                 }
                 default:
                     return "unknown_action";

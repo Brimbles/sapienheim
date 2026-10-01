@@ -4,6 +4,7 @@ using Newtonsoft.Json.Linq;
 using UnityEngine;
 using ValheimCompanion.Bridge;
 using ValheimCompanion.Building;
+using ValheimCompanion.Travel;
 
 namespace ValheimCompanion.Companion
 {
@@ -20,6 +21,8 @@ namespace ValheimCompanion.Companion
     /// <item><c>store</c> / <c>fetch</c>: walk to a chest and move items into or out of it.</item>
     /// <item><c>craft</c>: walk to the recipe's crafting station (if any) and craft N of an item.</item>
     /// <item><c>build</c>: place a template's pieces one by one, as a player would with a hammer.</item>
+    /// <item><c>portal</c>: walk to a portal and come out of its partner (creatures can't use portals in vanilla,
+    /// so the companion is moved by the server, frozen until the destination terrain has loaded).</item>
     /// </list>
     /// Combat pre-empts everything: an aggressive enemy nearby pauses the current task until it is dead,
     /// gone or has fled, then the task resumes with its clocks shifted by the pause.
@@ -40,6 +43,7 @@ namespace ValheimCompanion.Companion
         public const string Fetch = "fetch";
         public const string Craft = "craft";
         public const string Build = "build";
+        public const string UsePortal = "portal";
 
         private const float ArriveDistance = 3.5f;
         private const float GoToTimeout = 180f;
@@ -56,6 +60,9 @@ namespace ValheimCompanion.Companion
         private const float BuildReach = 5f;
         private const float PlaceInterval = 1.2f;
         private const float BuildStepTimeout = 60f;
+        private const float PortalReach = 2.5f;
+        private const float PortalWalkTimeout = 240f;
+        private const float ArrivalTimeout = 30f;
         public const float MaxGoToDistance = 500f;
 
         private class Queued
@@ -115,6 +122,12 @@ namespace ValheimCompanion.Companion
         private float _nextPlace;
         private float _stepDeadline;
 
+        // portal
+        private PortalNetwork.Portal? _portal;
+        private bool _inTransit;
+        private Vector3 _exitPos;
+        private Quaternion _exitRot;
+
         public CompanionTasks(ZNetView nview, Humanoid character, MonsterAI ai, CompanionInventory inventory)
         {
             _nview = nview;
@@ -143,6 +156,7 @@ namespace ValheimCompanion.Companion
                     case Fetch:
                     case Craft:
                     case Build:
+                    case UsePortal:
                         return task;
                     default:
                         return Follow;
@@ -322,6 +336,13 @@ namespace ValheimCompanion.Companion
             return Builder.Missing(names, _inventory);
         }
 
+        public void CommandUsePortal(PortalNetwork.Portal portal, string taskId)
+        {
+            _portal = portal;
+            _inTransit = false;
+            SetTask(UsePortal, taskId);
+        }
+
         private void StayHere()
         {
             Zdo.Set(CompanionState.KeyTaskPos, _character.transform.position);
@@ -385,6 +406,9 @@ namespace ValheimCompanion.Companion
                 case Build:
                     UpdateBuild();
                     break;
+                case UsePortal:
+                    UpdatePortal();
+                    break;
             }
         }
 
@@ -402,7 +426,8 @@ namespace ValheimCompanion.Companion
                         || (task == Gather && !_gather.Active)
                         || ((task == Store || task == Fetch) && !_chest)
                         || (task == Craft && !_recipe)
-                        || (task == Build && (_buildPlan == null || _buildPlan.Count == 0));
+                        || (task == Build && (_buildPlan == null || _buildPlan.Count == 0))
+                        || (task == UsePortal && _portal == null);
             if (lost)
             {
                 CompanionState.SetTask(Zdo, Follow);
@@ -429,6 +454,9 @@ namespace ValheimCompanion.Companion
                 case Fetch:
                 case Craft:
                     _deadline = Time.time + StationTimeout;
+                    break;
+                case UsePortal:
+                    _deadline = Time.time + PortalWalkTimeout;
                     break;
             }
             Jotunn.Logger.LogInfo($"{_character.m_name}: task -> {task}" + (_queue.Count > 0 ? $" ({_queue.Count} queued)" : ""));
@@ -923,6 +951,84 @@ namespace ValheimCompanion.Companion
             hit.SetAttacker(_character);
             target.Damage(hit);
             _clearHits++;
+        }
+
+        private void UpdatePortal()
+        {
+            PortalNetwork.Portal portal = _portal.Value;
+            if (_inTransit)
+            {
+                UpdateArrival(portal);
+                return;
+            }
+            if (!portal.Zdo.IsValid() || portal.Target == null || !portal.Target.IsValid())
+            {
+                FailPortal("portal_gone_or_unpaired");
+                return;
+            }
+
+            // Walk to the portal.
+            Vector3 at = portal.Zdo.GetPosition();
+            if (!_waypoint)
+            {
+                _waypoint = new GameObject("CompanionWaypoint");
+            }
+            _waypoint.transform.position = at;
+            if (_ai.GetFollowTarget() != _waypoint)
+            {
+                _ai.SetFollowTarget(_waypoint);
+            }
+            Vector3 delta = at - _character.transform.position;
+            delta.y = 0f;
+            if (delta.magnitude > Mathf.Max(PortalReach, 3.2f))
+            {
+                if (Time.time > _deadline)
+                {
+                    FailPortal("cant_reach_portal");
+                }
+                return;
+            }
+
+            if (!PortalNetwork.Teleportable(_inventory.Inventory, portal.Zdo, out string blocking))
+            {
+                FailPortal("carrying_non_teleportable:" + blocking);
+                return;
+            }
+
+            // Step through: appear at the exit, frozen until the terrain there has loaded around us.
+            PortalNetwork.Exit(portal, out _exitPos, out _exitRot);
+            ClearWaypoint();
+            _ai.SetFollowTarget(null);
+            _ai.ResetPatrolPoint();
+            Rigidbody body = _character.m_body;
+            body.linearVelocity = Vector3.zero;
+            body.isKinematic = true;
+            _character.transform.SetPositionAndRotation(_exitPos, _exitRot);
+            _inTransit = true;
+            _deadline = Time.time + ArrivalTimeout;
+            Jotunn.Logger.LogInfo($"{_character.m_name}: through portal '{portal.Tag}' to {_exitPos:F0}");
+        }
+
+        private void UpdateArrival(PortalNetwork.Portal portal)
+        {
+            _character.transform.SetPositionAndRotation(_exitPos, _exitRot); // hold still while it loads
+            bool loaded = ZoneSystem.instance.IsZoneLoaded(_exitPos) && ZoneSystem.instance.GetGroundHeight(_exitPos, out _);
+            if (!loaded && Time.time < _deadline)
+            {
+                return;
+            }
+            _character.m_body.isKinematic = false;
+            _inTransit = false;
+            _portal = null;
+            Complete(true, new JObject { ["task"] = UsePortal, ["tag"] = portal.Tag, ["pos"] = Pos(_exitPos), ["terrain_loaded"] = loaded },
+                afterwards: Stay);
+        }
+
+        private void FailPortal(string reason)
+        {
+            string tag = _portal?.Tag;
+            _portal = null;
+            Complete(false, new JObject { ["task"] = UsePortal, ["tag"] = tag, ["reason"] = reason });
         }
 
         private void FailBuild(string reason, JObject missing = null)

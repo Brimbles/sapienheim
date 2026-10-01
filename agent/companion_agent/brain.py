@@ -11,6 +11,7 @@ import asyncio
 import json
 import logging
 import os
+import math
 import random
 import re
 import time
@@ -31,6 +32,8 @@ CHAT_MODEL = os.environ.get("AGENT_CHAT_MODEL", "claude-haiku-4-5")
 PLAN_MODEL = os.environ.get("AGENT_PLAN_MODEL", "claude-sonnet-5-5")
 CALLS_PER_MINUTE = int(os.environ.get("AGENT_CALLS_PER_MINUTE", "10"))
 MAX_STEPS_PER_TURN = 5
+MAX_WALK = 500.0          # the mod's single go_to limit
+PORTAL_OVERHEAD = 20.0    # metres-equivalent cost of using a portal
 
 # Messages that probably need multi-step planning go to the stronger model.
 PLAN_PATTERN = re.compile(r"\b(build|craft|plan|gather|collect|fetch|make me|go to|and then|then)\b", re.I)
@@ -52,6 +55,8 @@ RULES = """
 - Work tools (go_to, attack, pick_up, give, gather, store_items, fetch_items, craft, build, resume_build) take `queue: true` to run one after another. Plan multi-step jobs as a queue, e.g. gather wood, then give it. If one task fails, the rest of the queue is dropped and you'll hear about it.
 - You'll be told when queued work finishes or fails. Report back in character; if something failed (e.g. need_axe), say what you need.
 - `build` puts up a structure from a template (right now: "hut", a small wooden hut with a workbench, floor, walls, a door and a roof). You choose the template, its size and roughly where; the build code picks level ground there, clears bushes and places every piece. It needs a hammer (craft one: Wood 3, Stone 2) and wood: about 28 + 16 per width cell (a 2-wide hut is about 60). If it fails with missing_materials, gather or fetch what's missing and then call resume_build. The pieces belong to your master.
+- Travel: to go to a named place, use `travel` (it picks the best route, through portals when that's shorter). `use_portal` steps through a specific portal. You can't yet walk more than 500 m in one go without a portal.
+- Name the settlements you build (the `name` on `build`) so you can travel back to them later.
 - Memory: you keep a long-term memory between sessions (shown as "What you remember"). Use `remember` for things worth keeping: what players like, promises, plans, notable events. Use `name_place` when asked to remember a location, and `go_to` with `place` to go back there.
 - You can't build other kinds of structure yet (forts, villages, roads, portals). Say so in character.
 - Example plan for "get 20 wood and make me a club": recipe(Club) -> gather(Wood, enough for the club plus 20, queue) -> craft(Club, queue) -> give(Club to the player, queue) -> give(Wood, 20, queue). Say what you're about to do first.
@@ -233,6 +238,7 @@ TOOLS: list[dict[str, Any]] = [
                 "template": {"type": "string", "enum": ["hut"]},
                 "width": {"type": "integer", "description": "Width in 2 m cells, 1-5 (default 3)."},
                 "near": {"type": "string", "description": "Build near this player instead of near you."},
+                "name": {"type": "string", "description": "Name for the settlement (e.g. 'Lakeside Lodge'); it becomes a named place you can travel to."},
                 "queue": {"type": "boolean", "description": "true = run after your current work instead of right away."},
             },
             "required": ["template"],
@@ -242,6 +248,25 @@ TOOLS: list[dict[str, Any]] = [
         "name": "resume_build",
         "description": "Continue a build that stopped (e.g. after fetching the missing materials).",
         "input_schema": {"type": "object", "properties": {"queue": {"type": "boolean", "description": "true = run after your current work instead of right away."},}},
+    },
+    {
+        "name": "travel",
+        "description": "Go to a named place you remember. Picks the best route: straight there, or via a pair of "
+        "portals when that's shorter. A task_done event follows on arrival.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"place": {"type": "string"}, "queue": {"type": "boolean", "description": "true = run after your current work instead of right away."},},
+            "required": ["place"],
+        },
+    },
+    {
+        "name": "use_portal",
+        "description": "Walk to a portal (the nearest paired one, or the one with this tag) and step through it. "
+        "You can't take ore or other non-teleportable items through.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"tag": {"type": "string", "description": "The portal's tag; omit for the nearest."}, "queue": {"type": "boolean", "description": "true = run after your current work instead of right away."},},
+        },
     },
     {
         "name": "remember",
@@ -486,6 +511,9 @@ class Brain:
             return _tool_result(block.id, "remembered")
         if name == "name_place":
             return await self._name_place(block.id, args, actions)
+        if name == "travel":
+            return await self._travel(block.id, args, actions)
+        settlement = args.pop("name", None) if name == "build" else None
         if name == "go_to" and args.get("place"):
             where = self.memory.place(str(args.pop("place")))
             if where is None:
@@ -499,6 +527,10 @@ class Brain:
         result = await self.conn.command(name, **args)
         log.info("tool %s(%s) -> %s", name, args, "ok" if result.ok else result.error)
         data = getattr(result, "data", None)
+        if result.ok and settlement and data and data.get("site"):
+            site = data["site"]
+            self.memory.set_place(settlement, site[0], site[2])
+            actions.append(f"name_place({settlement})")
         if result.ok:
             if name == "say":
                 spoken.append(str(args.get("text", "")))
@@ -510,6 +542,51 @@ class Brain:
         detail = f" {json.dumps(data)}" if data else ""
         return _tool_result(block.id, f"failed: {result.error}{detail}", error=True)
 
+
+    async def _travel(self, tool_id: str, args: dict[str, Any], actions: list[str]) -> dict[str, Any]:
+        """Route to a named place: straight there, or through the portal pair that makes the trip shortest."""
+        place = str(args.get("place", ""))
+        dest = self.memory.place(place)
+        if dest is None:
+            known = ", ".join(p["name"] for p in self.memory.data["places"].values()) or "none yet"
+            return _tool_result(tool_id, f"failed: unknown_place (known: {known})", error=True)
+        state = await self.conn.request_state() or {}
+        here = (state.get("self") or {}).get("pos")
+        if not here:
+            return _tool_result(tool_id, "failed: don't know where you are", error=True)
+        me = (here[0], here[2])
+        direct = _dist(me, dest)
+
+        portals = await self.conn.command("portals")
+        best, best_cost = None, direct
+        for p in (getattr(portals, "data", None) or {}).get("portals", []):
+            if not p.get("paired") or p.get("dist", 1e9) > MAX_WALK:
+                continue
+            cost = _dist(me, (p["pos"][0], p["pos"][2])) + _dist((p["exit"][0], p["exit"][2]), dest) + PORTAL_OVERHEAD
+            if cost < best_cost and _dist((p["exit"][0], p["exit"][2]), dest) <= MAX_WALK:
+                best, best_cost = p, cost
+
+        queue = bool(args.get("queue"))
+        if best:
+            r = await self.conn.command("use_portal", portal_id=best["id"], queue=queue)
+            if not r.ok:
+                return _tool_result(tool_id, f"failed: {r.error}", error=True)
+            remaining = _dist((best["exit"][0], best["exit"][2]), dest)
+            if remaining > 8:
+                await self.conn.command("go_to", x=dest[0], z=dest[1], queue=True)
+            route = f"via portal '{best['tag']}' then {round(remaining)} m on foot"
+        elif direct <= MAX_WALK:
+            r = await self.conn.command("go_to", x=dest[0], z=dest[1], queue=queue)
+            if not r.ok:
+                return _tool_result(tool_id, f"failed: {r.error}", error=True)
+            route = f"on foot, {round(direct)} m"
+        else:
+            return _tool_result(
+                tool_id, f"failed: too_far ({round(direct)} m) and no portal route; suggest building portals", error=True
+            )
+        actions.append(f"travel({place}: {route})")
+        self.status.add("did", actions[-1])
+        return _tool_result(tool_id, f"on the way to {place}, {route}")
 
     async def _name_place(self, tool_id: str, args: dict[str, Any], actions: list[str]) -> dict[str, Any]:
         place, at = str(args.get("name", "")).strip(), str(args.get("at") or "here").strip()
@@ -530,12 +607,16 @@ class Brain:
         return _tool_result(tool_id, f"remembered '{place}' at x={pos[0]}, z={pos[2]}")
 
 
+def _dist(a: tuple[float, float], b: tuple[float, float]) -> float:
+    return math.hypot(a[0] - b[0], a[1] - b[1])
+
+
 def _worth_reporting(event: Event) -> bool:
     """A failure, or the last task of a job. Routine steps (a go_to in the middle of a queue) stay silent."""
     if event.name == "task_failed":
         return True
     return event.data.get("queue_remaining", 0) == 0 and event.data.get("task") in (
-        "gather", "give", "pick_up", "craft", "store", "fetch", "build"
+        "gather", "give", "pick_up", "craft", "store", "fetch", "build", "go_to", "portal"
     )
 
 

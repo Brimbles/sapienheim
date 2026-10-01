@@ -105,11 +105,14 @@ namespace ValheimCompanion.Building
         /// <summary>Take the materials and place the piece. Caller has checked CheckPlace and materials.</summary>
         public static GameObject Place(Piece piece, Vector3 pos, Quaternion rot, long masterId, CompanionInventory inventory)
         {
-            foreach (Piece.Requirement req in piece.m_resources)
+            if (inventory != null)
             {
-                if (req.m_resItem && req.m_amount > 0)
+                foreach (Piece.Requirement req in piece.m_resources)
                 {
-                    inventory.Inventory.RemoveItem(req.m_resItem.m_itemData.m_shared.m_name, req.m_amount);
+                    if (req.m_resItem && req.m_amount > 0)
+                    {
+                        inventory.Inventory.RemoveItem(req.m_resItem.m_itemData.m_shared.m_name, req.m_amount);
+                    }
                 }
             }
 

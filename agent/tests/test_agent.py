@@ -162,7 +162,7 @@ def test_tool_schemas_are_well_formed():
     assert len(names) == len(set(names))
     assert {
         "say", "follow", "stay", "go_to", "attack", "pick_up", "give", "gather",
-        "store_items", "fetch_items", "recipe", "craft", "build", "resume_build", "get_status",
+        "store_items", "fetch_items", "recipe", "craft", "build", "resume_build", "travel", "use_portal", "get_status",
     } <= set(names)
     for t in brain_mod.TOOLS:
         assert t["input_schema"]["type"] == "object"
