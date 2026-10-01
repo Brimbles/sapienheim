@@ -236,7 +236,8 @@ namespace ValheimCompanion.Companion
                 }
                 if (inventory != null)
                 {
-                    bool same = existing.m_uid.ToString() == s_record.CompanionId;
+                    // A record without an id predates ids; there is only one companion, so it's the same one.
+                    bool same = s_record.CompanionId == null || existing.m_uid.ToString() == s_record.CompanionId;
                     loaded.Inventory.Absorb(inventory, replace: same);
                     Jotunn.Logger.LogInfo(same
                         ? "Companion already in the world (older copy): restored its newer inventory from the away record"
@@ -273,16 +274,25 @@ namespace ValheimCompanion.Companion
         /// </summary>
         private static void RemoveStaleCopy()
         {
-            if (s_record?.CompanionId == null)
+            if (s_record == null)
             {
                 return;
             }
-            string[] parts = s_record.CompanionId.Split(':');
-            if (parts.Length != 2 || !long.TryParse(parts[0], out long user) || !uint.TryParse(parts[1], out uint n))
+            ZDO stale;
+            if (s_record.CompanionId == null)
             {
-                return;
+                // Record from before ids were stored: there is only ever one companion, so any is the stale copy.
+                stale = CompanionSpawner.FindExisting();
             }
-            ZDO stale = ZDOMan.instance.GetZDO(new ZDOID(user, n));
+            else
+            {
+                string[] parts = s_record.CompanionId.Split(':');
+                if (parts.Length != 2 || !long.TryParse(parts[0], out long user) || !uint.TryParse(parts[1], out uint n))
+                {
+                    return;
+                }
+                stale = ZDOMan.instance.GetZDO(new ZDOID(user, n));
+            }
             if (stale != null && stale.IsValid())
             {
                 Jotunn.Logger.LogInfo($"World save predates the away record: removing stale companion copy {s_record.CompanionId}");
