@@ -30,6 +30,7 @@ namespace ValheimCompanion.Companion
 
         private static Request s_pending;
         private bool _autoSpawnChecked;
+        private float _worldReadyAt = -1f;
 
         public static void RequestSpawn(long sender, Vector3 pos, long masterId, string masterName,
                                         bool snapToGround = false, string returnEvent = null, JObject returnData = null,
@@ -108,16 +109,24 @@ namespace ValheimCompanion.Companion
             {
                 s_pending = null;
                 _autoSpawnChecked = false;
+                _worldReadyAt = -1f;
                 return;
             }
             if (Role.IsServer && ZoneSystem.instance.LocationsGenerated)
             {
-                if (!_autoSpawnChecked)
+                // Away record first: it loads the record and removes any stale copy from the world save,
+                // so the debug auto-spawn below sees the real situation.
+                CompanionRespawn.Update();
+                if (_worldReadyAt < 0f)
+                {
+                    _worldReadyAt = Time.time;
+                }
+                // A few seconds' grace so a stale copy removed above is really gone before we look.
+                if (!_autoSpawnChecked && Time.time - _worldReadyAt > 5f)
                 {
                     _autoSpawnChecked = true;
                     TryDebugAutoSpawn();
                 }
-                CompanionRespawn.Update();
                 CompanionPresence.Update();
             }
 
