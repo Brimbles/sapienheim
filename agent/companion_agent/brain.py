@@ -270,6 +270,16 @@ class Brain:
             # Informational: fed into the next turn's context instead of costing an LLM call now.
             self.notes.append(f"{event.name}: {json.dumps(event.data)}")
             log.info("%s %s", event.name, event.data)
+        elif event.name == "logged_out":
+            # Off duty while nobody is online: no LLM call; mentioned when it logs back in.
+            self.notes.append("logged_out: everyone was offline for a while, so you went off duty")
+            log.info("logged_out %s", event.data)
+        elif event.name == "logged_in":
+            await self.take_turn(
+                "(A player has logged in and you're back on duty beside them. Greet them in character, and if anything "
+                "notable happened before you went off duty (see notes), give a one-line 'while you were away'.)",
+                history_line="(Alvar logged back in as a player arrived)",
+            )
         elif event.name == "respawned":
             killer = event.data.get("killed_by") or "something you'd rather not discuss"
             await self.take_turn(

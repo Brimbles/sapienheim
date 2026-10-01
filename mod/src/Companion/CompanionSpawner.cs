@@ -21,7 +21,8 @@ namespace ValheimCompanion.Companion
             public string MasterName;
             public long Sender;
             public float Deadline;
-            public string RespawnKiller; // non-null when this is a bounce-back after death
+            public string ReturnEvent;   // "respawned" / "logged_in" when coming back from the away record
+            public JObject ReturnData;
             public byte[] Inventory;     // carried over from the previous life
             public float NextDiagnostic;
         }
@@ -30,13 +31,14 @@ namespace ValheimCompanion.Companion
         private bool _autoSpawnChecked;
 
         public static void RequestSpawn(long sender, Vector3 pos, long masterId, string masterName,
-                                        bool snapToGround = false, string respawnKiller = null, byte[] inventory = null)
+                                        bool snapToGround = false, string returnEvent = null, JObject returnData = null,
+                                        byte[] inventory = null)
         {
             if (FindExisting() != null)
             {
-                if (respawnKiller != null)
+                if (returnEvent != null)
                 {
-                    Jotunn.Logger.LogInfo("Respawn skipped: a companion already exists");
+                    Jotunn.Logger.LogInfo($"Return ({returnEvent}) skipped: a companion already exists");
                     return;
                 }
                 Rpcs.Reply(sender, "A companion already exists. Use cmp_despawn first.");
@@ -51,7 +53,7 @@ namespace ValheimCompanion.Companion
             s_pending = new Request
             {
                 Pos = pos, SnapToGround = snapToGround, MasterId = masterId, MasterName = masterName, Sender = sender,
-                Deadline = Time.time + SpawnTimeout, RespawnKiller = respawnKiller, Inventory = inventory,
+                Deadline = Time.time + SpawnTimeout, ReturnEvent = returnEvent, ReturnData = returnData, Inventory = inventory,
             };
             // On a dedicated server the area must be loaded around the spawn point first.
             ZoneKeeper.SetPendingAnchor(pos);
@@ -115,6 +117,7 @@ namespace ValheimCompanion.Companion
                     TryDebugAutoSpawn();
                 }
                 CompanionRespawn.Update();
+                CompanionPresence.Update();
             }
 
             Request req = s_pending;
@@ -160,13 +163,9 @@ namespace ValheimCompanion.Companion
             go.GetComponent<CompanionAI>().InitNew(name, req.MasterId, req.MasterName, req.Inventory);
 
             Jotunn.Logger.LogInfo($"Spawned companion {name} for '{req.MasterName}' at {pos:F0}");
-            if (req.RespawnKiller != null)
+            if (req.ReturnEvent != null)
             {
-                AgentClient.SendEvent("respawned", new JObject
-                {
-                    ["killed_by"] = req.RespawnKiller,
-                    ["pos"] = new JArray(Mathf.Round(pos.x), Mathf.Round(pos.y), Mathf.Round(pos.z)),
-                });
+                AgentClient.SendEvent(req.ReturnEvent, req.ReturnData ?? new JObject());
             }
             else
             {

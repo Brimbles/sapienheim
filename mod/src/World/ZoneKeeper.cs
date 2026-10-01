@@ -22,6 +22,9 @@ namespace ValheimCompanion.World
 
         public static ZoneKeeper Instance { get; private set; }
 
+        /// <summary>When true (companion off duty, idle mode) the server stops simulating the companion's area.</summary>
+        public static bool Suspended { get; set; }
+
         /// <summary>Anchor somewhere with no companion yet (used while spawning).</summary>
         public static void SetPendingAnchor(Vector3? pos) => s_pendingAnchor = pos;
 
@@ -83,7 +86,7 @@ namespace ValheimCompanion.World
 
         private static void ApplyAnchor()
         {
-            if (s_anchor.HasValue && IsActive)
+            if (s_anchor.HasValue && IsActive && !Suspended)
             {
                 ZNet.instance.SetReferencePosition(s_anchor.Value);
             }
@@ -91,7 +94,7 @@ namespace ValheimCompanion.World
 
         private void Update()
         {
-            if (!IsActive)
+            if (!IsActive || Suspended)
             {
                 _companion = ZDOID.None;
                 s_anchor = null;

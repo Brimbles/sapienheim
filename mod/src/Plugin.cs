@@ -22,6 +22,8 @@ namespace ValheimCompanion
         public static ConfigEntry<string> CompanionName;
         public static ConfigEntry<string> DebugAutoSpawnAt;
         public static ConfigEntry<int> RespawnSeconds;
+        public static ConfigEntry<int> OfflineMinutes;
+        public static ConfigEntry<string> OfflineMode;
 
         private Harmony _harmony;
 
@@ -32,6 +34,12 @@ namespace ValheimCompanion
             CompanionName = Config.Bind("Companion", "Name", "Alvar", "The companion's name. Changing it renames the existing companion (server only).");
             RespawnSeconds = Config.Bind("Companion", "RespawnSeconds", 60,
                 "After dying, the companion bounces back next to its master after this many seconds (server only).");
+            OfflineMinutes = Config.Bind("Companion", "OfflineMinutes", 60,
+                "Minutes the companion keeps working after the last player logs out before going off duty. -1 = never (server only).");
+            OfflineMode = Config.Bind("Companion", "OfflineMode", "logout", new ConfigDescription(
+                "What 'off duty' means: logout = leave the world and log back in beside the master when someone joins; " +
+                "idle = freeze in place and resume when someone joins (server only).",
+                new AcceptableValueList<string>("logout", "idle")));
             // Only the server role uses these; clients never talk to the agent.
             AgentHost = Config.Bind("Agent", "Host", "127.0.0.1", "Hostname of the companion agent (server only).");
             AgentPort = Config.Bind("Agent", "Port", 7777, "TCP port of the companion agent (server only).");
