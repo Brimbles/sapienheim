@@ -11,6 +11,8 @@ namespace ValheimCompanion.Building
         public string Piece;
         public Vector3 Pos;
         public Quaternion Rot;
+        /// <summary>When set, this step clears an obstacle (bush, sapling, small rock) instead of placing a piece.</summary>
+        public Destructible Clear;
     }
 
     /// <summary>

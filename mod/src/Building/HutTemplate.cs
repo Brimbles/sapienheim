@@ -28,11 +28,20 @@ namespace ValheimCompanion.Building
         private const float FloorMarginX = 3f;
         private const float FloorMarginZ = 1.5f;
 
-        public static List<BuildStep> Generate(int width, Vector3 origin, float facingYaw)
+        public static List<BuildStep> Generate(int width, Vector3 origin, float facingYaw, List<Destructible> clear = null)
         {
             width = ClampWidth(width);
             Quaternion facing = Quaternion.Euler(0f, facingYaw, 0f);
             var steps = new List<BuildStep>();
+
+            // Clear the site of bushes, saplings and small rocks first, as a player would.
+            if (clear != null)
+            {
+                foreach (Destructible d in clear)
+                {
+                    steps.Add(new BuildStep { Piece = "(clear)", Pos = d.transform.position, Rot = Quaternion.identity, Clear = d });
+                }
+            }
 
             void Add(string piece, float x, float y, float z, float yaw)
             {
@@ -117,11 +126,13 @@ namespace ValheimCompanion.Building
         /// footprint, so every floor piece sits on or just above the ground and the lowest ones still get
         /// support from their neighbours.
         /// </summary>
-        public static bool FindSite(int width, Vector3 near, float facingYaw, float searchRadius, out Vector3 origin, out string reason)
+        public static bool FindSite(int width, Vector3 near, float facingYaw, float searchRadius, out Vector3 origin, out string reason,
+                                    out List<Destructible> clear)
         {
             Vector2 half = HalfExtents(ClampWidth(width));
             Quaternion facing = Quaternion.Euler(0f, facingYaw, 0f);
             reason = "no_flat_clear_ground_nearby";
+            var reasons = new Dictionary<string, int>();
 
             // Spiral outwards in 2 m steps.
             for (float r = 0f; r <= searchRadius; r += 2f)
@@ -131,27 +142,53 @@ namespace ValheimCompanion.Building
                 {
                     float a = s * Mathf.PI * 2f / steps;
                     Vector3 c = near + new Vector3(Mathf.Cos(a) * r, 0f, Mathf.Sin(a) * r);
-                    if (CheckSite(c, half, facing, out float floorY, out string why))
+                    if (CheckSite(c, half, facing, out float floorY, out string why, out clear))
                     {
                         origin = new Vector3(c.x, floorY + 0.05f, c.z);
                         return true;
                     }
-                    if (why != null && r == 0f)
+                    if (why != null)
                     {
-                        reason = why; // most useful: why the spot asked for doesn't work
+                        string key = why.Split(':')[0];
+                        reasons.TryGetValue(key, out int n);
+                        reasons[key] = n + 1;
                     }
                 }
             }
+            // Report the most common reason across the search.
+            int best = 0;
+            foreach (var kv in reasons)
+            {
+                if (kv.Value > best)
+                {
+                    best = kv.Value;
+                    reason = kv.Key;
+                }
+            }
             origin = Vector3.zero;
+            clear = null;
             return false;
         }
 
         // Posts are 2 m, so the floor can sit up to ~1.5 m above the lowest ground under it.
         private const float MaxHeightRange = 1.5f;
         private const float PostGap = 0.15f;
+        private const float MaxClearableSize = 3f;
 
-        private static bool CheckSite(Vector3 centre, Vector2 half, Quaternion facing, out float floorY, out string why)
+        private static bool IsSmall(Destructible d)
         {
+            var bounds = new Bounds(d.transform.position, Vector3.zero);
+            foreach (Collider c in d.GetComponentsInChildren<Collider>())
+            {
+                bounds.Encapsulate(c.bounds);
+            }
+            return bounds.size.x <= MaxClearableSize && bounds.size.z <= MaxClearableSize && bounds.size.y <= MaxClearableSize * 2f;
+        }
+
+        private static bool CheckSite(Vector3 centre, Vector2 half, Quaternion facing, out float floorY, out string why,
+                                      out List<Destructible> clear)
+        {
+            clear = new List<Destructible>();
             floorY = float.MinValue;
             float minY = float.MaxValue;
             why = null;
@@ -196,6 +233,16 @@ namespace ValheimCompanion.Building
                 if (col.GetComponentInParent<Heightmap>() || col.GetComponentInParent<TerrainModifier>() || col.GetComponentInParent<ItemDrop>()
                     || col.GetComponentInParent<Character>() || col.GetComponentInParent<Pickable>())
                 {
+                    continue;
+                }
+                // Small destructibles (bushes, saplings, small rocks, stumps) get cleared as part of the build.
+                Destructible small = col.GetComponentInParent<Destructible>();
+                if (small && !small.GetComponent<Piece>() && IsSmall(small))
+                {
+                    if (!clear.Contains(small))
+                    {
+                        clear.Add(small);
+                    }
                     continue;
                 }
                 why = "site_blocked_by:" + Utils.GetPrefabName(col.transform.root.gameObject);

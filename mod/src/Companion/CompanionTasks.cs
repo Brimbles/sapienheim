@@ -313,7 +313,10 @@ namespace ValheimCompanion.Companion
             {
                 foreach (BuildStep s in _buildPlan)
                 {
-                    names.Add(s.Piece);
+                    if (s.Clear == null)
+                    {
+                        names.Add(s.Piece);
+                    }
                 }
             }
             return Builder.Missing(names, _inventory);
@@ -784,6 +787,11 @@ namespace ValheimCompanion.Companion
             }
 
             BuildStep step = _buildPlan.Peek();
+            if (step.Clear != null || step.Piece == "(clear)")
+            {
+                UpdateClear(step);
+                return;
+            }
             Piece piece = PieceCatalog.Get(step.Piece);
             if (!piece)
             {
@@ -858,6 +866,63 @@ namespace ValheimCompanion.Companion
             _buildPlaced++;
             _nextPlace = Time.time + PlaceInterval;
             _stepDeadline = 0f;
+        }
+
+        private int _clearHits;
+
+        /// <summary>Clear an obstacle on the site: walk up and hit it until it breaks (it drops its resources).</summary>
+        private void UpdateClear(BuildStep step)
+        {
+            Destructible target = step.Clear;
+            if (!target || !target.m_nview || !target.m_nview.IsValid() || _clearHits >= 12)
+            {
+                _buildPlan.Dequeue();
+                _clearHits = 0;
+                _stepDeadline = 0f;
+                return;
+            }
+            if (!_waypoint)
+            {
+                _waypoint = new GameObject("CompanionWaypoint");
+            }
+            _waypoint.transform.position = target.transform.position;
+            if (_ai.GetFollowTarget() != _waypoint)
+            {
+                _ai.SetFollowTarget(_waypoint);
+            }
+            if (_stepDeadline <= 0f)
+            {
+                _stepDeadline = Time.time + BuildStepTimeout;
+            }
+            Vector3 delta = target.transform.position - _character.transform.position;
+            delta.y = 0f;
+            if (delta.magnitude > 3.6f)
+            {
+                if (Time.time > _stepDeadline)
+                {
+                    _buildPlan.Dequeue(); // can't reach it; the pieces may still fit
+                    _stepDeadline = 0f;
+                }
+                return;
+            }
+            if (Time.time < _nextPlace)
+            {
+                return;
+            }
+            _nextPlace = Time.time + 0.8f;
+            _character.SetLookDir(delta.normalized);
+            ItemDrop.ItemData hammer = Builder.FindHammer(_inventory);
+            if (hammer != null)
+            {
+                _character.GetComponent<CompanionAI>()?.PlaySwing(hammer);
+            }
+            var hit = new HitData { m_point = target.transform.position, m_dir = delta.normalized, m_toolTier = 10 };
+            hit.m_damage.m_chop = 200f;
+            hit.m_damage.m_pickaxe = 200f;
+            hit.m_damage.m_blunt = 200f;
+            hit.SetAttacker(_character);
+            target.Damage(hit);
+            _clearHits++;
         }
 
         private void FailBuild(string reason, JObject missing = null)

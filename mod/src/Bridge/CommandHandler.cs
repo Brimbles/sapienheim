@@ -337,20 +337,23 @@ namespace ValheimCompanion.Bridge
                         Vector3 toUs = companion.transform.position - near;
                         facing = toUs.sqrMagnitude > 1f ? Quaternion.LookRotation(-new Vector3(toUs.x, 0f, toUs.z)).eulerAngles.y : companion.transform.eulerAngles.y + 180f;
                     }
-                    if (!Building.HutTemplate.FindSite(width, near, facing, 25f, out Vector3 origin, out string siteError))
+                    if (!Building.HutTemplate.FindSite(width, near, facing, 25f, out Vector3 origin, out string siteError, out var clear))
                     {
                         return siteError;
                     }
-                    var plan = Building.HutTemplate.Generate(width, origin, facing);
+                    var plan = Building.HutTemplate.Generate(width, origin, facing, clear);
                     var pieceNames = new System.Collections.Generic.List<string>();
                     foreach (var step in plan)
                     {
-                        pieceNames.Add(step.Piece);
+                        if (step.Clear == null)
+                        {
+                            pieceNames.Add(step.Piece);
+                        }
                     }
                     JObject missingMaterials = Building.Builder.Missing(pieceNames, companion.Inventory);
                     data = new JObject
                     {
-                        ["template"] = template, ["width"] = width, ["pieces"] = plan.Count,
+                        ["template"] = template, ["width"] = width, ["pieces"] = pieceNames.Count, ["clear_first"] = plan.Count - pieceNames.Count,
                         ["site"] = new JArray(Mathf.Round(origin.x), Mathf.Round(origin.y), Mathf.Round(origin.z)),
                     };
                     if (missingMaterials.Count > 0 && !IsQueued(args))
