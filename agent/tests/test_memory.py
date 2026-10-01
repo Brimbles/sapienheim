@@ -91,3 +91,45 @@ def test_history_survives_an_agent_restart(tmp_path):
     Memory(path).add_exchange("Ben says to you: remember the troll?", "How could I forget.")
     b = Brain(FakeConn(), client=None, memory=Memory(path))
     assert b.history[-1]["content"] == "How could I forget."
+
+
+def test_status_tracks_spend_per_model():
+    from companion_agent.status import Status
+
+    s = Status()
+    s.record_usage("claude-haiku-4-5", SimpleNamespace(input_tokens=1_000_000, output_tokens=100_000))
+    s.record_usage("claude-sonnet-5-5", SimpleNamespace(input_tokens=500_000, output_tokens=0))
+    snap = s.snapshot()["spend_today"]
+    assert snap["by_model"]["claude-haiku-4-5"]["usd"] == 1.5   # $1/M in + $5/M out
+    assert snap["by_model"]["claude-sonnet-5-5"]["usd"] == 1.0  # $2/M in
+    assert snap["usd"] == 2.5
+
+
+def test_dashboard_serves_page_and_json():
+    import json as _json
+
+    from companion_agent import dashboard
+    from companion_agent.status import Status
+
+    async def fetch(port, path):
+        r, w = await asyncio.open_connection("127.0.0.1", port)
+        w.write(f"GET {path} HTTP/1.1\r\nHost: x\r\n\r\n".encode())
+        data = await r.read()
+        w.close()
+        head, _, body = data.partition(b"\r\n\r\n")
+        return head.decode(), body
+
+    async def run():
+        status = Status()
+        status.add("chat", "Ben: hello")
+        server = await dashboard.serve(status, "127.0.0.1", 0)
+        port = server.sockets[0].getsockname()[1]
+        page = await fetch(port, "/")
+        api = await fetch(port, "/api/status")
+        server.close()
+        return page, api
+
+    (page_head, page_body), (api_head, api_body) = asyncio.run(run())
+    assert "200 OK" in page_head and b"<title>Companion status</title>" in page_body
+    assert "application/json" in api_head
+    assert _json.loads(api_body)["activity"][0]["text"] == "Ben: hello"

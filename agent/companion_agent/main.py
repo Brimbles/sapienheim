@@ -16,7 +16,9 @@ import anthropic
 from companion_agent import __version__
 from companion_agent.brain import Brain
 from companion_agent.connection import ModConnection
+from companion_agent import dashboard
 from companion_agent.memory import Memory
+from companion_agent.status import Status
 from companion_agent.protocol import Event, Hello, HelloAck, parse
 
 log = logging.getLogger("companion_agent")
@@ -46,8 +48,19 @@ LINE_LIMIT = 8 * 1024 * 1024
 EVENT_QUEUE_SIZE = 5
 
 
+STATUS = Status()
+STATE_POLL_SECONDS = 10.0
+
+
 def default_brain_factory(conn: ModConnection, world: str) -> Brain:
-    return Brain(conn, anthropic.AsyncAnthropic(), memory=Memory.for_world(world))
+    return Brain(conn, anthropic.AsyncAnthropic(), memory=Memory.for_world(world), status=STATUS)
+
+
+async def _poll_state(conn: ModConnection) -> None:
+    """Keep the dashboard's view of the game fresh while the mod is connected."""
+    while True:
+        STATUS.set_state(await conn.request_state())
+        await asyncio.sleep(STATE_POLL_SECONDS)
 
 
 # Tests swap this for a Brain with a fake LLM client.
@@ -68,7 +81,7 @@ async def _event_worker(brain: Brain, queue: "asyncio.Queue[Event]") -> None:
 async def handle_mod(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
     peer = writer.get_extra_info("peername")
     log.info("mod connected from %s", peer)
-    worker = None
+    worker = poller = None
     try:
         hello = parse(await asyncio.wait_for(reader.readline(), HANDSHAKE_TIMEOUT))
         if not isinstance(hello, Hello) or not hmac.compare_digest(hello.token, TOKEN):
@@ -80,6 +93,8 @@ async def handle_mod(reader: asyncio.StreamReader, writer: asyncio.StreamWriter)
         await conn.send(HelloAck(agent_version=__version__))
         queue: asyncio.Queue[Event] = asyncio.Queue(maxsize=EVENT_QUEUE_SIZE)
         worker = asyncio.create_task(_event_worker(brain_factory(conn, hello.world or "world"), queue))
+        poller = asyncio.create_task(_poll_state(conn))
+        STATUS.set_connected(True, hello.world)
 
         while line := await reader.readline():
             msg = parse(line)
@@ -95,8 +110,11 @@ async def handle_mod(reader: asyncio.StreamReader, writer: asyncio.StreamWriter)
     except (asyncio.TimeoutError, ConnectionError) as e:
         log.warning("connection %s ended: %s", peer, e)
     finally:
+        for task in (worker, poller):
+            if task:
+                task.cancel()
         if worker:
-            worker.cancel()
+            STATUS.set_connected(False)
         writer.close()
         log.info("mod disconnected")
 
@@ -111,6 +129,7 @@ async def main() -> None:
     if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
         raise SystemExit("No Claude credentials: add ANTHROPIC_API_KEY=... to agent/.env (never commit it)")
     server = await asyncio.start_server(handle_mod, HOST, PORT, limit=LINE_LIMIT)
+    await dashboard.serve(STATUS)
     log.info("listening on %s:%d", HOST, PORT)
     async with server:
         await server.serve_forever()

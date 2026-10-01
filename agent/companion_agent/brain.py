@@ -23,6 +23,7 @@ import anthropic
 from companion_agent.connection import ModConnection
 from companion_agent.memory import Memory
 from companion_agent.protocol import Event
+from companion_agent.status import Status
 
 log = logging.getLogger("companion_agent.brain")
 
@@ -305,11 +306,13 @@ class Brain:
         client: anthropic.AsyncAnthropic,
         budget: CallBudget | None = None,
         memory: Memory | None = None,
+        status: Status | None = None,
     ) -> None:
         self.conn = conn
         self.client = client
         self.budget = budget or CallBudget(CALLS_PER_MINUTE)
         self.memory = memory or Memory()  # in-memory only unless a world's memory is passed in
+        self.status = status or Status()
         self.notes: list[str] = []  # events since the last turn, e.g. "arrived at go_to target"
 
     @property
@@ -317,6 +320,8 @@ class Brain:
         return self.memory.history
 
     async def on_event(self, event: Event) -> None:
+        if event.name != "player_chat":
+            self.status.add("event", f"{event.name} {json.dumps(event.data)}")
         if event.name == "player_chat":
             await self.on_chat(event.data)
         elif event.name in ("task_done", "task_failed") and _worth_reporting(event):
@@ -360,6 +365,7 @@ class Brain:
         text = str(data.get("text", "")).strip() or "(says your name to get your attention)"
         log.info("chat from %s (%s): %s", player, data.get("via"), text)
         self.memory.note_player_seen(player)
+        self.status.add("chat", f"{player}: {text}")
         line = f"{player} says to you: {text}"
         model = PLAN_MODEL if PLAN_PATTERN.search(text) else CHAT_MODEL
         await self.take_turn(line, history_line=line, model=model)
@@ -403,6 +409,7 @@ class Brain:
             "and preferences; drop small talk.",
             messages=[{"role": "user", "content": f"Previous summary:\n{previous or '(none)'}\n\nNew conversation:\n{transcript}"}],
         )
+        self.status.record_usage(CHAT_MODEL, getattr(response, "usage", None))
         text = " ".join(b.text for b in response.content if b.type == "text").strip()
         return text or previous
 
@@ -418,6 +425,7 @@ class Brain:
                 break
             self.budget.consume()
             response = await self._create(model, messages)
+            self.status.record_usage(model, getattr(response, "usage", None))
             log.info("%s -> stop=%s usage=%s", model, response.stop_reason, getattr(response, "usage", None))
 
             if response.stop_reason == "refusal":
@@ -488,8 +496,10 @@ class Brain:
         if result.ok:
             if name == "say":
                 spoken.append(str(args.get("text", "")))
+                self.status.add("said", str(args.get("text", "")))
             elif name != "recipe":
                 actions.append(f"{name}({', '.join(f'{k}={v}' for k, v in args.items())})")
+                self.status.add("did", actions[-1])
             return _tool_result(block.id, json.dumps(data) if data else "ok")
         detail = f" {json.dumps(data)}" if data else ""
         return _tool_result(block.id, f"failed: {result.error}{detail}", error=True)

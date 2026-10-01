@@ -4,6 +4,9 @@ Things that can't be tested headlessly because they need a player in the world. 
 
 **Before you start:** restart Valheim, since the client side of the mod changed (map marker). Then join `127.0.0.1:2456` (password `sapiendev`). The server and the LLM agent are already running.
 
+## 0. Status dashboard (no game needed)
+- [ ] Open **http://127.0.0.1:7778** while the agent is running. It shows his task, health, position, inventory, nearby creatures, recent chat and events, and today's Claude spend, refreshing every 5 s.
+
 ## 1. Logging in and the map marker
 - [ ] About 3 seconds after you appear, **Alvar logs in next to you** and greets you.
   - If he was already in the world from the last save, he's simply where he was.
@@ -21,6 +24,10 @@ Things that can't be tested headlessly because they need a player in the world. 
 ## 4. Chests (the only M4 step not yet tested headlessly)
 - [ ] Stand near a chest: `@Alvar put your wood in this chest`, then `@Alvar get 10 wood out of the chest`.
 - [ ] Open the chest yourself to check the contents changed.
+
+## 4b. Building (M5)
+- [ ] Have a look at the **hut he built headlessly** at about (110, −344). He placed a workbench, floor (on posts where the ground dips), walls with a door, gable ends and a roof. Check it looks right: gables the right way up, roof meeting at the ridge, the door at the front.
+- [ ] `@Alvar build me a small hut here`: he picks level ground near you, clears bushes, and builds it piece by piece. Without enough wood he says what's missing; `@Alvar get the wood and finish it` should gather, then `resume_build`.
 
 ## 5. M4 acceptance test
 - [ ] `@Alvar get 20 wood and make me a club`. He looks up the recipe, gathers or fetches wood, crafts the club, and drops it plus the wood at your feet.

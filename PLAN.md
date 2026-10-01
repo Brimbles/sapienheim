@@ -355,7 +355,7 @@ Make the offline simulation (M7) earn its keep.
 
 ### M14 — Remote access
 - [ ] **Discord bridge (agent-side):** chat with and command the companion from Discord; "while you were away" summaries; alerts when the base is attacked or a mission finishes.
-- [ ] **Status dashboard:** a small web page served by the agent showing the companion's location, inventory, task queue, recent events and today's Claude API spend.
+- [x] **Status dashboard:** (http://127.0.0.1:7778, localhost only; `agent/companion_agent/dashboard.py` + `status.py`; spend estimated from API usage at Haiku $1/$5 and Sonnet 5.5 $2/$10 per MTok.) a small web page served by the agent showing the companion's location, inventory, task queue, recent events and today's Claude API spend.
 
 ### Later
 - Voice (STT/TTS), multiple companions, skills/stamina emulation, companion-to-companion chat, Thunderstore release.
