@@ -311,7 +311,12 @@ Builds on M5 (placement, blueprints, templates) and M6 (named places).
 - [ ] **Long-range missions:** send the companion far away to do a job (e.g. build something). The trip is split into legs, because pathfinding only works inside the loaded area; ZoneKeeper loads and generates terrain ahead of it. It reports progress through the agent, shows on the map (M4.5) and handles hazards (water, cliffs, fights). On a mission, death respawns it at the mission site, or ends the mission and reports, instead of respawning beside the master. Limit: the server simulates one place at a time, so one companion on one mission.
 - [ ] **Portals (use):** creatures can't use portals in vanilla, so the server moves the companion itself. It walks into a portal; the server finds the paired portal by tag and moves it there; ZoneKeeper loads the destination. It obeys the no-ore rule (won't teleport with non-teleportable items).
 - [ ] **Portals (build):** after M5, build a portal at a remote spot with a chosen tag, return home and tell the master the tag so they can build the matching portal.
-- [ ] **Boats (spike first):** join the master on a ship. The AI can't path onto a moving ship, so "board" places it on the deck and holds it there. Unknown: whether a server-owned character stays stable on a ship steered by a client.
+- [ ] **Boats:** join the master on a ship the way a player does.
+  1. **Swim out** to the ship. Enable swimming for the companion; MonsterAI avoids water by default.
+  2. **Climb the ladder.** Every boat has one. Near it, do what a player's ladder use does: move to the ladder's target point on deck.
+  3. **Hold onto the mast.** Every boat allows this. Attach to the mast's attach point: parent to it, make the body kinematic, play the hold animation. Player attaching (`Player.AttachStart`) is player-only, so this needs its own equivalent.
+  4. **Disembark** on command or when the master leaves the ship: detach, and swim or walk ashore.
+  - Attached to the mast, it moves with the ship, so the stability risk of standing loose on a client-steered deck goes away. Still to check: attach-point sync to clients, and ownership (the server owns the companion, the steering player owns the ship).
 - **"Go north, build a portal tagged 'north', and come back" works with no player nearby, and the companion can ride along on the master's boat.**
 
 ### M11 — Fishing
