@@ -286,6 +286,10 @@ namespace ValheimCompanion.Bridge
                     {
                         return "chest_not_found";
                     }
+                    if (!CompanionPermissions.ChestAllowed(chest, companion.ZDO))
+                    {
+                        return "chest_not_allowed";
+                    }
                     bool store = action == "store_items";
                     string item = (string)args["item"];
                     if (!store && string.IsNullOrEmpty(item))
@@ -408,6 +412,19 @@ namespace ValheimCompanion.Bridge
                     }
                     return Queue(companion, args, "resume_build",
                         () => companion.Tasks.CommandResumeBuild(TaskId(args, cmdId)));
+                }
+                case "set_friend":
+                {
+                    // The agent only offers this tool when the master is the one asking.
+                    string who = (string)args["player"];
+                    if (string.IsNullOrEmpty(who))
+                    {
+                        return "need_player";
+                    }
+                    bool allow = args["allow"] == null || (bool)args["allow"];
+                    CompanionPermissions.SetFriend(companion.ZDO, who, allow);
+                    data = new JObject { ["friends"] = new JArray(CompanionPermissions.Friends(companion.ZDO)) };
+                    return null;
                 }
                 case "portals":
                     data = new JObject { ["portals"] = Travel.PortalNetwork.Describe(companion.transform.position) };
@@ -639,7 +656,7 @@ namespace ValheimCompanion.Bridge
                 }
             }
             state["ground_items"] = ground;
-            state["chests"] = CompanionWorkshop.DescribeChests(origin, ChestRange, CompanionState.GetMaster(zdo));
+            state["chests"] = CompanionWorkshop.DescribeChests(origin, ChestRange, zdo);
 
             if (EnvMan.instance)
             {

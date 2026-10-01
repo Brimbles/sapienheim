@@ -26,6 +26,9 @@ namespace ValheimCompanion
         public static ConfigEntry<string> OfflineMode;
         public static ConfigEntry<string> MapMarker;
         public static ConfigEntry<bool> Levelling;
+        public static ConfigEntry<string> Commanders;
+        public static ConfigEntry<string> Friends;
+        public static ConfigEntry<string> ChestAccess;
 
         private Harmony _harmony;
 
@@ -42,6 +45,14 @@ namespace ValheimCompanion
                 "What 'off duty' means: logout = leave the world and log back in beside the master when someone joins; " +
                 "idle = freeze in place and resume when someone joins (server only).",
                 new AcceptableValueList<string>("logout", "idle")));
+            Commanders = Config.Bind("Permissions", "Commanders", "friends", new ConfigDescription(
+                "Who may give the companion orders: master, friends (master + Friends) or everyone. Anyone can chat (server only).",
+                new AcceptableValueList<string>("master", "friends", "everyone")));
+            Friends = Config.Bind("Permissions", "Friends", "",
+                "Comma-separated player names who may command the companion, in addition to any its master adds in chat (server only).");
+            ChestAccess = Config.Bind("Permissions", "ChestAccess", "own", new ConfigDescription(
+                "Which chests the companion may use: own (built by its master or a friend) or any (any chest it may open) (server only).",
+                new AcceptableValueList<string>("own", "any")));
             Levelling = Config.Bind("Companion", "Levelling", true,
                 "Scale the companion with its master: level (damage) from bosses defeated, max health from the master's, armour from theirs (server only).");
             MapMarker = Config.Bind("Companion", "MapMarker", "everyone", new ConfigDescription(

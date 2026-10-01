@@ -32,13 +32,14 @@ namespace ValheimCompanion.Companion
         // ---------- Chests ----------
 
         /// <summary>Containers the companion may use near a point, for the state snapshot.</summary>
-        public static JArray DescribeChests(Vector3 origin, float range, long masterId)
+        public static JArray DescribeChests(Vector3 origin, float range, ZDO companion)
         {
+            long masterId = CompanionState.GetMaster(companion);
             var list = new JArray();
             foreach (Container c in AllContainers())
             {
                 float dist = Vector3.Distance(c.transform.position, origin);
-                if (dist > range || !CanUse(c, masterId))
+                if (dist > range || !CanUse(c, masterId) || !CompanionPermissions.ChestAllowed(c, companion))
                 {
                     continue;
                 }

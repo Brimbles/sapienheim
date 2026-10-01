@@ -117,12 +117,15 @@ namespace ValheimCompanion.Conversation
             }
 
             Jotunn.Logger.LogInfo($"Chat to {companion.Name} from {playerName} ({via}): {text}");
+            string role = CompanionPermissions.RoleOf(companion.ZDO, playerName, playerId);
             var data = new Newtonsoft.Json.Linq.JObject
             {
                 ["player"] = playerName,
                 ["player_id"] = playerId,
                 ["text"] = text,
                 ["via"] = via,
+                ["role"] = role,                                        // master | friend | other
+                ["can_command"] = CompanionPermissions.CanCommand(role), // the agent only offers action tools if true
             };
             if (AgentClient.SendEvent("player_chat", data))
             {

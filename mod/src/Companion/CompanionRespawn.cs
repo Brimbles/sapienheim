@@ -39,6 +39,8 @@ namespace ValheimCompanion.Companion
             public bool WaitForPlayer;     // logged out (or dead with nobody online): return once a player is online
             public bool Dismissed;         // cmp_despawn: return only on cmp_spawn
             public string Inventory;       // base64 of Inventory.Save()
+            public string Friends;         // cmp_friends, cmp_friend_ids: who else may command it
+            public string FriendIds;
         }
 
         private static Record s_record;
@@ -145,6 +147,8 @@ namespace ValheimCompanion.Companion
                 MasterName = CompanionState.GetMasterName(zdo),
                 DeathPos = new[] { pos.x, pos.y, pos.z },
                 Inventory = inventory != null && inventory.Length > 0 ? Convert.ToBase64String(inventory) : null,
+                Friends = zdo.GetString(CompanionPermissions.KeyFriends),
+                FriendIds = zdo.GetString(CompanionPermissions.KeyFriendIds),
             };
         }
 
@@ -250,6 +254,7 @@ namespace ValheimCompanion.Companion
             s_returning = true;
             data["pos"] = new JArray(Mathf.Round(pos.x), Mathf.Round(pos.y), Mathf.Round(pos.z));
             Jotunn.Logger.LogInfo($"Companion returning ({returnEvent}) at {pos:F0}");
+            string friends = s_record.Friends, friendIds = s_record.FriendIds;
             CompanionSpawner.RequestSpawn(requester, pos, s_record.MasterId, s_record.MasterName,
                 snapToGround: true, returnEvent: returnEvent, returnData: data, inventory: inventory,
                 onDone: ok =>
@@ -257,6 +262,7 @@ namespace ValheimCompanion.Companion
                     s_returning = false;
                     if (ok)
                     {
+                        RestoreFriends(friends, friendIds);
                         Clear();
                     }
                     else
@@ -297,6 +303,23 @@ namespace ValheimCompanion.Companion
             {
                 Jotunn.Logger.LogInfo($"World save predates the away record: removing stale companion copy {s_record.CompanionId}");
                 Remove(stale);
+            }
+        }
+
+        private static void RestoreFriends(string friends, string friendIds)
+        {
+            ZDO zdo = CompanionSpawner.FindExisting();
+            if (zdo == null)
+            {
+                return;
+            }
+            if (!string.IsNullOrEmpty(friends))
+            {
+                zdo.Set(CompanionPermissions.KeyFriends, friends);
+            }
+            if (!string.IsNullOrEmpty(friendIds))
+            {
+                zdo.Set(CompanionPermissions.KeyFriendIds, friendIds);
             }
         }
 

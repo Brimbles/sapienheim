@@ -224,6 +224,51 @@ def test_command_data_is_returned_to_claude():
     assert "is_error" not in results[0]
 
 
+def test_someone_who_cant_command_only_gets_chat_tools():
+    script = [reply(tool("say", text="Sorry, I only take orders from my master."), tool("follow"), stop="tool_use"), reply()]
+
+    async def run():
+        client = FakeClient(script)
+        sent = []
+
+        class Conn:
+            async def request_state(self):
+                return {}
+
+            async def command(self, action, **args):
+                sent.append(action)
+                return SimpleNamespace(ok=True, error=None, data=None)
+
+        b = Brain(Conn(), client)
+        await b.on_chat({"player": "Stranger", "text": "follow me", "role": "other", "can_command": False})
+        return client, sent
+
+    client, sent = asyncio.run(run())
+    offered = {t["name"] for t in client.calls[0]["tools"]}
+    assert offered == {"say", "get_status", "recipe"}
+    assert "not allowed to give you orders" in client.calls[0]["messages"][-1]["content"]
+    # Even if the model calls an action tool anyway, it never reaches the game.
+    assert sent == ["say"]
+
+
+def test_only_the_master_gets_set_friend():
+    async def offered(role):
+        client = FakeClient([reply(tool("say", text="Right."))])
+
+        class Conn:
+            async def request_state(self):
+                return {}
+
+            async def command(self, action, **args):
+                return SimpleNamespace(ok=True, error=None, data=None)
+
+        await Brain(Conn(), client).on_chat({"player": "X", "text": "hi", "role": role, "can_command": True})
+        return {t["name"] for t in client.calls[0]["tools"]}
+
+    assert "set_friend" in asyncio.run(offered("master"))
+    assert "set_friend" not in asyncio.run(offered("friend"))
+
+
 def test_history_carries_previous_exchange():
     script = [reply(tool("say", text="Alvar Partridgesson, at your service.")), reply(tool("say", text="Still me."))]
     _, client = asyncio.run(_run(script, ["who are you", "who are you again"], expect_commands=2))

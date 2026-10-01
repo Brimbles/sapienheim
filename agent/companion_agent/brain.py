@@ -300,6 +300,20 @@ TOOLS: list[dict[str, Any]] = [
     },
 ]
 
+# Tools anyone may trigger by chatting; everything else needs the speaker to be allowed to command.
+CHAT_ONLY_TOOLS = {"say", "get_status", "recipe"}
+
+# Only offered when the master is speaking.
+SET_FRIEND_TOOL: dict[str, Any] = {
+    "name": "set_friend",
+    "description": "Your master can let another player give you orders (allow=true) or take that away (allow=false).",
+    "input_schema": {
+        "type": "object",
+        "properties": {"player": {"type": "string"}, "allow": {"type": "boolean"}},
+        "required": ["player"],
+    },
+}
+
 OUT_OF_BREATH = [
     "Aha. Bear with me, I'm... recalibrating.",
     "One moment. Big thoughts. Very big thoughts.",
@@ -394,14 +408,28 @@ class Brain:
     async def on_chat(self, data: dict[str, Any]) -> None:
         player = data.get("player", "someone")
         text = str(data.get("text", "")).strip() or "(says your name to get your attention)"
-        log.info("chat from %s (%s): %s", player, data.get("via"), text)
+        role = data.get("role", "master")
+        can_command = data.get("can_command", True)
+        log.info("chat from %s (%s, %s): %s", player, role, data.get("via"), text)
         self.memory.note_player_seen(player)
         self.status.add("chat", f"{player}: {text}")
         line = f"{player} says to you: {text}"
-        model = PLAN_MODEL if PLAN_PATTERN.search(text) else CHAT_MODEL
-        await self.take_turn(line, history_line=line, model=model)
+        prompt = line
+        if not can_command:
+            # Enforced in code: no action tools at all for this turn, only talking.
+            prompt += (f"\n\n({player} is not allowed to give you orders. Chat with them politely in character, "
+                       "but decline any request to do something.)")
+            tools = [t for t in TOOLS if t["name"] in CHAT_ONLY_TOOLS]
+        elif role == "master":
+            tools = [*TOOLS, SET_FRIEND_TOOL]
+        else:
+            tools = TOOLS
+        model = PLAN_MODEL if can_command and PLAN_PATTERN.search(text) else CHAT_MODEL
+        await self.take_turn(prompt, history_line=line, model=model, tools=tools)
 
-    async def take_turn(self, prompt: str, history_line: str, model: str = CHAT_MODEL) -> None:
+    async def take_turn(
+        self, prompt: str, history_line: str, model: str = CHAT_MODEL, tools: list[dict[str, Any]] | None = None
+    ) -> None:
         """One LLM turn: prompt plus notes and a fresh state snapshot, then record it in history."""
         if not self.budget.available():
             log.warning("LLM budget exhausted; canned reply")
@@ -418,7 +446,7 @@ class Brain:
             self.notes.clear()
         content += "\n\nCurrent state:\n" + (json.dumps(state) if state else "(unavailable)")
 
-        spoken, actions = await self.run_turn(model, content)
+        spoken, actions = await self.run_turn(model, content, tools or TOOLS)
 
         # History keeps plain text only: the prompt line and what Alvar said/did. It's persisted with the memory.
         summary = " ".join(spoken) or "(said nothing)"
@@ -444,7 +472,11 @@ class Brain:
         text = " ".join(b.text for b in response.content if b.type == "text").strip()
         return text or previous
 
-    async def run_turn(self, model: str, content: str) -> tuple[list[str], list[str]]:
+    async def run_turn(
+        self, model: str, content: str, tools: list[dict[str, Any]] | None = None
+    ) -> tuple[list[str], list[str]]:
+        tools = tools or TOOLS
+        allowed = {t["name"] for t in tools}
         messages: list[dict[str, Any]] = [*self.history, {"role": "user", "content": content}]
         spoken: list[str] = []
         actions: list[str] = []
@@ -455,7 +487,7 @@ class Brain:
                 log.warning("LLM budget exhausted mid-turn")
                 break
             self.budget.consume()
-            response = await self._create(model, messages)
+            response = await self._create(model, messages, tools)
             self.status.record_usage(model, getattr(response, "usage", None))
             log.info("%s -> stop=%s usage=%s", model, response.stop_reason, getattr(response, "usage", None))
 
@@ -469,7 +501,11 @@ class Brain:
             if not tool_uses:
                 break
 
-            results = await asyncio.gather(*(self._execute(b, spoken, actions) for b in tool_uses))
+            results = await asyncio.gather(*(
+                self._execute(b, spoken, actions) if b.name in allowed
+                else _async_result(_tool_result(b.id, "failed: not_allowed (you can't do that for this player)", error=True))
+                for b in tool_uses
+            ))
             messages.append({"role": "user", "content": list(results)})
             if response.stop_reason != "tool_use":
                 break
@@ -486,12 +522,12 @@ class Brain:
                 spoken.append(text)
         return spoken, actions
 
-    async def _create(self, model: str, messages: list[dict[str, Any]]):
+    async def _create(self, model: str, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None = None):
         params: dict[str, Any] = {
             "model": model,
             "max_tokens": 1024,
             "system": [{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}],
-            "tools": TOOLS,
+            "tools": tools or TOOLS,
             "messages": messages,
         }
         if model.startswith("claude-sonnet-5-5"):
@@ -605,6 +641,10 @@ class Brain:
         self.memory.set_place(place, pos[0], pos[2])
         actions.append(f"name_place({place})")
         return _tool_result(tool_id, f"remembered '{place}' at x={pos[0]}, z={pos[2]}")
+
+
+async def _async_result(result: dict[str, Any]) -> dict[str, Any]:
+    return result
 
 
 def _dist(a: tuple[float, float], b: tuple[float, float]) -> float:
