@@ -300,6 +300,39 @@ TOOLS: list[dict[str, Any]] = [
     },
 ]
 
+def _dusk(d: dict[str, Any]) -> tuple[str, str]:
+    doing = "you're in a fight" if d.get("in_combat") else (
+        f"you're busy with: {d.get('busy')}" if d.get("busy") not in (None, "follow", "stay") else "you're not busy")
+    return (f"(Dusk: night falls soon and monsters get bolder. {doing}. Say one short line in character about it, "
+            "e.g. suggest heading back to shelter or note the time. Don't start anything.)", "(dusk fell)")
+
+
+def _low_health(d: dict[str, Any]) -> tuple[str, str]:
+    where = "mid-fight" if d.get("in_combat") else "after a scrape"
+    return (f"(You're badly hurt {where}: {d.get('health')}/{d.get('max_health')} health. One short, urgent line in "
+            "character, e.g. asking for cover or announcing a 'tactical withdrawal'. Keep it under ten words.)",
+            "(Alvar was badly hurt)")
+
+
+def _idle(d: dict[str, Any]) -> tuple[str, str]:
+    return (f"(You've been standing about near your master for {d.get('minutes')} minutes with nothing to do. "
+            "Make one short in-character remark: small talk, an anecdote from your career, or an offer to do something "
+            "useful. Don't start anything without being asked.)", "(Alvar got bored)")
+
+
+def _master_returned(d: dict[str, Any]) -> tuple[str, str]:
+    return (f"(Your master is back after about {d.get('minutes_away')} minutes away. Greet them in character, and if "
+            "anything notable happened meanwhile (see notes), mention it in one line.)", "(Alvar's master came back)")
+
+
+# Proactive events from the mod: event name -> (prompt, history line).
+PROACTIVE: dict[str, Any] = {
+    "dusk": _dusk,
+    "low_health": _low_health,
+    "idle": _idle,
+    "master_returned": _master_returned,
+}
+
 # Tools anyone may trigger by chatting; everything else needs the speaker to be allowed to command.
 CHAT_ONLY_TOOLS = {"say", "get_status", "recipe"}
 
@@ -378,6 +411,14 @@ class Brain:
             # Off duty while nobody is online: no LLM call; mentioned when it logs back in.
             self.notes.append("logged_out: everyone was offline for a while, so you went off duty")
             log.info("logged_out %s", event.data)
+        elif event.name in PROACTIVE:
+            # Unprompted moments; the mod rate-limits them. Talk only (no jobs started), and skip quietly when the
+            # budget is spent rather than wheezing an out-of-breath line nobody asked for.
+            if not self.budget.available():
+                log.info("skipping %s: budget spent", event.name)
+                return
+            prompt, history_line = PROACTIVE[event.name](event.data)
+            await self.take_turn(prompt, history_line=history_line, tools=[t for t in TOOLS if t["name"] in CHAT_ONLY_TOOLS])
         elif event.name == "levelled_up":
             await self.take_turn(
                 f"(You've grown stronger alongside your master: now level {event.data.get('level')}, "

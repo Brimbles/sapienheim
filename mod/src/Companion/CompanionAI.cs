@@ -33,6 +33,7 @@ namespace ValheimCompanion.Companion
         private CompanionInventory _inventory;
         private CompanionLevelling _levelling;
         private CompanionDoors _doors;
+        private CompanionProactive _proactive;
         private float _nextTick;
         private float _nextStatus;
 
@@ -54,6 +55,7 @@ namespace ValheimCompanion.Companion
             _levelling = new CompanionLevelling(_nview, _character);
             _doors = new CompanionDoors(_nview, _character, _ai);
             _tasks = new CompanionTasks(_nview, _character, _ai, _inventory);
+            _proactive = new CompanionProactive(_nview, _character, _tasks);
             ApplyName();
 
             // Headless spike: with no camera, a culled Animator would skip the animation events that
@@ -243,6 +245,7 @@ namespace ValheimCompanion.Companion
             _levelling.Update();
             _doors.Update();
             _tasks.Update();
+            _proactive.Update();
 
             if (Time.time >= _nextStatus)
             {

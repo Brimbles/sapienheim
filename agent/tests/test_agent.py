@@ -277,6 +277,43 @@ def test_history_carries_previous_exchange():
     assert second[1] == {"role": "assistant", "content": "Alvar Partridgesson, at your service."}
 
 
+def _proactive(name, data, budget=None):
+    async def run():
+        client = FakeClient([reply(tool("say", text="Getting dark. Lovely."))])
+        sent = []
+
+        class Conn:
+            async def request_state(self):
+                return {}
+
+            async def command(self, action, **args):
+                sent.append(action)
+                return SimpleNamespace(ok=True, error=None, data=None)
+
+        await Brain(Conn(), client, budget=budget).on_event(main.Event(type="event", name=name, data=data))
+        return client, sent
+
+    return asyncio.run(run())
+
+
+def test_proactive_events_speak_with_chat_tools_only():
+    for name, data, phrase in [
+        ("dusk", {"day": 3, "busy": "follow", "in_combat": False}, "Dusk"),
+        ("low_health", {"health": 20, "max_health": 300, "in_combat": True}, "mid-fight"),
+        ("idle", {"minutes": 10, "task": "follow"}, "10 minutes"),
+        ("master_returned", {"minutes_away": 25}, "25 minutes"),
+    ]:
+        client, sent = _proactive(name, data)
+        assert sent == ["say"], name
+        assert phrase in client.calls[0]["messages"][-1]["content"], name
+        assert {t["name"] for t in client.calls[0]["tools"]} <= {"say", "get_status", "recipe"}, name
+
+
+def test_proactive_event_is_skipped_quietly_when_budget_is_spent():
+    client, sent = _proactive("idle", {"minutes": 10}, budget=CallBudget(per_minute=0))
+    assert client.calls == [] and sent == []
+
+
 def test_respawn_event_triggers_a_turn():
     async def run():
         client = FakeClient([reply(tool("say", text="Tactical withdrawal. Never dead."))])

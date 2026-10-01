@@ -42,6 +42,13 @@ Things that can't be tested headlessly because they need a player in the world. 
 - [ ] Stand near Alvar for a minute. With no bosses beaten he stays **level 1**, and his max health becomes about **2.5 × yours**, never below 350. With armour on, the dashboard (or `@Alvar how tough are you?`) shows his armour matching your total.
 - [ ] After a boss kill he levels up (stars over his head), and boasts about it.
 
+## 4d. Speaking up unprompted (M6)
+Each line in the server log starts with `Proactive:`. Turn it off with `Companion.Proactive = false`.
+- [ ] **Dusk:** as evening turns to night (in-game, roughly 0.70 of the day) he says one line about it, once per day. To skip the wait, use the `skiptime` console command (devcommands) to just before dusk.
+- [ ] **Low health:** let something chew on him until he's under 30%. He gets one urgent line, and no more until he's healed above 60% (and at least 2 minutes have passed).
+- [ ] **Idle:** stand near him doing nothing, without chatting, for 10 minutes. He makes small talk or offers to help, but doesn't start anything. The next remark comes after 20, then 40 minutes, back to 10 after any task, fight or chat.
+- [ ] **Master returns:** walk 150 m+ away (or log out while a friend stays on) for 10+ minutes, then come back within 30 m. He greets you. Sending him on an errand doesn't count as you being away.
+
 ## 5. M4 acceptance test
 - [ ] `@Alvar get 20 wood and make me a club`. He looks up the recipe, gathers or fetches wood, crafts the club, and drops it plus the wood at your feet.
 

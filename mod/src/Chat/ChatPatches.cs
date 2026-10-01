@@ -127,6 +127,7 @@ namespace ValheimCompanion.Conversation
                 ["role"] = role,                                        // master | friend | other
                 ["can_command"] = CompanionPermissions.CanCommand(role), // the agent only offers action tools if true
             };
+            CompanionProactive.NoteChat();
             if (AgentClient.SendEvent("player_chat", data))
             {
                 companion.ShowThinking();

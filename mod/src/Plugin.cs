@@ -26,6 +26,7 @@ namespace ValheimCompanion
         public static ConfigEntry<string> OfflineMode;
         public static ConfigEntry<string> MapMarker;
         public static ConfigEntry<bool> Levelling;
+        public static ConfigEntry<bool> Proactive;
         public static ConfigEntry<string> Commanders;
         public static ConfigEntry<string> Friends;
         public static ConfigEntry<string> ChestAccess;
@@ -53,6 +54,8 @@ namespace ValheimCompanion
             ChestAccess = Config.Bind("Permissions", "ChestAccess", "own", new ConfigDescription(
                 "Which chests the companion may use: own (built by its master or a friend) or any (any chest it may open) (server only).",
                 new AcceptableValueList<string>("own", "any")));
+            Proactive = Config.Bind("Companion", "Proactive", true,
+                "Speak up unprompted at dusk, when badly hurt, after a long idle spell, and when the master comes back (server only).");
             Levelling = Config.Bind("Companion", "Levelling", true,
                 "Scale the companion with its master: level (damage) from bosses defeated, max health from the master's, armour from theirs (server only).");
             MapMarker = Config.Bind("Companion", "MapMarker", "everyone", new ConfigDescription(

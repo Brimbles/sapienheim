@@ -123,7 +123,7 @@ namespace ValheimCompanion.Companion
             return total;
         }
 
-        private static ZDO FindMasterCharacter(long masterId)
+        internal static ZDO FindMasterCharacter(long masterId)
         {
             if (masterId == 0)
             {
