@@ -172,6 +172,7 @@ namespace ValheimCompanion.Companion
                 s_loadedWorld = world;
                 s_record = Load();
                 s_returning = false;
+                RemoveStaleCopy();
             }
             if (s_record == null || s_returning || s_record.Dismissed || Time.time < s_retryAt)
             {
@@ -263,6 +264,30 @@ namespace ValheimCompanion.Companion
                         Jotunn.Logger.LogWarning("Companion return failed; away record kept, retrying");
                     }
                 });
+        }
+
+        /// <summary>
+        /// The away record is newer than the world save when the server stopped without saving after the companion
+        /// left (died, logged out, dismissed). The save then still contains that same companion, alive. The record
+        /// is the truth, so remove the stale copy; the inventory stays safe in the record.
+        /// </summary>
+        private static void RemoveStaleCopy()
+        {
+            if (s_record?.CompanionId == null)
+            {
+                return;
+            }
+            string[] parts = s_record.CompanionId.Split(':');
+            if (parts.Length != 2 || !long.TryParse(parts[0], out long user) || !uint.TryParse(parts[1], out uint n))
+            {
+                return;
+            }
+            ZDO stale = ZDOMan.instance.GetZDO(new ZDOID(user, n));
+            if (stale != null && stale.IsValid())
+            {
+                Jotunn.Logger.LogInfo($"World save predates the away record: removing stale companion copy {s_record.CompanionId}");
+                Remove(stale);
+            }
         }
 
         public static void Clear()

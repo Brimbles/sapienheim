@@ -53,6 +53,25 @@ namespace ValheimCompanion.Companion
             Save();
         }
 
+        private float _nextRepair;
+
+        /// <summary>The companion's gear never wears out: top every item back up to full durability.</summary>
+        public void KeepRepaired()
+        {
+            if (!_restored || Time.time < _nextRepair)
+            {
+                return;
+            }
+            _nextRepair = Time.time + 5f;
+            foreach (ItemDrop.ItemData item in Inventory.GetAllItems())
+            {
+                if (item.m_shared.m_useDurability && item.m_durability < item.GetMaxDurability())
+                {
+                    item.m_durability = item.GetMaxDurability();
+                }
+            }
+        }
+
         public byte[] Serialize()
         {
             var pkg = new ZPackage();

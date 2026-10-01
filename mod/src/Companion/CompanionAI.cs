@@ -234,6 +234,7 @@ namespace ValheimCompanion.Companion
             }
             SyncNameFromConfig();
             _inventory.EnsureRestored();
+            _inventory.KeepRepaired();
             _tasks.Update();
 
             if (Time.time >= _nextStatus)
