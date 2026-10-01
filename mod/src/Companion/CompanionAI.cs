@@ -31,6 +31,7 @@ namespace ValheimCompanion.Companion
         private MonsterAI _ai;
         private CompanionTasks _tasks;
         private CompanionInventory _inventory;
+        private CompanionLevelling _levelling;
         private float _nextTick;
         private float _nextStatus;
 
@@ -49,6 +50,7 @@ namespace ValheimCompanion.Companion
             _nview.Register<string>(RpcSay, RPC_Say);
             _nview.Register(RpcThinking, RPC_Thinking);
             _inventory = new CompanionInventory(_nview, _character);
+            _levelling = new CompanionLevelling(_nview, _character);
             _tasks = new CompanionTasks(_nview, _character, _ai, _inventory);
             ApplyName();
 
@@ -72,6 +74,7 @@ namespace ValheimCompanion.Companion
 
         public CompanionTasks Tasks => _tasks;
         public CompanionInventory Inventory => _inventory;
+        public CompanionLevelling Levelling => _levelling;
 
         public ZDO ZDO => _nview.GetZDO();
         public string Name => _character.m_name;
@@ -235,6 +238,7 @@ namespace ValheimCompanion.Companion
             SyncNameFromConfig();
             _inventory.EnsureRestored();
             _inventory.KeepRepaired();
+            _levelling.Update();
             _tasks.Update();
 
             if (Time.time >= _nextStatus)

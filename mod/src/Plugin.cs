@@ -25,6 +25,7 @@ namespace ValheimCompanion
         public static ConfigEntry<int> OfflineMinutes;
         public static ConfigEntry<string> OfflineMode;
         public static ConfigEntry<string> MapMarker;
+        public static ConfigEntry<bool> Levelling;
 
         private Harmony _harmony;
 
@@ -41,6 +42,8 @@ namespace ValheimCompanion
                 "What 'off duty' means: logout = leave the world and log back in beside the master when someone joins; " +
                 "idle = freeze in place and resume when someone joins (server only).",
                 new AcceptableValueList<string>("logout", "idle")));
+            Levelling = Config.Bind("Companion", "Levelling", true,
+                "Scale the companion with its master: level (damage) from bosses defeated, max health from the master's, armour from theirs (server only).");
             MapMarker = Config.Bind("Companion", "MapMarker", "everyone", new ConfigDescription(
                 "Who sees the companion on the minimap and big map: everyone, master (only its master) or off (server only).",
                 new AcceptableValueList<string>("everyone", "master", "off")));

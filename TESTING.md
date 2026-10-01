@@ -11,7 +11,7 @@ Things that can't be tested headlessly because they need a player in the world. 
 - [ ] About 3 seconds after you appear, **Alvar logs in next to you** and greets you.
   - If he was already in the world from the last save, he's simply where he was.
 - [ ] Open the **map (M)**. Alvar shows as a **player pin with his name**, and it moves with him.
-- [ ] Ask `@Alvar what have you got?`. He should list his inventory: a stone axe, a **club** he crafted overnight, and about 100 wood.
+- [ ] Ask `@Alvar what have you got?`. He should list his inventory: a stone axe, a **club** and a **hammer** he crafted, and about 12 wood (the rest went into the test huts).
 
 ## 2. Wood priority and fallen logs
 - [ ] `@Alvar get me some wood`: he should say about **20**, then take loose wood first, then logs and stumps, and fell standing trees only if nothing else is left.
@@ -28,6 +28,12 @@ Things that can't be tested headlessly because they need a player in the world. 
 ## 4b. Building (M5)
 - [ ] Have a look at the **hut he built headlessly** at about (110, −344). He placed a workbench, floor (on posts where the ground dips), walls with a door, gable ends and a roof. Check it looks right: gables the right way up, roof meeting at the ridge, the door at the front.
 - [ ] `@Alvar build me a small hut here`: he picks level ground near you, clears bushes, and builds it piece by piece. Without enough wood he says what's missing; `@Alvar get the wood and finish it` should gather, then `resume_build`.
+
+- Note: the **first** test hut, at about (80, −314), is half collapsed. That's what exposed the floating-floor bug, which is now fixed with posts. Knock it down with your hammer if you like.
+
+## 4c. Levelling (M4.5)
+- [ ] Stand near Alvar for a minute. With no bosses beaten he stays **level 1**, and his max health becomes about **2.5 × yours**, never below 350. With armour on, the dashboard (or `@Alvar how tough are you?`) shows his armour matching your total.
+- [ ] After a boss kill he levels up (stars over his head), and boasts about it.
 
 ## 5. M4 acceptance test
 - [ ] `@Alvar get 20 wood and make me a club`. He looks up the recipe, gathers or fetches wood, crafts the club, and drops it plus the wood at your feet.

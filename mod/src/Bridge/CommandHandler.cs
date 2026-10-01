@@ -529,6 +529,8 @@ namespace ValheimCompanion.Bridge
                 ["task"] = companion.Tasks.Current,
                 ["master"] = CompanionState.GetMasterName(zdo),
                 ["master_nearby"] = companion.Tasks.MasterNearby,
+                ["level"] = companion.Levelling.Level,
+                ["armor"] = Round(companion.Levelling.Armor),
                 ["inventory"] = companion.Inventory.Describe(),
                 ["free_slots"] = companion.Inventory.FreeSlots,
                 ["queue"] = companion.Tasks.DescribeQueue(),

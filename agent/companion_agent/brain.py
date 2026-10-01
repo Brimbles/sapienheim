@@ -339,6 +339,12 @@ class Brain:
             # Off duty while nobody is online: no LLM call; mentioned when it logs back in.
             self.notes.append("logged_out: everyone was offline for a while, so you went off duty")
             log.info("logged_out %s", event.data)
+        elif event.name == "levelled_up":
+            await self.take_turn(
+                f"(You've grown stronger alongside your master: now level {event.data.get('level')}, "
+                f"{event.data.get('max_hp')} max health, {event.data.get('armor')} armour. Boast about it, briefly.)",
+                history_line=f"(Alvar levelled up to {event.data.get('level')})",
+            )
         elif event.name == "summoned":
             await self.take_turn(
                 "(An admin has summoned you back into the world next to them, with all your belongings. React in character.)",
