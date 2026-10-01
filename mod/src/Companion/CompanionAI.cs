@@ -32,6 +32,7 @@ namespace ValheimCompanion.Companion
         private CompanionTasks _tasks;
         private CompanionInventory _inventory;
         private CompanionLevelling _levelling;
+        private CompanionDoors _doors;
         private float _nextTick;
         private float _nextStatus;
 
@@ -51,6 +52,7 @@ namespace ValheimCompanion.Companion
             _nview.Register(RpcThinking, RPC_Thinking);
             _inventory = new CompanionInventory(_nview, _character);
             _levelling = new CompanionLevelling(_nview, _character);
+            _doors = new CompanionDoors(_nview, _character, _ai);
             _tasks = new CompanionTasks(_nview, _character, _ai, _inventory);
             ApplyName();
 
@@ -239,6 +241,7 @@ namespace ValheimCompanion.Companion
             _inventory.EnsureRestored();
             _inventory.KeepRepaired();
             _levelling.Update();
+            _doors.Update();
             _tasks.Update();
 
             if (Time.time >= _nextStatus)
