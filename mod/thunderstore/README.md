@@ -20,7 +20,7 @@
 ## Requirements
 - A **dedicated server** (Windows or Linux). Not tested on player-hosted games.
 - **Every player** needs this mod (Jötunn enforces it).
-- The **agent** running where the server can reach it, and a Claude API key. The agent isn't published separately yet.
+- The **agent** running where the server can reach it, and a Claude API key. The agent, its Docker image and setup steps are at https://github.com/Brimbles/sapienheim.
 
 ## Setup (server)
 1. Install the mod on the server and on every player's game (a mod manager or PhValheim handles this).

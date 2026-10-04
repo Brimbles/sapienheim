@@ -14,9 +14,14 @@ class _Msg(BaseModel):
 
 
 # Mod -> agent
+# Bumped whenever the messages change in a way the other side must know about. Mod and agent must match.
+PROTOCOL_VERSION = 1
+
+
 class Hello(_Msg):
     type: Literal["hello"]
     token: str
+    protocol: int = 0  # mods before the version check sent none
     mod_version: str = ""
     world: str = ""
 
@@ -47,6 +52,14 @@ _incoming = TypeAdapter(Incoming)
 class HelloAck(_Msg):
     type: Literal["hello_ack"] = "hello_ack"
     agent_version: str
+    protocol: int = PROTOCOL_VERSION
+
+
+class HelloReject(_Msg):
+    type: Literal["hello_reject"] = "hello_reject"
+    reason: str
+    agent_version: str
+    protocol: int = PROTOCOL_VERSION
 
 
 class Command(_Msg):

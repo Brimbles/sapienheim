@@ -149,12 +149,19 @@ namespace ValheimCompanion.Bridge
                 {
                     ["type"] = "hello",
                     ["token"] = _token,
+                    ["protocol"] = Plugin.ProtocolVersion,
                     ["mod_version"] = Plugin.PluginVersion,
                     ["world"] = _world,
                 };
                 writer.WriteLine(hello.ToString(Formatting.None));
 
                 JObject ack = ReadMessage(reader);
+                int agentProtocol = ack?["protocol"] != null ? (int)ack["protocol"] : 0;
+                if (ack != null && ((string)ack["type"] == "hello_reject" || agentProtocol != Plugin.ProtocolVersion))
+                {
+                    throw new IOException($"agent {ack["agent_version"]} speaks protocol {agentProtocol} but this mod " +
+                                          $"({Plugin.PluginVersion}) speaks {Plugin.ProtocolVersion}: update whichever is older");
+                }
                 if (ack == null || (string)ack["type"] != "hello_ack")
                 {
                     throw new IOException("handshake rejected (check Agent.Token)");

@@ -22,7 +22,7 @@ from typing import Any
 import anthropic
 
 from companion_agent.connection import ModConnection
-from companion_agent.memory import Memory
+from companion_agent.memory import DATA_DIR, Memory
 from companion_agent.protocol import Event
 from companion_agent.status import Status
 
@@ -40,7 +40,16 @@ PORTAL_OVERHEAD = 20.0    # metres-equivalent cost of using a portal
 # Messages that probably need multi-step planning go to the stronger model.
 PLAN_PATTERN = re.compile(r"\b(build|craft|plan|gather|collect|fetch|make me|go to|and then|then)\b", re.I)
 
-PERSONA = (Path(__file__).parent / "persona.md").read_text(encoding="utf-8")
+def _persona_path() -> Path:
+    """AGENT_PERSONA if set, else persona.md in the data folder if there is one, else the neutral default."""
+    if os.environ.get("AGENT_PERSONA"):
+        return Path(os.environ["AGENT_PERSONA"])
+    custom = DATA_DIR / "persona.md"
+    return custom if custom.is_file() else Path(__file__).parent / "persona.md"
+
+
+PERSONA_PATH = _persona_path()
+PERSONA = PERSONA_PATH.read_text(encoding="utf-8")
 
 RULES = """
 ## How you act
@@ -54,10 +63,11 @@ RULES = """
 - `chests` in the state lists nearby chests with their contents; use `fetch_items` / `store_items` with a chest id.
 - `craft` makes items from your inventory, walking to the right crafting station if the recipe needs one. Check what an item needs with `recipe` first; if you're short, gather or fetch the materials, then craft.
 - You automatically drop whatever you're doing to fight aggressive enemies nearby, then carry on. No tool call is needed for that.
-- Work tools (go_to, attack, pick_up, give, gather, store_items, fetch_items, craft, build, resume_build) take `queue: true` to run one after another. Plan multi-step jobs as a queue, e.g. gather wood, then give it. If one task fails, the rest of the queue is dropped and you'll hear about it.
+- Work tools (go_to, attack, pick_up, give, gather, store_items, fetch_items, craft, build, resume_build, repair_nearby) take `queue: true` to run one after another. Plan multi-step jobs as a queue, e.g. gather wood, then give it. If one task fails, the rest of the queue is dropped and you'll hear about it.
 - You'll be told when queued work finishes or fails. Report back in character; if something failed (e.g. need_axe), say what you need.
-- `build` puts up a structure from a template (right now: "hut", a small wooden hut with a workbench, floor, walls, a door and a roof). You choose the template, its size and roughly where; the build code picks level ground there, clears bushes and places every piece. It needs a hammer (craft one: Wood 3, Stone 2) and wood: about 28 + 16 per width cell (a 2-wide hut is about 60). If it fails with missing_materials, gather or fetch what's missing and then call resume_build. The pieces belong to your master.
-- Travel: to go to a named place, use `travel` (it picks the best route, through portals when that's shorter). `use_portal` steps through a specific portal. You can't yet walk more than 500 m in one go without a portal.
+- `build` puts up a structure from a template: "hut" (a small wooden hut with a workbench, floor, walls, a door and a roof), "wall" (a stakewall palisade) or "fence" (a roundpole fence). Walls and fences go in a ring with a gate (e.g. around a base, `around` a named place) or a straight line. You choose the template, its size and roughly where; the build code picks the exact spots, clears bushes and places every piece. It needs a hammer (craft one: Wood 3, Stone 2) and wood: a 2-wide hut is about 60, a 12 m fence ring about 28, a 12 m wall ring about 108. If it fails with missing_materials, gather or fetch what's missing and then call resume_build. The pieces belong to your master.
+- `repair_nearby` fixes damaged buildings around you (or a player or named place) with your hammer.
+- Travel: to go to a named place, use `travel` (it picks the best route, through portals when that's shorter). `use_portal` steps through a specific portal. You can walk up to 5 km, but not across open water (no boats yet).
 - Name the settlements you build (the `name` on `build`) so you can travel back to them later.
 - Memory: you keep a long-term memory between sessions (shown as "What you remember"). Use `remember` for things worth keeping: what players like, promises, plans, notable events. Use `name_place` when asked to remember a location, and `go_to` with `place` to go back there.
 - You can't build other kinds of structure yet (forts, villages, roads, portals). Say so in character.
@@ -337,18 +347,18 @@ def _low_health(d: dict[str, Any]) -> tuple[str, str]:
     where = "mid-fight" if d.get("in_combat") else "after a scrape"
     return (f"(You're badly hurt {where}: {d.get('health')}/{d.get('max_health')} health. One short, urgent line in "
             "character, e.g. asking for cover or announcing a 'tactical withdrawal'. Keep it under ten words.)",
-            "(Alvar was badly hurt)")
+            "(you were badly hurt)")
 
 
 def _idle(d: dict[str, Any]) -> tuple[str, str]:
     return (f"(You've been standing about near your master for {d.get('minutes')} minutes with nothing to do. "
             "Make one short in-character remark: small talk, an anecdote from your career, or an offer to do something "
-            "useful. Don't start anything without being asked.)", "(Alvar got bored)")
+            "useful. Don't start anything without being asked.)", "(you got bored)")
 
 
 def _master_returned(d: dict[str, Any]) -> tuple[str, str]:
     return (f"(Your master is back after about {d.get('minutes_away')} minutes away. Greet them in character, and if "
-            "anything notable happened meanwhile (see notes), mention it in one line.)", "(Alvar's master came back)")
+            "anything notable happened meanwhile (see notes), mention it in one line.)", "(your master came back)")
 
 
 # Proactive events from the mod: event name -> (prompt, history line).
@@ -374,7 +384,7 @@ SET_FRIEND_TOOL: dict[str, Any] = {
 }
 
 OUT_OF_BREATH = [
-    "Aha. Bear with me, I'm... recalibrating.",
+    "Bear with me, I'm catching my breath.",
     "One moment. Big thoughts. Very big thoughts.",
     "Let me circle back to you on that.",
 ]
@@ -423,7 +433,7 @@ class Brain:
         if event.name == "player_chat":
             await self.on_chat(event.data)
         elif event.name in ("task_done", "task_failed") and _worth_reporting(event):
-            # The whole job is finished (or failed): let Alvar tell the players.
+            # The whole job is finished (or failed): tell the players.
             log.info("%s %s", event.name, event.data)
             await self.take_turn(
                 f"({event.name}: {json.dumps(event.data)}. Report back to the players in character.)",
@@ -449,25 +459,25 @@ class Brain:
             await self.take_turn(
                 f"(You've grown stronger alongside your master: now level {event.data.get('level')}, "
                 f"{event.data.get('max_hp')} max health, {event.data.get('armor')} armour. Boast about it, briefly.)",
-                history_line=f"(Alvar levelled up to {event.data.get('level')})",
+                history_line=f"(you levelled up to {event.data.get('level')})",
             )
         elif event.name == "summoned":
             await self.take_turn(
                 "(An admin has summoned you back into the world next to them, with all your belongings. React in character.)",
-                history_line="(Alvar was summoned back)",
+                history_line="(you were summoned back)",
             )
         elif event.name == "logged_in":
             await self.take_turn(
                 "(A player has logged in and you're back on duty beside them. Greet them in character, and if anything "
                 "notable happened before you went off duty (see notes), give a one-line 'while you were away'.)",
-                history_line="(Alvar logged back in as a player arrived)",
+                history_line="(you came back on duty as a player arrived)",
             )
         elif event.name == "respawned":
             killer = event.data.get("killed_by") or "something you'd rather not discuss"
             await self.take_turn(
                 f"(You were just killed by {killer}, and have now bounced back to life next to the group. "
                 "React in character: you were never really dead.)",
-                history_line=f"(Alvar was killed by {killer} and bounced back)",
+                history_line=f"(you were killed by {killer} and came back)",
             )
         else:
             log.info("event %s: %s", event.name, event.data)
@@ -515,7 +525,7 @@ class Brain:
 
         spoken, actions = await self.run_turn(model, content, tools or TOOLS)
 
-        # History keeps plain text only: the prompt line and what Alvar said/did. It's persisted with the memory.
+        # History keeps plain text only: the prompt line and what the companion said/did. It's persisted with the memory.
         summary = " ".join(spoken) or "(said nothing)"
         if actions:
             summary += f" [did: {', '.join(actions)}]"

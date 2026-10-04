@@ -1,0 +1,72 @@
+# Tests the agent and publishes its Docker image to GitHub's container registry:
+#   ghcr.io/<owner>/sapienheim-agent:<version> and :latest  on a version tag (v0.1.0)
+#   ghcr.io/<owner>/sapienheim-agent:edge                   on pushes to main that touch agent/
+name: agent image
+
+on:
+  push:
+    tags: ["v*.*.*"]
+    branches: [main]
+    paths: ["agent/**", ".github/workflows/agent-image.yml"]
+  pull_request:
+    paths: ["agent/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Run agent tests
+        working-directory: agent
+        run: uv run pytest -q
+
+  image:
+    needs: test
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Image name (registry names must be lower case)
+        run: echo "IMAGE=ghcr.io/${OWNER,,}/sapienheim-agent" >> "$GITHUB_ENV"
+        env:
+          OWNER: ${{ github.repository_owner }}
+
+      - name: Check the tag matches the agent version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          version=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' agent/companion_agent/__init__.py)
+          [ "v$version" = "${GITHUB_REF_NAME}" ] || { echo "tag ${GITHUB_REF_NAME} but agent is $version"; exit 1; }
+
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=edge,enable=${{ github.ref == 'refs/heads/main' }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: agent
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

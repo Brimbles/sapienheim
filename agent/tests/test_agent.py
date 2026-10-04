@@ -75,7 +75,7 @@ async def _wait_for(predicate, timeout=2.0):
     await asyncio.wait_for(loop(), timeout)
 
 
-async def _run(script, chat_texts, expect_commands, budget=None, token="secret", expect_llm_calls=0):
+async def _run(script, chat_texts, expect_commands, budget=None, token="secret", expect_llm_calls=0, protocol=1):
     client = FakeClient(script)
     main.brain_factory = lambda conn, world: Brain(conn, client, budget)
     server = await asyncio.start_server(main.handle_mod, "127.0.0.1", 0)
@@ -83,11 +83,10 @@ async def _run(script, chat_texts, expect_commands, budget=None, token="secret",
     reader, writer = await asyncio.open_connection("127.0.0.1", port)
     mod = FakeMod(reader, writer)
     try:
-        await mod.send({"type": "hello", "token": token, "mod_version": "0.1.0", "world": "Test"})
+        await mod.send({"type": "hello", "token": token, "protocol": protocol, "mod_version": "0.1.0", "world": "Test"})
         ack = await asyncio.wait_for(reader.readline(), 1.0)
-        if not ack:
+        if not ack or json.loads(ack)["type"] != "hello_ack":
             return None, client
-        assert json.loads(ack)["type"] == "hello_ack"
         for t in chat_texts:
             await mod.send({"type": "event", "name": "player_chat", "data": {"player": "Ben", "text": t, "via": "prefix"}})
         await mod.pump(expect_commands)
@@ -102,6 +101,21 @@ async def _run(script, chat_texts, expect_commands, budget=None, token="secret",
 @pytest.fixture(autouse=True)
 def token(monkeypatch):
     monkeypatch.setattr(main, "TOKEN", "secret")
+
+
+def test_rejects_mismatched_protocol():
+    mod, client = asyncio.run(_run([], [], 0, protocol=0))
+    assert mod is None and client.calls == []
+
+
+def test_persona_defaults_to_neutral_and_a_data_folder_file_overrides_it(tmp_path, monkeypatch):
+    monkeypatch.delenv("AGENT_PERSONA", raising=False)
+    monkeypatch.setattr(brain_mod, "DATA_DIR", tmp_path)
+    assert brain_mod._persona_path().parent.name == "companion_agent"
+    (tmp_path / "persona.md").write_text("You are Bob.", encoding="utf-8")
+    assert brain_mod._persona_path() == tmp_path / "persona.md"
+    monkeypatch.setenv("AGENT_PERSONA", str(tmp_path / "other.md"))
+    assert brain_mod._persona_path() == tmp_path / "other.md"
 
 
 def test_rejects_bad_token():

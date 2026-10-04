@@ -19,7 +19,7 @@ from companion_agent.connection import ModConnection
 from companion_agent import dashboard
 from companion_agent.memory import Memory
 from companion_agent.status import Status
-from companion_agent.protocol import Event, Hello, HelloAck, parse
+from companion_agent.protocol import PROTOCOL_VERSION, Event, Hello, HelloAck, HelloReject, parse
 
 log = logging.getLogger("companion_agent")
 
@@ -88,6 +88,14 @@ async def handle_mod(reader: asyncio.StreamReader, writer: asyncio.StreamWriter)
             log.warning("rejected handshake from %s", peer)
             return
         log.info("hello from mod %s, world %s", hello.mod_version, hello.world)
+        if hello.protocol != PROTOCOL_VERSION:
+            log.error(
+                "mod %s speaks protocol %s but this agent (%s) speaks %s: update whichever is older",
+                hello.mod_version or "?", hello.protocol, __version__, PROTOCOL_VERSION,
+            )
+            writer.write(HelloReject(reason="protocol_mismatch", agent_version=__version__).model_dump_json().encode() + b"\n")
+            await writer.drain()
+            return
 
         conn = ModConnection(writer)
         await conn.send(HelloAck(agent_version=__version__))

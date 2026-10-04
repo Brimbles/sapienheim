@@ -107,10 +107,12 @@ sapienheim/
 │  │  ├─ protocol.py            # message schemas (pydantic)
 │  │  ├─ brain.py               # LLM loop, tool definitions, model routing
 │  │  ├─ memory.py              # summaries, facts, per-player notes
-│  │  ├─ persona.md             # companion personality/system prompt
+│  │  ├─ persona.md             # neutral default personality (override in the data folder)
 │  │  └─ mcp_server.py          # optional: same tools over MCP for dev
 │  ├─ tests/
+│  ├─ personas/                 # example personas (alvar.md)
 │  └─ Dockerfile
+├─ .github/workflows/          # agent tests + image publishing
 ├─ deploy/
 │  ├─ unraid-template.xml       # container template for the agent
 │  └─ README.md                 # PhValheim + Unraid deployment steps
@@ -302,6 +304,7 @@ Each milestone ends with something playable. Acceptance criteria in **bold**.
 - [ ] Create a **separate PhValheim test world**.
 - [ ] Get the mod onto PhValheim by **publishing it to Thunderstore** as `Sapienheim` (decided over hand-copying a DLL onto the `/opt/stateful` volume: Thunderstore is PhValheim's supported route, and its launcher gives players the same version). [x] Packaging: Release builds write `mod/bin/thunderstore/Sapienheim-<version>.zip` from `mod/thunderstore/` (manifest, icon, README, changelog). [ ] First upload, after the play-test.
 - [x] Agent `Dockerfile` + Unraid template (env: `ANTHROPIC_API_KEY`, `AGENT_TOKEN`, `AGENT_PORT`; volume `/data`). Written (`agent/Dockerfile`, `deploy/unraid-template.xml`, `deploy/README.md`), **not yet built**: no Docker on the dev PC.
+- [x] **Public release prep:** MIT licence, repo README, neutral default persona (custom via `persona.md` in the data folder or `AGENT_PERSONA`; Alvar is the example in `agent/personas/`), protocol-version check in the handshake, GitHub Actions publishing `ghcr.io/brimbles/sapienheim-agent` (`:X.Y.Z` + `:latest` on `vX.Y.Z` tags, `:edge` from `main`). [ ] Create the public repo `Brimbles/sapienheim`, push, and make the image package public.
 - [ ] Custom Docker network shared by PhValheim + agent; **no public port for the agent**.
 - [ ] Confirm the PhValheim client launcher distributes the mod to clients.
 - [x] **Permissions (before friends join):** (done: `CompanionPermissions`; `Permissions.Commanders` master/friends/everyone, `Permissions.Friends` + master-granted friends via `set_friend`; non-commanders' chat gets only say/get_status/recipe in code, and action tool calls are refused; `Permissions.ChestAccess` own/any by piece creator; friends survive death/logout via the away record.) who may command the companion (master, friends list, everyone) and which chests it may take from or store into; enforced in the mod, not just the prompt.

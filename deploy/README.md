@@ -5,7 +5,7 @@ Three pieces need to be in place:
 - the **agent** container;
 - a **private Docker network** joining them.
 
-> Status: written but **not yet tried**. Docker wasn't available on the dev PC, so the image hasn't been built yet, and the mod isn't published yet. Do this on a separate PhValheim **test world** first.
+> Status: written but **not yet tried**. The image and the mod aren't published yet. Do this on a separate PhValheim **test world** first.
 
 ## 1. Private network
 On Unraid, open a terminal:
@@ -15,17 +15,14 @@ docker network create sapienheim
 Edit the **PhValheim** container: set *Network Type* to `Custom: sapienheim` and apply. The agent container joins the same network below. The agent's port 7777 is then reachable only from containers on that network, never from the internet.
 
 ## 2. Agent container
-1. Copy the `agent/` folder to the Unraid server (for example `/mnt/user/appdata/sapienheim-src/agent`), then build:
-   ```sh
-   docker build -t sapienheim-agent /mnt/user/appdata/sapienheim-src/agent
-   ```
+1. The image is published by GitHub Actions to `ghcr.io/brimbles/sapienheim-agent`: `:latest` on each release tag, `:edge` on each push to `main`. To build it yourself instead: `docker build -t sapienheim-agent agent/`, and use that name as the template's repository.
 2. Copy `deploy/unraid-template.xml` to `/boot/config/plugins/dockerMan/templates-user/my-sapienheim-agent.xml`.
 3. Docker → **Add Container** → template **sapienheim-agent**, then fill in:
    - **Claude API key** (masked).
    - **Agent token:** a long random string, for example `openssl rand -base64 24`. Use the same value in the mod config (section 4).
-   - **Memory / data:** `/mnt/user/appdata/sapienheim-agent`.
+   - **Memory / data:** `/mnt/user/appdata/sapienheim-agent`. To give the companion your own personality, put a `persona.md` here, for example a copy of `agent/personas/alvar.md`. Without one it uses a neutral built-in persona.
    - **Dashboard:** only map it if you want it on your LAN.
-4. Start it. Its log should say `listening on 0.0.0.0:7777`.
+4. Start it. Its log should say `listening on 0.0.0.0:7777`. To update later: Docker → the container → **Force update**, which pulls the latest image.
 
 ## 3. Publish the mod to Thunderstore
 PhValheim installs mods from Thunderstore, and its launcher gives every player the same version, so the mod goes there as the package **Sapienheim**.

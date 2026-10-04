@@ -15,6 +15,8 @@ namespace ValheimCompanion
         public const string PluginGUID = "com.sapienheim.valheimcompanion";
         public const string PluginName = "ValheimCompanion";
         public const string PluginVersion = "0.1.0";
+        /// <summary>Mod-agent message protocol; must match the agent's PROTOCOL_VERSION.</summary>
+        public const int ProtocolVersion = 1;
 
         public static ConfigEntry<string> AgentHost;
         public static ConfigEntry<int> AgentPort;
