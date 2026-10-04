@@ -21,6 +21,7 @@ namespace ValheimCompanion.Net
             ZRoutedRpc.instance.Register<string, string>(PlayerChat, RPC_PlayerChat);
             ZRoutedRpc.instance.Register(KillRequest, RPC_KillRequest);
             CompanionMapMarker.Register();
+            PlacePins.Register();
         }
 
         // Client -> server: chat addressed to the companion ("prefix" or "proximity").

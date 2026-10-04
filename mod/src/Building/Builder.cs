@@ -13,6 +13,8 @@ namespace ValheimCompanion.Building
         public Quaternion Rot;
         /// <summary>When set, this step clears an obstacle (bush, sapling, small rock) instead of placing a piece.</summary>
         public Destructible Clear;
+        /// <summary>A piece the build can do without (a wall or fence section): if it can't be reached, it's skipped.</summary>
+        public bool Optional;
     }
 
     /// <summary>
@@ -23,13 +25,16 @@ namespace ValheimCompanion.Building
     /// </summary>
     internal static class Builder
     {
-        public static ItemDrop.ItemData FindHammer(CompanionInventory inventory)
+        public static ItemDrop.ItemData FindHammer(CompanionInventory inventory) => FindTool(inventory, "Hammer");
+
+        /// <summary>A build tool in the inventory: the item itself, or anything with the same piece table.</summary>
+        public static ItemDrop.ItemData FindTool(CompanionInventory inventory, string tool)
         {
-            GameObject hammer = ObjectDB.instance.GetItemPrefab("Hammer");
-            PieceTable table = hammer ? hammer.GetComponent<ItemDrop>().m_itemData.m_shared.m_buildPieces : null;
+            GameObject prefab = ObjectDB.instance.GetItemPrefab(tool);
+            PieceTable table = prefab ? prefab.GetComponent<ItemDrop>().m_itemData.m_shared.m_buildPieces : null;
             foreach (ItemDrop.ItemData item in inventory.Inventory.GetAllItems())
             {
-                if (CompanionInventory.PrefabName(item) == "Hammer" || (table && item.m_shared.m_buildPieces == table))
+                if (CompanionInventory.PrefabName(item) == tool || (table && item.m_shared.m_buildPieces == table))
                 {
                     return item;
                 }
@@ -37,12 +42,16 @@ namespace ValheimCompanion.Building
             return null;
         }
 
+        /// <summary>The tool this piece is built with, from the inventory, or null.</summary>
+        public static ItemDrop.ItemData ToolFor(Piece piece, CompanionInventory inventory) =>
+            FindTool(inventory, PieceCatalog.ToolFor(piece.gameObject.name));
+
         /// <summary>Why this piece can't be placed here right now, or null if it can.</summary>
         public static string CheckPlace(Piece piece, Vector3 pos, long masterId, CompanionInventory inventory)
         {
-            if (FindHammer(inventory) == null)
+            if (ToolFor(piece, inventory) == null)
             {
-                return "need_hammer";
+                return "need_" + PieceCatalog.ToolFor(piece.gameObject.name).ToLowerInvariant();
             }
             if (piece.m_craftingStation && !CraftingStation.HaveBuildStationInRange(piece.m_craftingStation.m_name, pos))
             {
@@ -101,6 +110,9 @@ namespace ValheimCompanion.Building
             }
             return missing;
         }
+
+        /// <summary>Marks a build step that levels the ground instead of placing a piece.</summary>
+        public const string LevelStep = "(level)";
 
         /// <summary>A damaged piece built by a player that a hammer could repair right now.</summary>
         public static bool NeedsRepair(Piece piece, long masterId, out WearNTear wnt)

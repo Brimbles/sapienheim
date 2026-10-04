@@ -250,9 +250,74 @@ async def scenario_longwalk(r: Runner) -> None:
     await r.cmd("save_world")
 
 
+async def scenario_hut(r: Runner) -> None:
+    """The 3x4 hut with beds, levelled with a hoe, then a fence fitted round it: scenario.py hut [x z]."""
+    info = await r.conn.command("piece_info", filter="bed")
+    for p in (info.data or {}).get("pieces", []):
+        log.info("  %s bounds=%s", p["piece"], p.get("bounds"))
+    allp = await r.conn.command("piece_info", filter="")
+    for p in (allp.data or {}).get("pieces", []):
+        if p.get("tool") == "Hoe":
+            log.info("  hoe piece %s terrain=%s", p["piece"], p.get("terrain"))
+
+    s = await r.state()
+    have = {i["item"]: i["qty"] for i in s.get("self", {}).get("inventory", [])}
+    for tool in ("Hammer", "Hoe"):
+        if tool not in have:
+            await r.cmd("debug_give", item=tool)  # crafting needs a roofed workbench, which a test site may not have
+    if len(sys.argv) >= 4:
+        await r.task("walk to open ground", "go_to", x=float(sys.argv[2]), z=float(sys.argv[3]))
+        s = await r.state()
+    have = {i["item"]: i["qty"] for i in s.get("self", {}).get("inventory", [])}
+    while have.get("Wood", 0) < 170:
+        before = have.get("Wood", 0)
+        await r.task("gather wood", "gather", item="Wood", qty=min(100, 170 - before))
+        have = {i["item"]: i["qty"] for i in (await r.state()).get("self", {}).get("inventory", [])}
+        if have.get("Wood", 0) <= before:
+            break
+
+    res = await r.cmd("build", template="hut", width=3)
+    if not res.ok:
+        r.results.append(("build hut", f"rejected: {res.error} {res.data}"))
+        return
+    site = res.data["site"]
+    await r.task_wait("build a 3-wide hut", res)
+    r.results.append(("  hut plan", json.dumps(res.data)))
+    await asyncio.sleep(20)  # let support settle
+
+    async def standing(radius):
+        near = await r.conn.command("pieces_near", pos=site, radius=radius)
+        kinds = {}
+        for p in (near.data or {}).get("pieces", []):
+            if p["creator"] != 0:
+                kinds[p["piece"]] = kinds.get(p["piece"], 0) + 1
+        return kinds
+
+    hut = await standing(9)
+    r.results.append(("hut pieces standing after 20 s", f"{sum(hut.values())}: {hut}"))
+    ground = (await r.conn.command("pieces_near", pos=site, radius=1)).data.get("ground", [])
+    heights = [g[1] for g in ground]
+    r.results.append(("ground height under the hut (levelled?)", f"{min(heights)}..{max(heights)}, floor {site[1]}"))
+
+    res = await r.cmd("build", template="fence", shape="ring")
+    if res.ok:
+        await r.task_wait("fence ring round the hut", res)
+        r.results.append(("  fence plan", json.dumps(res.data)))
+    else:
+        r.results.append(("fence ring", f"rejected: {res.error} {res.data}"))
+    await asyncio.sleep(10)
+    after = await standing(20)
+    r.results.append(("fence pieces standing", str({k: v for k, v in after.items() if "fence" in k})))
+
+    pins = await r.cmd("set_places", places=[{"name": "Scenario Hut", "x": site[0], "z": site[2]}])
+    r.results.append(("set_places", str(pins.data)))
+    await r.state()
+    await r.cmd("save_world")
+
+
 SCENARIOS = {
     "m4": scenario_m4, "pieces": scenario_pieces, "build": scenario_build, "inspect": scenario_inspect,
-    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk,
+    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut,
 }
 
 

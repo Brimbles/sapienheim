@@ -100,7 +100,9 @@ async def handle_mod(reader: asyncio.StreamReader, writer: asyncio.StreamWriter)
         conn = ModConnection(writer)
         await conn.send(HelloAck(agent_version=__version__))
         queue: asyncio.Queue[Event] = asyncio.Queue(maxsize=EVENT_QUEUE_SIZE)
-        worker = asyncio.create_task(_event_worker(brain_factory(conn, hello.world or "world"), queue))
+        brain = brain_factory(conn, hello.world or "world")
+        worker = asyncio.create_task(_event_worker(brain, queue))
+        asyncio.create_task(brain.sync_places())  # map pins for the places it remembers
         poller = asyncio.create_task(_poll_state(conn))
         STATUS.set_connected(True, hello.world)
 

@@ -83,6 +83,14 @@ def test_repair_around_unknown_place_fails_without_calling_the_mod():
     assert conn.sent == []
 
 
+def test_naming_a_place_puts_it_on_the_map():
+    conn = Conn((0, 0), [])
+    b = Brain(conn, client=None)
+    block = SimpleNamespace(type="tool_use", id="t1", name="build", input={"template": "hut", "name": "Testville"})
+    asyncio.run(b._execute(block, [], []))
+    assert conn.sent[-1] == ("set_places", {"places": [{"name": "Testville", "x": 500.0, "z": 600.0}]})
+
+
 def test_named_build_becomes_a_place():
     conn = Conn((0, 0), [])
     b = Brain(conn, client=None)

@@ -6,6 +6,7 @@ First test release.
 - Chat with it (`@Name ...` or within 10 m). Orders go to an external agent that uses the Claude API.
 - Follow, stay, go to (up to 5 km, in legs), fight (interrupts other work), pick up, give.
 - Gather (wood, stone, pickables) with tools, respecting wards; chests; crafting at stations.
-- Build from templates (hut, wall, fence), repair nearby buildings, use portals, open doors.
+- Build from templates: a hut (3-5 x 4 floor tiles, two beds, levels the ground first if it has a hoe), wall and fence rings fitted around a building, or lines. Repair nearby buildings, use portals, open doors.
+- Named places (settlements it built, spots it was told to remember) show as pins on everyone's map.
 - Keeps its inventory through death, restarts and going off duty; levels with its master; map marker.
 - Permissions: who may command it, and whose chests it may use.

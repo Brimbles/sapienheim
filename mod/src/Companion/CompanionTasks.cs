@@ -126,6 +126,7 @@ namespace ValheimCompanion.Companion
         private Queue<BuildStep> _buildPlan;
         private string _buildName;
         private int _buildPlaced;
+        private int _buildSkipped;
         private int _buildTotal;
         private float _nextPlace;
         private float _stepDeadline;
@@ -322,6 +323,7 @@ namespace ValheimCompanion.Companion
             _buildName = name;
             _buildPlan = new Queue<BuildStep>(plan);
             _buildPlaced = 0;
+            _buildSkipped = 0;
             _buildTotal = plan.Count;
             _nextPlace = 0f;
             _stepDeadline = 0f;
@@ -930,6 +932,10 @@ namespace ValheimCompanion.Companion
             if (_buildPlan.Count == 0)
             {
                 var done = new JObject { ["task"] = Build, ["build"] = _buildName, ["placed"] = _buildPlaced };
+                if (_buildSkipped > 0)
+                {
+                    done["skipped_unreachable"] = _buildSkipped;
+                }
                 _buildPlan = null;
                 Complete(true, done);
                 return;
@@ -939,6 +945,11 @@ namespace ValheimCompanion.Companion
             if (step.Clear != null || step.Piece == "(clear)")
             {
                 UpdateClear(step);
+                return;
+            }
+            if (step.Piece == Builder.LevelStep)
+            {
+                UpdateLevel(step);
                 return;
             }
             Piece piece = PieceCatalog.Get(step.Piece);
@@ -952,7 +963,8 @@ namespace ValheimCompanion.Companion
             // Walk within building reach of the spot.
             if (_stepDeadline <= 0f)
             {
-                _stepDeadline = Time.time + BuildStepTimeout;
+                // An optional section gets less time: a gap is better than a long wait at each one.
+                _stepDeadline = Time.time + (step.Optional ? BuildStepTimeout / 2f : BuildStepTimeout);
             }
             Vector3 stand = step.Pos;
             if (ZoneSystem.instance.GetGroundHeight(stand, out float ground))
@@ -974,6 +986,13 @@ namespace ValheimCompanion.Companion
             {
                 if (Time.time > _stepDeadline)
                 {
+                    if (step.Optional)
+                    {
+                        _buildPlan.Dequeue(); // leave a gap rather than give up on the whole wall
+                        _buildSkipped++;
+                        _stepDeadline = 0f;
+                        return;
+                    }
                     FailBuild("cant_reach_build_site");
                 }
                 return;
@@ -997,10 +1016,10 @@ namespace ValheimCompanion.Companion
                 return;
             }
 
-            ItemDrop.ItemData hammer = Builder.FindHammer(_inventory);
-            if (!_character.IsItemEquiped(hammer))
+            ItemDrop.ItemData tool = Builder.ToolFor(piece, _inventory);
+            if (!_character.IsItemEquiped(tool))
             {
-                _character.EquipItem(hammer);
+                _character.EquipItem(tool);
             }
             Vector3 look = step.Pos - _character.transform.position;
             look.y = 0f;
@@ -1008,7 +1027,7 @@ namespace ValheimCompanion.Companion
             {
                 _character.SetLookDir(look.normalized);
             }
-            _character.GetComponent<CompanionAI>()?.PlaySwing(hammer);
+            _character.GetComponent<CompanionAI>()?.PlaySwing(tool);
 
             Builder.Place(piece, step.Pos, step.Rot, masterId, _inventory);
             _buildPlan.Dequeue();
@@ -1104,6 +1123,67 @@ namespace ValheimCompanion.Companion
                 _repaired++;
             }
             _repairPlan.Dequeue();
+            _nextPlace = Time.time + PlaceInterval;
+            _stepDeadline = 0f;
+        }
+
+        /// <summary>Level a square of the site: walk to it and work it with the hoe.</summary>
+        private void UpdateLevel(BuildStep step)
+        {
+            if (_stepDeadline <= 0f)
+            {
+                _stepDeadline = Time.time + BuildStepTimeout;
+            }
+            Vector3 stand = step.Pos;
+            if (ZoneSystem.instance.GetGroundHeight(stand, out float ground))
+            {
+                stand.y = ground;
+            }
+            if (!_waypoint)
+            {
+                _waypoint = new GameObject("CompanionWaypoint");
+            }
+            _waypoint.transform.position = stand;
+            if (_ai.GetFollowTarget() != _waypoint)
+            {
+                _ai.SetFollowTarget(_waypoint);
+            }
+            Vector3 delta = step.Pos - _character.transform.position;
+            delta.y = 0f;
+            if (delta.magnitude > BuildReach)
+            {
+                if (Time.time > _stepDeadline)
+                {
+                    FailBuild("cant_reach_build_site");
+                }
+                return;
+            }
+            if (Time.time < _nextPlace)
+            {
+                return;
+            }
+            ItemDrop.ItemData hoe = Builder.FindTool(_inventory, "Hoe");
+            if (hoe == null)
+            {
+                FailBuild("need_hoe");
+                return;
+            }
+            if (!Builder.WardAllows(step.Pos, CompanionState.GetMaster(Zdo)))
+            {
+                FailBuild("ward_forbids");
+                return;
+            }
+            if (!_character.IsItemEquiped(hoe))
+            {
+                _character.EquipItem(hoe);
+            }
+            if (delta.sqrMagnitude > 0.01f)
+            {
+                _character.SetLookDir(delta.normalized);
+            }
+            _character.GetComponent<CompanionAI>()?.PlaySwing(hoe);
+            LevelGround.Apply(step.Pos);
+            _buildPlan.Dequeue();
             _nextPlace = Time.time + PlaceInterval;
             _stepDeadline = 0f;
         }

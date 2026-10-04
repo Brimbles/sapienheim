@@ -81,8 +81,10 @@ def test_memory_tools_run_in_the_agent():
     assert b.memory.data["facts"][0] == {**b.memory.data["facts"][0], "text": "Ben likes mead", "player": "Ben"}
     assert b.memory.place("ben's camp") == (5.0, 5.0)
     assert b.memory.place("here spot") == (10.0, -20.0)
-    # go_to by place is resolved to coordinates before it reaches the mod.
-    assert conn.sent == [("go_to", {"x": 5.0, "z": 5.0})]
+    # Naming a place updates the map pins; go_to by place is resolved to coordinates before it reaches the mod.
+    assert [a for a, _ in conn.sent] == ["set_places", "set_places", "go_to"]
+    assert len(conn.sent[1][1]["places"]) == 2
+    assert conn.sent[-1] == ("go_to", {"x": 5.0, "z": 5.0})
     assert r5["is_error"] and "unknown_place" in r5["content"]
 
 

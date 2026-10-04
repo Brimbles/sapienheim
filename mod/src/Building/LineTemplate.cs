@@ -1,10 +1,12 @@
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
 namespace ValheimCompanion.Building
 {
     /// <summary>
-    /// Walls and fences: a square ring with a gate, or a straight line, following the ground.
+    /// Walls and fences: a rectangular ring with a gate, or a straight line, following the ground. A ring near a
+    /// building is fitted around it (see <see cref="FitAround"/>).
     /// <list type="bullet">
     /// <item><b>wall</b>: stakewall palisade (2 m tall, 4 wood per 2 m), wood gate.</item>
     /// <item><b>fence</b>: roundpole fence (1 m tall, 1 wood per 2 m), roundpole gate.</item>
@@ -46,11 +48,14 @@ namespace ValheimCompanion.Building
         /// <summary>Ring side length or line length in metres, rounded to whole 2 m sections.</summary>
         public static int ClampSize(int size) => Mathf.Clamp(size + size % 2, MinSize, MaxSize);
 
-        public static List<BuildStep> Generate(string template, bool ring, int size, Vector3 centre, float facingYaw, bool gate,
+        /// <param name="size">Ring width (along the front) or line length, in metres.</param>
+        /// <param name="depth">Ring depth (front to back) in metres; ignored for a line.</param>
+        public static List<BuildStep> Generate(string template, bool ring, int size, int depth, Vector3 centre, float facingYaw, bool gate,
                                                long masterId, out Dictionary<string, int> skipped)
         {
             Kind kind = Kinds[template];
             size = ClampSize(size);
+            depth = ClampSize(depth);
             Quaternion facing = Quaternion.Euler(0f, facingYaw, 0f);
             skipped = new Dictionary<string, int>();
             var clear = new List<Destructible>();
@@ -58,26 +63,26 @@ namespace ValheimCompanion.Building
 
             // Sections in walking order: front left to right, right side front to back, back right to left, left side
             // back to front. Each is (local x, local z, yaw); a line is just the front.
-            int n = size / 2;
-            float half = size / 2f;
+            int n = size / 2, m = depth / 2;
+            float half = size / 2f, halfD = depth / 2f;
             var sections = new List<Vector3>();
             for (int i = 0; i < n; i++)
             {
-                sections.Add(new Vector3(-half + 1f + 2f * i, ring ? -half : 0f, 0f));
+                sections.Add(new Vector3(-half + 1f + 2f * i, ring ? -halfD : 0f, 0f));
             }
             if (ring)
             {
-                for (int j = 0; j < n; j++)
+                for (int j = 0; j < m; j++)
                 {
-                    sections.Add(new Vector3(half, -half + 1f + 2f * j, 90f));
+                    sections.Add(new Vector3(half, -halfD + 1f + 2f * j, 90f));
                 }
                 for (int i = n - 1; i >= 0; i--)
                 {
-                    sections.Add(new Vector3(-half + 1f + 2f * i, half, 0f));
+                    sections.Add(new Vector3(-half + 1f + 2f * i, halfD, 0f));
                 }
-                for (int j = n - 1; j >= 0; j--)
+                for (int j = m - 1; j >= 0; j--)
                 {
-                    sections.Add(new Vector3(-half, -half + 1f + 2f * j, 90f));
+                    sections.Add(new Vector3(-half, -halfD + 1f + 2f * j, 90f));
                 }
             }
             int gateIndex = gate ? n / 2 : -1;
@@ -99,7 +104,7 @@ namespace ValheimCompanion.Building
                 }
                 Vector2 off = isGate ? kind.GateOffset : kind.PieceOffset;
                 Vector3 pos = new Vector3(c.x, baseY, c.z) + rot * new Vector3(off.x, off.y, 0f);
-                pieces.Add(new BuildStep { Piece = isGate ? kind.Gate : kind.Piece, Pos = pos, Rot = rot });
+                pieces.Add(new BuildStep { Piece = isGate ? kind.Gate : kind.Piece, Pos = pos, Rot = rot, Optional = true });
                 placed.Add(c);
                 // Inside the ring (towards the centre), or in front of a line (the side facing the builder).
                 Vector3 toInside = ring ? (centre - c) : facing * Vector3.back;
@@ -116,6 +121,96 @@ namespace ValheimCompanion.Building
             steps.AddRange(pieces);
             return steps;
         }
+
+        /// <summary>
+        /// The building (connected player-built pieces) nearest <paramref name="near"/>, within <paramref name="search"/> m:
+        /// a ring around it with <paramref name="margin"/> m to spare on every side, lined up with the building and with
+        /// its front (the gate side) towards <paramref name="towards"/>. False if there's no building there.
+        /// </summary>
+        public static bool FitAround(Vector3 near, float search, float margin, Vector3 towards, out Vector3 centre, out float yaw,
+                                     out int width, out int depth, out int pieces)
+        {
+            centre = near;
+            yaw = 0f;
+            width = depth = pieces = 0;
+            var all = new List<Piece>();
+            Piece.GetAllPiecesInRadius(near, search + 40f, all);
+            all.RemoveAll(p => !p || !p.IsPlacedByPlayer() || p.GetComponent<TerrainOp>()
+                               || Kinds.Values.Any(k => Utils.GetPrefabName(p.gameObject) == k.Piece || Utils.GetPrefabName(p.gameObject) == k.Gate));
+            Piece seed = null;
+            float best = search;
+            foreach (Piece p in all)
+            {
+                float d = Flat(p.transform.position - near);
+                if (d < best)
+                {
+                    best = d;
+                    seed = p;
+                }
+            }
+            if (!seed)
+            {
+                return false;
+            }
+            // Everything joined to it: pieces within 3 m of one already found.
+            var cluster = new List<Piece> { seed };
+            for (int i = 0; i < cluster.Count; i++)
+            {
+                for (int k = all.Count - 1; k >= 0; k--)
+                {
+                    if (Flat(all[k].transform.position - cluster[i].transform.position) <= 3f && !cluster.Contains(all[k]))
+                    {
+                        cluster.Add(all[k]);
+                    }
+                }
+            }
+            // Line up with the building: the most common piece heading, folded into 0-90°.
+            var votes = new Dictionary<int, int>();
+            foreach (Piece p in cluster)
+            {
+                int a = Mathf.RoundToInt(Mathf.Repeat(p.transform.eulerAngles.y, 90f) / 5f) * 5 % 90;
+                votes.TryGetValue(a, out int v);
+                votes[a] = v + 1;
+            }
+            int baseYaw = votes.OrderByDescending(kv => kv.Value).First().Key;
+            // Of the four ways to face along it, the one whose front (-z) faces `towards`.
+            Vector3 mid = Vector3.zero;
+            foreach (Piece p in cluster)
+            {
+                mid += p.transform.position;
+            }
+            mid /= cluster.Count;
+            Vector3 toward = towards - mid;
+            toward.y = 0f;
+            float bestDot = float.MinValue;
+            for (int q = 0; q < 4; q++)
+            {
+                float candidate = baseYaw + 90f * q;
+                float dot = Vector3.Dot(Quaternion.Euler(0f, candidate, 0f) * Vector3.back, toward.normalized);
+                if (dot > bestDot)
+                {
+                    bestDot = dot;
+                    yaw = candidate;
+                }
+            }
+            // Extent in that frame (pieces are up to ~2 m across, so allow 1 m around each pivot).
+            Quaternion inv = Quaternion.Inverse(Quaternion.Euler(0f, yaw, 0f));
+            Vector2 min = new Vector2(float.MaxValue, float.MaxValue), max = new Vector2(float.MinValue, float.MinValue);
+            foreach (Piece p in cluster)
+            {
+                Vector3 local = inv * (p.transform.position - mid);
+                min = Vector2.Min(min, new Vector2(local.x - 1f, local.z - 1f));
+                max = Vector2.Max(max, new Vector2(local.x + 1f, local.z + 1f));
+            }
+            Vector2 c = (min + max) / 2f;
+            centre = mid + Quaternion.Euler(0f, yaw, 0f) * new Vector3(c.x, 0f, c.y);
+            width = Mathf.CeilToInt((max.x - min.x + 2f * margin) / 2f) * 2;
+            depth = Mathf.CeilToInt((max.y - min.y + 2f * margin) / 2f) * 2;
+            pieces = cluster.Count;
+            return true;
+        }
+
+        private static float Flat(Vector3 v) => new Vector2(v.x, v.z).magnitude;
 
         /// <summary>Why this section can't be built, or null with the height to stand it at.</summary>
         private static string CheckSection(Vector3 c, Quaternion rot, Kind kind, long masterId, List<Destructible> clear, out float baseY)

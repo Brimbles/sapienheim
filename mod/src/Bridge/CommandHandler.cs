@@ -140,6 +140,22 @@ namespace ValheimCompanion.Bridge
                 return;
             }
 
+            if (action == "set_places")
+            {
+                // From the agent: the named places it remembers, shown as pins on everyone's map.
+                var places = new System.Collections.Generic.List<(string, float, float)>();
+                foreach (JToken p in args["places"] as JArray ?? new JArray())
+                {
+                    if (p["name"] != null && p["x"] != null && p["z"] != null)
+                    {
+                        places.Add(((string)p["name"], (float)p["x"], (float)p["z"]));
+                    }
+                }
+                Net.PlacePins.Set(places);
+                Result(cmdId, true, null, new JObject { ["pins"] = places.Count });
+                return;
+            }
+
             if (action == "save_world")
             {
                 // Operator/testing command (not an LLM tool): a world save. Calls ZNet.Save directly: RPC_Save's
@@ -176,6 +192,17 @@ namespace ValheimCompanion.Bridge
             data = null;
             switch (action)
             {
+                case "debug_give":
+                {
+                    // Testing command (not an LLM tool): put an item straight into the companion's inventory.
+                    GameObject prefab = ObjectDB.instance.GetItemPrefab((string)args["item"] ?? "");
+                    if (!prefab)
+                    {
+                        return "unknown_item";
+                    }
+                    companion.Inventory.Inventory.AddItem(prefab, args["qty"] != null ? (int)args["qty"] : 1);
+                    return null;
+                }
                 case "say":
                 {
                     string text = ((string)args["text"] ?? "").Trim();
@@ -393,11 +420,13 @@ namespace ValheimCompanion.Bridge
                         Vector3 toUs = companion.transform.position - near;
                         facing = toUs.sqrMagnitude > 1f ? Quaternion.LookRotation(-new Vector3(toUs.x, 0f, toUs.z)).eulerAngles.y : companion.transform.eulerAngles.y + 180f;
                     }
-                    if (!Building.HutTemplate.FindSite(width, near, facing, 25f, out Vector3 origin, out string siteError, out var clear))
+                    // With a hoe, level the site first.
+                    bool level = Building.Builder.FindTool(companion.Inventory, "Hoe") != null;
+                    if (!Building.HutTemplate.FindSite(width, near, facing, 40f, level, out Vector3 origin, out string siteError, out var clear))
                     {
                         return siteError;
                     }
-                    var plan = Building.HutTemplate.Generate(width, origin, facing, clear);
+                    var plan = Building.HutTemplate.Generate(width, origin, facing, clear, level);
                     var pieceNames = new System.Collections.Generic.List<string>();
                     foreach (var step in plan)
                     {
@@ -409,7 +438,8 @@ namespace ValheimCompanion.Bridge
                     JObject missingMaterials = Building.Builder.Missing(pieceNames, companion.Inventory);
                     data = new JObject
                     {
-                        ["template"] = template, ["width"] = width, ["pieces"] = pieceNames.Count, ["clear_first"] = plan.Count - pieceNames.Count,
+                        ["template"] = template, ["width"] = width, ["depth"] = Building.HutTemplate.Depth, ["levels_ground"] = level,
+                        ["pieces"] = pieceNames.Count, ["clear_first"] = plan.Count - pieceNames.Count,
                         ["site"] = new JArray(Mathf.Round(origin.x), Mathf.Round(origin.y), Mathf.Round(origin.z)),
                     };
                     if (missingMaterials.Count > 0 && !IsQueued(args))
@@ -760,7 +790,23 @@ namespace ValheimCompanion.Bridge
             }
             bool gate = args["gate"] != null ? (bool)args["gate"] : ring;
 
-            var plan = Building.LineTemplate.Generate(template, ring, size, centre, facing, gate,
+            // A ring near a building goes around that building, whatever size was asked for.
+            int depth = size, around = 0;
+            if (ring && Building.LineTemplate.FitAround(centre, 15f, 3f, companion.transform.position,
+                    out Vector3 fitCentre, out float fitYaw, out int fitWidth, out int fitDepth, out around))
+            {
+                if (fitWidth > Building.LineTemplate.MaxSize || fitDepth > Building.LineTemplate.MaxSize)
+                {
+                    data = new JObject { ["building_pieces"] = around, ["needs_m"] = new JArray(fitWidth, fitDepth) };
+                    return "building_too_big";
+                }
+                centre = fitCentre;
+                facing = args["facing"] != null ? facing : fitYaw;
+                size = fitWidth;
+                depth = fitDepth;
+            }
+
+            var plan = Building.LineTemplate.Generate(template, ring, size, depth, centre, facing, gate,
                 CompanionState.GetMaster(companion.ZDO), out var skipped);
             var pieceNames = new System.Collections.Generic.List<string>();
             foreach (var step in plan)
@@ -772,13 +818,17 @@ namespace ValheimCompanion.Bridge
             }
             data = new JObject
             {
-                ["template"] = template, ["shape"] = ring ? "ring" : "line", ["size"] = size,
+                ["template"] = template, ["shape"] = ring ? "ring" : "line", ["size"] = ring ? new JArray(size, depth) : (JToken)size,
                 ["pieces"] = pieceNames.Count, ["clear_first"] = plan.Count - pieceNames.Count,
                 ["site"] = new JArray(Mathf.Round(centre.x), Mathf.Round(centre.y), Mathf.Round(centre.z)),
             };
             if (skipped.Count > 0)
             {
                 data["gaps"] = JObject.FromObject(skipped); // sections left out, by reason
+            }
+            if (around > 0)
+            {
+                data["around_building"] = around; // fitted around a building of this many pieces
             }
             if (pieceNames.Count == 0)
             {
@@ -794,7 +844,7 @@ namespace ValheimCompanion.Bridge
             {
                 return "need_hammer";
             }
-            string name = $"{template} {(ring ? $"ring {size}x{size} m" : $"line {size} m")}";
+            string name = $"{template} {(ring ? $"ring {size}x{depth} m" : $"line {size} m")}";
             return Queue(companion, args, $"build({name})", () => companion.Tasks.CommandBuild(name, plan, TaskId(args, cmdId)));
         }
 

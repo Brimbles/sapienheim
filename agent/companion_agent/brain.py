@@ -65,10 +65,10 @@ RULES = """
 - You automatically drop whatever you're doing to fight aggressive enemies nearby, then carry on. No tool call is needed for that.
 - Work tools (go_to, attack, pick_up, give, gather, store_items, fetch_items, craft, build, resume_build, repair_nearby) take `queue: true` to run one after another. Plan multi-step jobs as a queue, e.g. gather wood, then give it. If one task fails, the rest of the queue is dropped and you'll hear about it.
 - You'll be told when queued work finishes or fails. Report back in character; if something failed (e.g. need_axe), say what you need.
-- `build` puts up a structure from a template: "hut" (a small wooden hut with a workbench, floor, walls, a door and a roof), "wall" (a stakewall palisade) or "fence" (a roundpole fence). Walls and fences go in a ring with a gate (e.g. around a base, `around` a named place) or a straight line. You choose the template, its size and roughly where; the build code picks the exact spots, clears bushes and places every piece. It needs a hammer (craft one: Wood 3, Stone 2) and wood: a 2-wide hut is about 60, a 12 m fence ring about 28, a 12 m wall ring about 108. If it fails with missing_materials, gather or fetch what's missing and then call resume_build. The pieces belong to your master.
+- `build` puts up a structure from a template: "hut" (a wooden hut with two beds, a door, a roof and a workbench beside it, 3-5 tiles wide), "wall" (a stakewall palisade) or "fence" (a roundpole fence). Walls and fences go in a ring with a gate or a straight line; a ring next to a building goes around that building. You choose the template, its size and roughly where; the build code picks the exact spots, clears bushes and places every piece. It needs a hammer (craft one: Wood 3, Stone 2) and wood: a 3-wide hut is about 125, a fence ring round a hut about 30, a wall ring round a hut about 110. Carry a hoe (Wood 5, Stone 2) and you level the ground for a hut first, so it fits on rougher ground. If it fails with missing_materials, gather or fetch what's missing and then call resume_build. The pieces belong to your master.
 - `repair_nearby` fixes damaged buildings around you (or a player or named place) with your hammer.
 - Travel: to go to a named place, use `travel` (it picks the best route, through portals when that's shorter). `use_portal` steps through a specific portal. You can walk up to 5 km, but not across open water (no boats yet).
-- Name the settlements you build (the `name` on `build`) so you can travel back to them later.
+- Name the settlements you build (the `name` on `build`) so you can travel back to them later. Named places show as pins on everyone's map.
 - Memory: you keep a long-term memory between sessions (shown as "What you remember"). Use `remember` for things worth keeping: what players like, promises, plans, notable events. Use `name_place` when asked to remember a location, and `go_to` with `place` to go back there.
 - You can't build other kinds of structure yet (forts, villages, roads, portals). Say so in character.
 - Example plan for "get 20 wood and make me a club": recipe(Club) -> gather(Wood, enough for the club plus 20, queue) -> craft(Club, queue) -> give(Club to the player, queue) -> give(Wood, 20, queue). Say what you're about to do first.
@@ -242,20 +242,23 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "build",
         "description": "Build a structure from a template near you, near a player, or around a named place. Templates: "
-        "hut (small wooden hut: workbench, floor, walls with a door, gable roof; width 1-5 cells of 2 m, depth 4 m; about "
-        "28 + 16 wood per width cell); wall (2 m stakewall palisade, 2 wood per metre, 12 for the gate); fence (1 m "
-        "roundpole fence, 0.5 wood per metre, 4 for the gate). Walls and fences go in a square ring with a gate facing "
-        "you (shape=ring, e.g. around a base) or a straight line facing you (shape=line); spots blocked by trees, "
-        "buildings, water or wards are left as gaps (reported as gaps). Needs a hammer. Rejected straight away with "
+        "hut (a wooden hut to live in: two beds, a door, gable roof, workbench beside it; width 3-5 floor tiles of 2 m, "
+        "8 m deep; about 125 wood for width 3, +20 per extra tile; with a hoe in your inventory you level the ground "
+        "first, otherwise it needs fairly flat ground); wall (2 m stakewall palisade, 2 wood per metre, 12 for the "
+        "gate); fence (1 m roundpole fence, 0.5 wood per metre, 4 for the gate). Walls and fences go in a ring with a "
+        "gate facing you (shape=ring) or a straight line facing you (shape=line). A ring next to a building (near you, "
+        "the player, or `around` a named place) is automatically fitted around that building with 3 m to spare, "
+        "whatever size you ask; elsewhere it's a square of `size`. Spots blocked by trees, buildings, water or wards "
+        "are left as gaps (reported as gaps). Needs a hammer. Rejected straight away with "
         "missing_materials (and what's missing) or need_hammer unless queued. task_done/task_failed reports the result; "
         "a failed build can be continued with resume_build.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "template": {"type": "string", "enum": ["hut", "wall", "fence"]},
-                "width": {"type": "integer", "description": "hut: width in 2 m cells, 1-5 (default 3)."},
+                "width": {"type": "integer", "description": "hut: width in 2 m floor tiles, 3-5 (default 3)."},
                 "shape": {"type": "string", "enum": ["ring", "line"], "description": "wall/fence: ring (default) or line."},
-                "size": {"type": "integer", "description": "wall/fence: ring side or line length in metres, 4-40 (default 12 for a ring, 10 for a line)."},
+                "size": {"type": "integer", "description": "wall/fence: line length, or ring side when not around a building; metres, 4-40 (default 12 for a ring, 10 for a line)."},
                 "gate": {"type": "boolean", "description": "wall/fence: include a gate (default: yes for a ring, no for a line)."},
                 "around": {"type": "string", "description": "wall/fence: centre it on this named place."},
                 "near": {"type": "string", "description": "Build near this player instead of near you."},
@@ -650,6 +653,7 @@ class Brain:
         if result.ok and settlement and data and data.get("site"):
             site = data["site"]
             self.memory.set_place(settlement, site[0], site[2])
+            await self.sync_places()
             actions.append(f"name_place({settlement})")
         if result.ok:
             if name == "say":
@@ -710,6 +714,12 @@ class Brain:
         self.status.add("did", actions[-1])
         return _tool_result(tool_id, f"on the way to {place}, {route}")
 
+    async def sync_places(self) -> None:
+        """Show the named places as pins on everyone's map (the mod re-broadcasts them to players who join later)."""
+        places = [{"name": p["name"], "x": p["x"], "z": p["z"]} for p in self.memory.data["places"].values()]
+        if places:
+            await self.conn.command("set_places", places=places)
+
     async def _name_place(self, tool_id: str, args: dict[str, Any], actions: list[str]) -> dict[str, Any]:
         place, at = str(args.get("name", "")).strip(), str(args.get("at") or "here").strip()
         if not place:
@@ -725,6 +735,7 @@ class Brain:
         if not pos:
             return _tool_result(tool_id, f"failed: don't know where '{at}' is", error=True)
         self.memory.set_place(place, pos[0], pos[2])
+        await self.sync_places()
         actions.append(f"name_place({place})")
         return _tool_result(tool_id, f"remembered '{place}' at x={pos[0]}, z={pos[2]}")
 

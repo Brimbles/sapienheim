@@ -82,6 +82,7 @@ namespace ValheimCompanion
             gameObject.AddComponent<CompanionSpawner>();
             gameObject.AddComponent<Bridge.AgentClient>();
             gameObject.AddComponent<Net.CompanionMapMarker>();
+            gameObject.AddComponent<Net.PlacePins>();
 
             Jotunn.Logger.LogInfo($"{PluginName} {PluginVersion} loaded (headless={Jotunn.Managers.GUIManager.IsHeadless()})");
         }

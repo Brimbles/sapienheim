@@ -27,16 +27,18 @@ Things that can't be tested headlessly because they need a player in the world. 
 
 ## 4b. Building (M5)
 - [ ] Have a look at the **hut he built headlessly** at about (110, −344). He placed a workbench, floor (on posts where the ground dips), walls with a door, gable ends and a roof. Check it looks right: gables the right way up, roof meeting at the ridge, the door at the front.
-- [ ] `@Alvar build me a small hut here`: he picks level ground near you, clears bushes, and builds it piece by piece. Without enough wood he says what's missing; `@Alvar get the wood and finish it` should gather, then `resume_build`.
+- [ ] `@Alvar build me a small hut here`: a hut at least 3 tiles wide and 4 deep (6 x 8 m) with **two beds** against the back wall. Check the beds sit inside and you can sleep in one. Without enough wood (about 125) he says what's missing; `@Alvar get the wood and finish it` should gather, then `resume_build`.
+- [ ] Give him a **hoe** (or ask him to craft one) and ask for a hut on rougher ground: he levels the whole site first, like the hoe's level ground, then builds on the flat.
 
 - Note: the **first** test hut, at about (80, −314), is half collapsed. That's what exposed the floating-floor bug, which is now fixed with posts. Knock it down with your hammer if you like.
 
-- [ ] `@Alvar put a fence around the hut`, then `@Alvar build a palisade wall in a line here`. The fence is a ring with a gate facing you; any gaps (trees, the hut) are reported, not built through.
+- [ ] Stand by a hut and `@Alvar put a fence around the hut`: the ring is fitted to the hut (workbench included) with about 3 m to spare, lined up with it, gate facing you. Try `@Alvar put a fence around Testville` from elsewhere too. Then `@Alvar build a palisade wall in a line here`. Gaps (trees, rocks) are reported, not built through.
+- Note: headless tests left two new huts. One at about (205, −266) is levelled, with beds, a workbench inside and a fitted fence ring (30/30 standing). One at about (92, −303) was built before levelling worked properly. A test pin "Scenario Hut" may show until the agent restarts; your own named places replace it.
 - [ ] Hit a few of your walls with a weapon, then `@Alvar repair the base`. He walks round with the hammer and fixes them.
 - Note: the headless test left a **fence ring with a gate** (and three stakewall sections inside it) at about (141, −313), 40 m north-east of the test hut. Headlessly: 20 of 20 fence pieces standing, 4 gaps for trees and rocks, 24 of 24 damaged pieces repaired.
 
 ## 4b2. Named places, portals and travel
-- [ ] `@Alvar build a hut here called Testville` (he needs ~60 wood and a hammer), walk away, then `@Alvar travel to Testville`.
+- [ ] `@Alvar build a hut here called Testville` (he needs ~125 wood and a hammer). **Testville appears as a house pin on your map** (and on everyone's). Walk away, then `@Alvar travel to Testville`. `@Alvar remember this spot as Far Field` adds a pin too.
 - [ ] Build two portals with the same tag, one near you and one far away (e.g. at another base). Then `@Alvar go through the portal`, or name a place near the far end and `@Alvar travel to <place>`: he walks to the near portal, comes out of the far one and walks the rest.
 - [ ] Give him some copper ore and ask again: he should refuse, because ore can't go through portals.
 - [ ] Name a place 1-2 km away (`@Alvar remember this spot as Far Field`), come back, then `@Alvar travel to Far Field`. With no portals he walks there in legs; across open water he stops and says so.

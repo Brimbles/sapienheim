@@ -4,10 +4,19 @@ using UnityEngine;
 
 namespace ValheimCompanion.Building
 {
-    /// <summary>The pieces a player could build with the Hammer, by prefab name.</summary>
+    /// <summary>The pieces a player could build with the Hammer or the Hoe, by prefab name, and which tool each needs.</summary>
     internal static class PieceCatalog
     {
         private static Dictionary<string, Piece> s_pieces;
+        private static Dictionary<string, string> s_tools;
+
+        /// <summary>The tool item (prefab name) a piece is built with: "Hammer" or "Hoe".</summary>
+        public static string ToolFor(string prefab)
+        {
+            EnsureLoaded();
+            return s_tools.TryGetValue(prefab, out string tool) ? tool : "Hammer";
+        }
+
 
         public static Piece Get(string prefab)
         {
@@ -31,18 +40,24 @@ namespace ValheimCompanion.Building
                 return;
             }
             s_pieces = new Dictionary<string, Piece>();
-            GameObject hammer = ObjectDB.instance ? ObjectDB.instance.GetItemPrefab("Hammer") : null;
-            PieceTable table = hammer ? hammer.GetComponent<ItemDrop>().m_itemData.m_shared.m_buildPieces : null;
-            if (!table)
+            s_tools = new Dictionary<string, string>();
+            foreach (string tool in new[] { "Hammer", "Hoe" })
             {
-                return;
-            }
-            foreach (GameObject go in table.m_pieces)
-            {
-                Piece piece = go ? go.GetComponent<Piece>() : null;
-                if (piece)
+                GameObject item = ObjectDB.instance ? ObjectDB.instance.GetItemPrefab(tool) : null;
+                PieceTable table = item ? item.GetComponent<ItemDrop>().m_itemData.m_shared.m_buildPieces : null;
+                if (!table)
                 {
+                    continue;
+                }
+                foreach (GameObject go in table.m_pieces)
+                {
+                    Piece piece = go ? go.GetComponent<Piece>() : null;
+                    if (!piece || s_pieces.ContainsKey(go.name))
+                    {
+                        continue;
+                    }
                     s_pieces[go.name] = piece;
+                    s_tools[go.name] = tool;
                 }
             }
         }
@@ -75,7 +90,35 @@ namespace ValheimCompanion.Building
                 ["cost"] = cost,
                 ["snap_points"] = snapArr,
                 ["ground_only"] = piece.m_groundOnly,
+                ["tool"] = ToolFor(piece.gameObject.name),
+                ["terrain"] = piece.GetComponent<TerrainOp>() is TerrainOp op
+                    ? new JObject { ["level"] = op.m_settings.m_level, ["raise"] = op.m_settings.m_raise, ["smooth"] = op.m_settings.m_smooth,
+                                    ["radius"] = op.m_settings.m_levelRadius, ["square"] = op.m_settings.m_square,
+                                    ["paint"] = op.m_settings.m_paintCleared ? op.m_settings.m_paintType.ToString() : "none" }
+                    : null,
+                ["bounds"] = BoundsOf(piece),
             };
+        }
+
+        /// <summary>Collider bounds in the piece's own frame: [min x, min y, min z, max x, max y, max z].</summary>
+        private static JArray BoundsOf(Piece piece)
+        {
+            Vector3 min = Vector3.positiveInfinity, max = Vector3.negativeInfinity;
+            foreach (Collider col in piece.GetComponentsInChildren<Collider>(true))
+            {
+                if (col.isTrigger)
+                {
+                    continue;
+                }
+                Bounds b = col is BoxCollider box ? new Bounds(box.center, box.size) : col.bounds;
+                foreach (Vector3 corner in new[] { b.min, b.max })
+                {
+                    Vector3 p = col is BoxCollider ? piece.transform.InverseTransformPoint(col.transform.TransformPoint(corner)) : corner - piece.transform.position;
+                    min = Vector3.Min(min, p);
+                    max = Vector3.Max(max, p);
+                }
+            }
+            return float.IsInfinity(min.x) ? new JArray() : new JArray(R(min.x), R(min.y), R(min.z), R(max.x), R(max.y), R(max.z));
         }
 
         private static float R(float v) => Mathf.Round(v * 100f) / 100f;
