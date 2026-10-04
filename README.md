@@ -33,7 +33,7 @@ Players never talk to the agent or to Claude directly, and they need no keys.
 
 You need a Valheim **dedicated server** you control and a **Claude API key**. Usage is billed to you; the agent has a per-minute call budget.
 
-1. **The mod:** install [Sapienheim from Thunderstore](https://thunderstore.io/c/valheim/) on the server and on every player's game. A mod manager or PhValheim does this for you.
+1. **The mod:** install [Sapienheim from Thunderstore](https://thunderstore.io/c/valheim/p/brimbles_sapienheim/Sapienheim/) on the server and on every player's game. A mod manager or PhValheim does this for you.
 2. **The agent:** run the Docker image `ghcr.io/brimbles/sapienheim-agent` with:
    - `ANTHROPIC_API_KEY`: your key.
    - `AGENT_TOKEN`: a long random shared secret.
