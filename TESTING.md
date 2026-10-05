@@ -93,6 +93,9 @@ Each line in the server log starts with `Proactive:`. Turn it off with `Companio
 - [ ] `@Alvar load the kiln` with wood (charcoal kiln) or ore (smelter): it takes fuel and ore up to its limits. Later, `@Alvar collect the coal` (or the bars): he picks up what the machines made, and `@Alvar put it away` stores it.
 - [ ] Ask for either while nobody's online (or log out mid-cook): nothing happens until someone's on, because the world clock stands still on a dedicated server with nobody online. That's vanilla.
 
+## 4d6. Scouting
+- [ ] `@Alvar where is there copper?` / `@Alvar find me some raspberries and mark it`: he names the nearest spots in land you have explored, and with marking it appears on the map so `@Alvar travel to Copper 301m` works.
+
 ## 4e. People and the day's tale
 - [ ] Log out for 30+ minutes after he's done a few jobs, then log back in: one greeting with a short "while you were away" of the highlights (not two greetings).
 - [ ] A friend joining for the first time gets a welcome and an introduction.

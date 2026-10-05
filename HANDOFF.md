@@ -106,10 +106,7 @@ Each task is self-contained. Model choice: a mid-size model (Sonnet) for 1–7; 
    - harvest ripe crops (`Pickable` on player-planted pieces) and replant them (needs the cultivator and the plant piece, placed via `Builder.Place` with the right piece from the Cultivator's piece table, much as `PieceCatalog` handles the Hoe);
    - feed tamed animals (the `Tameable`/`MonsterAI` consume-items list; drop food nearby).
 6. **Storehouse labels:** after `deposit`, offer to put a `sign` (template exists) on or by chests naming their main contents. Sign placement on a chest's front: chest position plus forward × 0.5, the sign's bottom edge on the ground.
-7. **Scouting, simple version:**
-   - `find(thing)` searches ZDOs of known prefabs (copper `rock4_copper`, tin, silver veins...) only in zones already generated, i.e. visited. Use `ZDOMan.GetAllZDOsWithPrefabIterative`.
-   - It reports the nearest few, and with `pin: true` adds them as named places (map pins exist via `set_places`).
-   - Don't search `ZoneSystem` location instances: that would reveal unexplored places. Ask the user if they want that.
+7. ~~Scouting, simple version~~ done: `find` (headless: all 18 kinds of thing resolve; copper, tin, berries, trees and nests found in the explored Meadows/Black Forest).
 8. **Blueprints** (M5): evaluate the PlanBuild format. This needs the user's go-ahead and an example file.
 9. **Settlements and roads** (M9): a big design job, already in `PLAN.md`. Do it with the user, ideally with a stronger model for the layout design.
 10. **Boats, fishing, long missions** (M10, M11): each needs a spike first, since vanilla boat and fishing code is player-driven. Leave these until the user prioritises them.

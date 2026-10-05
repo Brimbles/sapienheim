@@ -633,9 +633,18 @@ async def scenario_collect(r: Runner) -> None:
     r.results.append(("coal carried", str({i["item"]: i["qty"] for i in s["self"].get("inventory", []) if i["item"] == "Coal"})))
 
 
+async def scenario_find(r: Runner) -> None:
+    """Scouting: the brain's `find` lists, checked against the game (unknown prefabs) and the nearest hits."""
+    from companion_agent.brain import FINDABLE
+    for thing, prefabs in FINDABLE.items():
+        res = await r.conn.command("find", prefabs=prefabs, max=2)
+        d = res.data or {}
+        r.results.append((thing, f"{res.error or 'ok'} unknown={d.get('unknown_prefabs')} nearest={[f['dist'] for f in d.get('found', [])]} objects={d.get('total_objects')}"))
+
+
 SCENARIOS = {
     "m4": scenario_m4, "pieces": scenario_pieces, "build": scenario_build, "inspect": scenario_inspect,
-    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds, "buildportal": scenario_buildportal, "gravestone": scenario_gravestone, "guard": scenario_guard, "fires": scenario_fires, "items": scenario_items, "deposit": scenario_deposit, "tidy_chests": scenario_tidy_chests, "hold": scenario_hold, "sign": scenario_sign, "pieceinfo": scenario_pieceinfo, "stations": scenario_stations, "cookdebug": scenario_cookdebug, "collect": scenario_collect,
+    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds, "buildportal": scenario_buildportal, "gravestone": scenario_gravestone, "guard": scenario_guard, "fires": scenario_fires, "items": scenario_items, "deposit": scenario_deposit, "tidy_chests": scenario_tidy_chests, "hold": scenario_hold, "sign": scenario_sign, "pieceinfo": scenario_pieceinfo, "stations": scenario_stations, "cookdebug": scenario_cookdebug, "collect": scenario_collect, "find": scenario_find,
 }
 
 

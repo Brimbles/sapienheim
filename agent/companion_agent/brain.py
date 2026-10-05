@@ -70,6 +70,7 @@ RULES = """
 - `cook` cooks the raw food you carry on a spit or cooking station with a lit fire; `load_smelters` loads kilns, smelters and furnaces with ore, wood and fuel from your pack (then `collect_output` gathers what they've made). Fires, spits, kilns and smelters only run while a player is online, so tell your master if they ask for something to be ready for when they're away.
 - `tend_fires` keeps the base's fires and torches burning (bring wood and resin).
 - `guard` patrols around the base (or wherever you're told) until given another order; good at night or while players are away.
+- `find` tells you where the nearest known ore, berries, trees or nests are (pin=true to mark the spot for `travel`).
 - `fetch_gravestone` does a corpse run when a player has died: their gear comes back to them.
 - `repair_nearby` fixes damaged buildings around you (or a player or named place) with your hammer.
 - `tear_down` (only for your master) takes buildings down with your hammer. Never confirm without asking: the first call tells you what would come down; describe it ("that's 53 pieces: walls, roof, two beds...") and only call again with confirm=true once your master says yes. If the player doesn't say which building, use the one nearest them (`near`). The materials drop on the ground; offer to pick them up afterwards.
@@ -84,6 +85,28 @@ RULES = """
 """.strip()
 
 SYSTEM = f"{PERSONA}\n\n{RULES}"
+
+# What `find` can look for: a name -> the world objects (prefabs) that are it.
+FINDABLE: dict[str, list[str]] = {
+    "copper": ["rock4_copper", "rock4_copper_frac"],
+    "tin": ["MineRock_Tin"],
+    "silver": ["silvervein", "silvervein_frac"],
+    "iron (muddy scrap piles)": ["mudpile", "mudpile2", "mudpile_beacon", "mudpile2_frac"],
+    "obsidian": ["MineRock_Obsidian"],
+    "flametal": ["MineRock_Meteorite"],
+    "raspberries": ["RaspberryBush"],
+    "blueberries": ["BlueberryBush"],
+    "cloudberries": ["CloudberryBush"],
+    "mushrooms": ["Pickable_Mushroom", "Pickable_Mushroom_yellow"],
+    "thistle": ["Pickable_Thistle"],
+    "dandelion": ["Pickable_Dandelion"],
+    "flint": ["Pickable_Flint"],
+    "birch trees": ["Birch1", "Birch2", "Birch1_aut", "Birch2_aut"],
+    "oak trees": ["Oak1"],
+    "fir trees": ["FirTree"],
+    "pine trees": ["Pinetree_01"],
+    "greydwarf nests": ["Spawner_GreydwarfNest"],
+}
 
 # What each boss's altar wants (item id, how many) and where it comes from.
 BOSSES: dict[str, dict[str, Any]] = {
@@ -330,6 +353,20 @@ TOOLS: list[dict[str, Any]] = [
                 "around": {"type": "string", "description": "A named place, e.g. the base."},
                 "queue": {"type": "boolean"},
             },
+        },
+    },
+    {
+        "name": "find",
+        "description": "Scout your memory of the land: the nearest places with something (ores, berries, kinds of tree, "
+        "greydwarf nests), only in parts of the world someone has already been to. With pin=true the nearest is "
+        "remembered as a named place (on everyone's map) so you can travel there.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "thing": {"type": "string", "enum": list(FINDABLE)},
+                "pin": {"type": "boolean", "description": "Remember the nearest one as a named place."},
+            },
+            "required": ["thing"],
         },
     },
     {
@@ -705,6 +742,26 @@ class Brain:
     GREETING_WINDOW = 60.0   # one welcome per arrival, however many events announce it
     AWAY_FOR_SUMMARY = 1800  # seconds away before a returning player gets a "while you were away"
 
+    async def _find(self, tool_id: str, args: dict[str, Any], actions: list[str]) -> dict[str, Any]:
+        thing = str(args.get("thing", ""))
+        prefabs = FINDABLE.get(thing)
+        if not prefabs:
+            return _tool_result(tool_id, f"failed: can't look for that; known: {', '.join(FINDABLE)}", error=True)
+        r = await self.conn.command("find", prefabs=prefabs, max=5)
+        data = getattr(r, "data", None) or {}
+        if not r.ok:
+            return _tool_result(tool_id, f"failed: {r.error} (nobody has explored where {thing} grows or lies yet)", error=True)
+        found = data.get("found", [])
+        if args.get("pin") and found:
+            nearest = found[0]
+            label = f"{thing.split(' (')[0].capitalize()} {round(nearest['dist'])}m"
+            self.memory.set_place(label, nearest["pos"][0], nearest["pos"][2])
+            await self.sync_places()
+            data["pinned_as"] = label
+            actions.append(f"name_place({label})")
+        actions.append(f"find({thing})")
+        return _tool_result(tool_id, json.dumps(data))
+
     async def _boss_prep(self, boss: str) -> dict[str, Any]:
         info = BOSSES.get(boss.lower())
         if not info:
@@ -915,6 +972,8 @@ class Brain:
 
     async def _execute(self, block: Any, spoken: list[str], actions: list[str]) -> dict[str, Any]:
         name, args = block.name, dict(block.input or {})
+        if name == "find":
+            return await self._find(block.id, args, actions)
         if name == "boss_prep":
             return _tool_result(block.id, json.dumps(await self._boss_prep(str(args.get("boss", "")))))
         if name == "opinion":
