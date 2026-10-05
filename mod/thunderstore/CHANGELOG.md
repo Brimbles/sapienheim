@@ -13,3 +13,6 @@ First test release.
 - Damage per hit grows with bosses defeated (18 at the start, 110 at the end), tunable with `Companion.DamageScale`.
 - Keeps its inventory through death, restarts and going off duty; levels with its master; map marker.
 - Permissions: who may command it, and whose chests it may use.
+- Chores: tend fires, cook on a spit, load and empty kilns and smelters, harvest and replant crops, feed tamed animals, put things away in chests (like with like) and label them.
+- Guard duty with raid alerts; corpse runs to fetch a gravestone; building tagged portals and signs; scouting for ores, berries and trees in explored land; boss prep.
+- Remembers each player and what they did together; a "while you were away" when someone returns; a tale of the day at dusk.
