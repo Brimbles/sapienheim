@@ -460,6 +460,10 @@ namespace ValheimCompanion.Bridge
                     {
                         return BuildPortal(companion, args, cmdId, out data);
                     }
+                    if (template == "sign")
+                    {
+                        return BuildSign(companion, args, cmdId, out data);
+                    }
                     if (template != "hut")
                     {
                         return "unknown_template";
@@ -970,6 +974,59 @@ namespace ValheimCompanion.Bridge
         }
 
         // Day fraction: 0 = midnight, 0.5 = noon. Valheim nights run roughly 0.8 -> 0.2.
+        /// <summary>A sign standing on the ground with an inscription (up to 50 characters), facing the companion.</summary>
+        private static string BuildSign(CompanionAI companion, JObject args, string cmdId, out JObject data)
+        {
+            data = null;
+            string text = ((string)args["text"] ?? "").Trim();
+            if (text.Length == 0)
+            {
+                return "need_text";
+            }
+            if (text.Length > 50)
+            {
+                text = text.Substring(0, 50);
+            }
+            Vector3 near = companion.transform.position;
+            string nearPlayer = (string)args["near"];
+            if (!string.IsNullOrEmpty(nearPlayer) && !TryFindPlayer(nearPlayer, out _, out _, out near))
+            {
+                return "player_not_found";
+            }
+            if (args["x"] != null && args["z"] != null)
+            {
+                near = new Vector3((float)args["x"], near.y, (float)args["z"]);
+            }
+            // A couple of metres out from the spot, towards the companion, readable from where it stands.
+            Vector3 toUs = companion.transform.position - near;
+            toUs.y = 0f;
+            Vector3 dir = toUs.sqrMagnitude > 1f ? toUs.normalized : companion.transform.forward;
+            Vector3 at = near + dir * 2f;
+            if (!ZoneSystem.instance.GetGroundHeight(at, out float ground))
+            {
+                return "terrain_not_loaded";
+            }
+            Quaternion facing = Quaternion.LookRotation(dir);
+            // The board is 1 m x 0.56 m round its pivot: set low enough that its bottom edge is in the ground, so it
+            // counts as grounded (no post needed, and a post would need a workbench).
+            var plan = new System.Collections.Generic.List<Building.BuildStep>
+            {
+                new Building.BuildStep { Piece = "sign", Pos = new Vector3(at.x, ground + 0.2f, at.z), Rot = facing, Text = text },
+            };
+            data = new JObject { ["template"] = "sign", ["text"] = text, ["site"] = new JArray(Mathf.Round(at.x), Mathf.Round(ground), Mathf.Round(at.z)) };
+            JObject missing = Building.Builder.Missing(new[] { "sign" }, companion.Inventory);
+            if (missing.Count > 0 && !IsQueued(args))
+            {
+                data["missing"] = missing;
+                return "missing_materials";
+            }
+            if (Building.Builder.FindHammer(companion.Inventory) == null && !IsQueued(args))
+            {
+                return "need_hammer";
+            }
+            return Queue(companion, args, "build(sign)", () => companion.Tasks.CommandBuild("sign", plan, TaskId(args, cmdId)));
+        }
+
         /// <summary>A tagged portal (with a workbench if none is in range), facing the companion.</summary>
         private static string BuildPortal(CompanionAI companion, JObject args, string cmdId, out JObject data)
         {

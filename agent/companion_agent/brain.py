@@ -271,13 +271,14 @@ TOOLS: list[dict[str, Any]] = [
         "whatever size you ask; elsewhere it's a square of `size`. Spots blocked by trees, buildings, water or wards "
         "are left as gaps (reported as gaps). portal: a wooden portal with a `tag` (GreydwarfEye 10, FineWood 20, "
         "SurtlingCore 2, plus a workbench, Wood 10, if none is near); tell your master the tag so they can build the "
-        "matching one. Needs a hammer. Rejected straight away with "
+        "matching one. sign: a sign with your `text` (Wood 2, Coal 1), e.g. to mark a place or commemorate a deed. Needs a hammer. Rejected straight away with "
         "missing_materials (and what's missing) or need_hammer unless queued. task_done/task_failed reports the result; "
         "a failed build can be continued with resume_build.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "template": {"type": "string", "enum": ["hut", "wall", "fence", "portal"]},
+                "template": {"type": "string", "enum": ["hut", "wall", "fence", "portal", "sign"]},
+                "text": {"type": "string", "description": "sign: the inscription, up to 50 characters."},
                 "tag": {"type": "string", "description": "portal: its tag; a portal pairs with the one other portal with the same tag."},
                 "width": {"type": "integer", "description": "hut: width in 2 m floor tiles, 3-5 (default 3)."},
                 "shape": {"type": "string", "enum": ["ring", "line"], "description": "wall/fence: ring (default) or line."},
@@ -645,7 +646,8 @@ class Brain:
                 return
             await self.take_turn(
                 f"(You've grown stronger alongside your master: now level {event.data.get('level')}, "
-                f"{event.data.get('max_hp')} max health, {event.data.get('armor')} armour. Boast about it, briefly.)",
+                f"{event.data.get('max_hp')} max health, {event.data.get('armor')} armour: a boss has fallen. Boast about it, briefly, "
+                "and if you have the materials (Wood 2, Coal 1) offer to put up a sign at the base to commemorate it.)",
                 history_line=f"(you levelled up to {event.data.get('level')})",
             )
         elif event.name == "summoned":

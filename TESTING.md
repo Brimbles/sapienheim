@@ -83,6 +83,7 @@ Each line in the server log starts with `Proactive:`. Turn it off with `Companio
 
 ## 4d4. Tending fires
 - [ ] Let the base fires burn low, give him wood (and resin for torches), then `@Alvar keep the fires going`. He walks round topping each up and tells you if he ran short.
+- [ ] `@Alvar put up a sign here saying Alvar's Field` (give him 2 wood and 1 coal): a sign on the ground facing you with that text. Also check the test sign near (183, -224) reads "Alvar the Barbarian was here".
 - Note: a test torch and two empty test chests were left near (183, -224): they need a workbench in range to remove. Knock them down whenever.
 - [ ] After a gathering trip, `@Alvar put your stuff away`: he stores everything but his tools and weapons in the base chests, each kind with its own kind where possible.
 - [ ] Log out and come back later: he should be where you left him (waiting, not wandered off).

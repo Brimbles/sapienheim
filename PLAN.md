@@ -292,7 +292,7 @@ Each milestone ends with something playable. Acceptance criteria in **bold**.
 - [x] **Per-player memory:** knows each player on the server, what they've done together, and has opinions about them. (Memory `players`: first/last seen, recent things they asked of it, an `opinion` tool; shown as "People you know" in each turn.)
 - [x] **Evening tale** (was "Skaldic Hour", made persona-neutral): at dusk, if the day had deeds in the journal, a two-sentence tale of them instead of the plain dusk line.
 - [ ] ~~**Skaldic Hour:**~~ each in-game evening, a short saga of the day's events (fights, deaths, builds, journeys), told from the agent's event log. A revival of his cancelled mead-hall show.
-- [ ] **Commemorations:** after milestones (boss kills, first iron, a finished settlement), writes a runestone or sign at the base.
+- [x] **Commemorations:** `build` template `sign` with `text` (≤50 chars; Wood 2, Coal 1, no workbench): a sign standing on the ground, facing the companion, inscription set on placement. After a boss (level-up) the agent offers to put one up at the base. Headless: placed and standing.
 - **The companion remembers named places and past conversations across server restarts.**
 
 ### M7 — Offline operation

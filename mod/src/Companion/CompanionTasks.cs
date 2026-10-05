@@ -1194,9 +1194,16 @@ namespace ValheimCompanion.Companion
             _character.GetComponent<CompanionAI>()?.PlaySwing(tool);
 
             GameObject placed = Builder.Place(piece, step.Pos, step.Rot, masterId, _inventory);
-            if (step.Tag != null && placed && placed.GetComponent<ZNetView>() is ZNetView placedView && placedView.IsValid())
+            if ((step.Tag != null || step.Text != null) && placed && placed.GetComponent<ZNetView>() is ZNetView placedView && placedView.IsValid())
             {
-                placedView.GetZDO().Set(ZDOVars.s_tag, step.Tag);
+                if (step.Tag != null)
+                {
+                    placedView.GetZDO().Set(ZDOVars.s_tag, step.Tag);
+                }
+                if (step.Text != null)
+                {
+                    placedView.GetZDO().Set(ZDOVars.s_text, step.Text);
+                }
             }
             _buildPlan.Dequeue();
             _buildPlaced++;

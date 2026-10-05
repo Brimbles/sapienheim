@@ -534,9 +534,32 @@ async def scenario_hold(r: Runner) -> None:
         await r.task("walk back", "go_to", x=float(sys.argv[2]), z=float(sys.argv[3]))
 
 
+async def scenario_sign(r: Runner) -> None:
+    """A commemorative sign on a post (materials given); check it stands after 20 s, then leave it as a test marker."""
+    for item, qty in (("Wood", 4), ("Coal", 1), ("Hammer", 1)):
+        await r.cmd("debug_give", item=item, qty=qty)
+    res = await r.cmd("build", template="sign", text="Alvar the Barbarian was here")
+    if not res.ok:
+        r.results.append(("build sign", f"rejected: {res.error} {res.data}"))
+        return
+    await r.task_wait("build sign", res)
+    await asyncio.sleep(20)
+    near = await r.conn.command("pieces_near", pos=res.data["site"], radius=2)
+    r.results.append(("standing after 20 s", str(sorted(p["piece"] for p in (near.data or {}).get("pieces", []) if p["creator"] != 0))))
+    await r.cmd("save_world")
+
+
+async def scenario_pieceinfo(r: Runner) -> None:
+    """piece_info for each filter: scenario.py pieceinfo sign ..."""
+    for f in sys.argv[2:]:
+        res = await r.conn.command("piece_info", filter=f)
+        for p in (res.data or {}).get("pieces", []):
+            r.results.append((p["piece"], json.dumps({k: p.get(k) for k in ("station", "bounds", "snap_points", "cost")})))
+
+
 SCENARIOS = {
     "m4": scenario_m4, "pieces": scenario_pieces, "build": scenario_build, "inspect": scenario_inspect,
-    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds, "buildportal": scenario_buildportal, "gravestone": scenario_gravestone, "guard": scenario_guard, "fires": scenario_fires, "items": scenario_items, "deposit": scenario_deposit, "tidy_chests": scenario_tidy_chests, "hold": scenario_hold,
+    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds, "buildportal": scenario_buildportal, "gravestone": scenario_gravestone, "guard": scenario_guard, "fires": scenario_fires, "items": scenario_items, "deposit": scenario_deposit, "tidy_chests": scenario_tidy_chests, "hold": scenario_hold, "sign": scenario_sign, "pieceinfo": scenario_pieceinfo,
 }
 
 

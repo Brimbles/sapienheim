@@ -17,6 +17,8 @@ namespace ValheimCompanion.Building
         public bool Optional;
         /// <summary>Set as the placed piece's tag (a portal's name, which pairs it with another).</summary>
         public string Tag;
+        /// <summary>Set as the placed piece's text (a sign's inscription).</summary>
+        public string Text;
     }
 
     /// <summary>
