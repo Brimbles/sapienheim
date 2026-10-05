@@ -360,6 +360,9 @@ Make the offline simulation (M7) earn its keep.
 - [ ] **Pack mule:** follow on trips carrying the overflow, then deposit it in base chests when home.
 - [ ] **Boss prep:** knows each boss's summoning requirements, gathers the items and reminds the master what's missing.
 - [ ] **Cooking:** cook meat on a fire or at the cauldron, hand over food before fights.
+- [ ] **Archery:** with a bow and arrows it fights at range: keeps 10-20 m away, shoots at full draw (creatures normally fire undrawn, and the AI treats every player weapon as 2 m melee), switches to melee when something closes in or the arrows run out. For now it's close combat only.
+- [ ] **Equip tool:** wear armour and use weapons it's given ("use the bow", "stick to your axe", "wear this"); worn gear shows on the viking body.
+- [ ] **Hunting:** "go hunt some deer" for meat and hides: prey becomes fair game only on that order (otherwise passive animals are never targets).
 
 ### M14 — Remote access
 - [ ] **Discord bridge (agent-side):** chat with and command the companion from Discord; "while you were away" summaries; alerts when the base is attacked or a mission finishes.
