@@ -559,7 +559,7 @@ namespace ValheimCompanion.Companion
                     _inCombat = true;
                     _combatStart = Time.time;
                     Jotunn.Logger.LogInfo($"{_character.m_name}: pausing {Current} to fight {threat.m_name}");
-                    BattleCry();
+                    BattleCry(threat);
                     AgentClient.SendEvent("combat", new JObject { ["state"] = "started", ["enemy"] = Localization.instance.Localize(threat.m_name), ["paused_task"] = Current });
                 }
                 _threat = threat;
@@ -578,6 +578,7 @@ namespace ValheimCompanion.Companion
                 _nextCraft += paused;
                 _gather.Shift(paused);
                 _applied = null; // re-set the task's movement (follow target, waypoint, patrol point)
+                _character.GetComponent<CompanionAI>()?.PlayMoment("victory");
                 Jotunn.Logger.LogInfo($"{_character.m_name}: fight over after {paused:F0}s, resuming {Current}");
                 AgentClient.SendEvent("combat", new JObject { ["state"] = "ended", ["resumed_task"] = Current });
             }
@@ -620,7 +621,7 @@ namespace ValheimCompanion.Companion
             "Unscheduled combat. Not ideal, but I'm a professional.",
         };
 
-        private void BattleCry()
+        private void BattleCry(Character threat)
         {
             if (Time.time < _nextBattleCry)
             {
@@ -631,7 +632,7 @@ namespace ValheimCompanion.Companion
             if (companion)
             {
                 companion.Say(BattleCries[UnityEngine.Random.Range(0, BattleCries.Length)]);
-                companion.PlayMoment("battle_cry");
+                companion.PlayMoment("battle_cry", subject: CompanionSounds.Subject(threat));
             }
         }
 

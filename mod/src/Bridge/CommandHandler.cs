@@ -93,6 +93,13 @@ namespace ValheimCompanion.Bridge
                 return;
             }
 
+            if (action == "debug_moment")
+            {
+                // Testing command: which clip a moment would play (without playing it).
+                Result(cmdId, true, null, new JObject { ["clip"] = Companion.CompanionSounds.ForMoment((string)args["moment"] ?? "", (string)args["subject"]) });
+                return;
+            }
+
             if (action == "item_names")
             {
                 // Testing command: item prefab names containing a filter (e.g. Hair, Beard, Cape).
@@ -806,7 +813,7 @@ namespace ValheimCompanion.Bridge
             if (EnvMan.instance)
             {
                 state["time_of_day"] = TimeOfDay(EnvMan.instance.GetDayFraction());
-                state["sounds"] = new JArray(Companion.CompanionSounds.Names); // voice clips it can add to a say
+                state["sounds"] = new JArray(Companion.CompanionSounds.Choosable); // voice clips it can add to a say
                 state["weather"] = EnvMan.instance.GetCurrentEnvironment()?.m_name;
             }
             if (WorldGenerator.instance != null)

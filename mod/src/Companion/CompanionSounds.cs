@@ -10,7 +10,7 @@ namespace ValheimCompanion.Companion
 {
     /// <summary>
     /// The companion's voice clips: .ogg or .wav files in the <c>sounds</c> folder next to the mod's DLL (so they ship
-    /// with the mod and every player has them). A clip is named by its file name, e.g. <c>crom.ogg</c> is "crom".
+    /// with the mod and every player has them). A clip is named by its file name, e.g. <c>laugh.ogg</c> is "laugh".
     /// <list type="bullet">
     /// <item><b>Moments</b>: the server plays one at fixed moments (<see cref="Moments"/>): a clip named after the moment,
     /// or with a suffix (battle_cry, battle_cry2, battle_cry_angry...), chosen at random when there are several.</item>
@@ -22,7 +22,7 @@ namespace ValheimCompanion.Companion
     internal static class CompanionSounds
     {
         /// <summary>Moments the mod plays a clip for, if one exists.</summary>
-        public static readonly string[] Moments = { "battle_cry", "timber", "death", "level_up", "greeting", "respawn" };
+        public static readonly string[] Moments = { "battle_cry", "victory", "timber", "door", "death", "level_up", "greeting", "respawn" };
 
         private const float MinGap = 2f; // between clips from the server, so they never pile up
 
@@ -48,6 +48,9 @@ namespace ValheimCompanion.Companion
                 return s_names;
             }
         }
+
+        /// <summary>The clips the agent may pick for a line: everything that isn't a moment's.</summary>
+        public static List<string> Choosable => Names.Where(n => !Moments.Any(m => n.StartsWith(m))).ToList();
 
         private static bool IsClip(string file)
         {
@@ -81,13 +84,29 @@ namespace ValheimCompanion.Companion
             Jotunn.Logger.LogInfo($"Loaded {s_clips.Count} companion sound clips");
         }
 
-        /// <summary>Server: a clip for this moment, if there is one (random among its variants), else null.</summary>
-        public static string ForMoment(string moment)
+        /// <summary>
+        /// Server: a clip for this moment, random among its variants, or null if there's none. With a subject (e.g. the
+        /// enemy, "troll"), its own clips come first: moment__subject, moment__subject2...; otherwise only the general
+        /// ones (no "__").
+        /// </summary>
+        public static string ForMoment(string moment, string subject = null)
         {
-            var matches = Names.Where(n => n == moment || (n.StartsWith(moment) && n.Length > moment.Length
-                                                             && (n[moment.Length] == '_' || char.IsDigit(n[moment.Length])))).ToList();
+            if (!string.IsNullOrEmpty(subject))
+            {
+                string prefix = moment + "__" + subject.ToLowerInvariant();
+                var own = Names.Where(n => n == prefix || (n.StartsWith(prefix) && n.Substring(prefix.Length).All(char.IsDigit))).ToList();
+                if (own.Count > 0)
+                {
+                    return own[Random.Range(0, own.Count)];
+                }
+            }
+            var matches = Names.Where(n => !n.Contains("__") && (n == moment || (n.StartsWith(moment) && n.Length > moment.Length
+                                                             && (n[moment.Length] == '_' || char.IsDigit(n[moment.Length]))))).ToList();
             return matches.Count > 0 ? matches[Random.Range(0, matches.Count)] : null;
         }
+
+        /// <summary>A creature's clip subject: its name key, e.g. "$enemy_troll" -> "troll".</summary>
+        public static string Subject(Character c) => c ? c.m_name.Replace("$enemy_", "").ToLowerInvariant() : null;
 
         /// <summary>Server: may a clip play now? (Keeps clips at least a couple of seconds apart.)</summary>
         public static bool TakeTurn()

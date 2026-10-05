@@ -37,6 +37,7 @@
     <ItemGroup>
       <_SoundFiles Include="$(MSBuildProjectDirectory)\sounds\*.ogg;$(MSBuildProjectDirectory)\sounds\*.wav" />
     </ItemGroup>
+    <RemoveDir Directories="%(_DeployRoot.Identity)\BepInEx\plugins\$(AssemblyName)\sounds" Condition="'@(_DeployRoot)' != ''" />
     <Copy SourceFiles="@(_SoundFiles)" DestinationFolder="%(_DeployRoot.Identity)\BepInEx\plugins\$(AssemblyName)\sounds" Condition="'@(_DeployRoot)' != '' And '@(_SoundFiles)' != ''" />
     <Message Importance="high" Text="Deployed $(AssemblyName) to %(_DeployRoot.Identity)\BepInEx\plugins" Condition="'@(_DeployRoot)' != ''" />
     <Warning Text="No BepInEx install found to deploy to; check mod/Environment.props" Condition="'@(_DeployRoot)' == ''" />

@@ -128,6 +128,7 @@ namespace ValheimCompanion.Companion
                 _openedAt = Time.time;
                 _nextTry = Time.time + StepThroughAfter; // check again soon
                 Jotunn.Logger.LogInfo($"{_character.m_name}: opened a door to get out");
+                _character.GetComponent<CompanionAI>()?.PlayMoment("door");
                 return;
             }
         }

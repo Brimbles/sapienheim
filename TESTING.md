@@ -53,8 +53,12 @@ Things that can't be tested headlessly because they need a player in the world. 
 - [ ] He swings axes, pickaxes, the hammer and weapons like a player now; check chopping, mining, building and a fight.
 
 ## 4b4. Voice clips
-- [ ] He has a (generated, generic barbarian) voice now: a battle cry when a fight starts, "Timber!" when a tree falls, a line when he dies, levels up, arrives or comes back from death. The AI can add a clip (`laugh`, `crom`) to something he says. Check they're heard from where he stands, get quieter with distance, and follow your sound-effects volume.
-- [ ] Pick a voice: listen to `tools/voice/auditions/*.wav` (the same line in 8 voices), then remake the clips with your choice: `cd tools/voice` and `uv run python make_clips.py lines.txt --voice <name>`. Edit `lines.txt` for your own lines; `--pitch` (deeper below 0.85), `--grit` (rasp) and `--speed` tune it. Rebuild the mod to deploy them.
+- [ ] He speaks with George's voice in a strong Austrian accent (87 clips). Check they're heard from where he stands, get quieter with distance, and follow your sound-effects volume:
+  - **fights**: a battle cry at the start, picked for the enemy he's facing ("Let off some steam, Troll!", "Greyling! You son of a bitch!", "I eat Draugr for breakfast"), general ones ("If it bleeds, we can kill it") otherwise; a victory line at the end ("Hasta la vista, baby", "Consider that a divorce"...)
+  - "Timber!", "Knock, knock" when he opens a door, "I'll be back" / "I have failed you" when he dies, "Death? Not today" when he's back, a greeting when he arrives, a line on levelling up
+  - the AI can add the others to what he says ("Talk to the hand!", "Get to the longship!"...), sparingly
+- [ ] Compare accents: `tools/voice/auditions/bm_george_accent0/1/2.wav`. To change: edit `tools/voice/lines.txt`, then from `tools/voice` run `uv run python make_clips.py lines.txt` (options `--accent 0/1/2`, `--voice`, `--pitch`, `--grit`, `--speed`), rebuild the mod and restart server and client.
+- Note: some lines are film quotes and swear words. Fine on your server; take them out of `mod/sounds` before publishing a public Thunderstore version.
 
 ## 4c. Levelling (M4.5)
 - [ ] With no bosses beaten he hits for about 18, so a greyling (20 HP) takes two hits. It rises with each boss (32, 48, 65, 85, 110). `Companion.DamageScale` in the server config tunes it.

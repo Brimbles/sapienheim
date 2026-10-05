@@ -360,8 +360,11 @@ async def scenario_sounds(r: Runner) -> None:
     """Voice clips: the state lists them, and a say can carry one."""
     s = await r.state()
     r.results.append(("clips in state", str(s.get("sounds"))))
-    res = await r.cmd("say", text="By Crom!", sound="crom")
+    res = await r.cmd("say", text="Ha!", sound="laugh")
     r.results.append(("say with a clip", "ok" if res.ok else str(res.error)))
+    for moment, subject in [("battle_cry", "troll"), ("battle_cry", "greyling"), ("battle_cry", "eikthyr"), ("victory", None), ("door", None)]:
+        picks = {(await r.conn.command("debug_moment", moment=moment, subject=subject)).data["clip"] for _ in range(8)}
+        r.results.append((f"{moment} vs {subject}", str(sorted(p for p in picks if p))))
 
 
 SCENARIOS = {
