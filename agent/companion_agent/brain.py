@@ -76,7 +76,7 @@ RULES = """
 - `repair_nearby` fixes damaged buildings around you (or a player or named place) with your hammer.
 - `tear_down` (only for your master) takes buildings down with your hammer. Never confirm without asking: the first call tells you what would come down; describe it ("that's 53 pieces: walls, roof, two beds...") and only call again with confirm=true once your master says yes. If the player doesn't say which building, use the one nearest them (`near`). The materials drop on the ground; offer to pick them up afterwards.
 - Travel: to go to a named place, use `travel` (it picks the best route, through portals when that's shorter). `use_portal` steps through a specific portal. You can walk up to 5 km, but not across open water. You can't sail or steer a boat, but you ride as a passenger: `board` the nearest boat (you swim to its ladder; never to one more than 15 m out), and when following you climb aboard on your own when your master does and step off when they do. If you fall in you swim back to the boat if it's close, else to shore.
-- Name the settlements you build (the `name` on `build`) so you can travel back to them later. Named places show as pins on everyone's map.
+- Always name the settlements you build (the `name` on `build`) so you can travel back to them later: use the player's name for it, or if they gave none, invent a fitting Norse-sounding one and tell them. Named places show as pins on everyone's map.
 - Memory: you keep a long-term memory between sessions (shown as "What you remember"). Use `remember` for things worth keeping: what players like, promises, plans, notable events. Use `name_place` when asked to remember a location, and `go_to` with `place` to go back there.
 - Settlements (`build` templates outpost, farm, village, fort, mining_camp, port) go at least 50 m from any base and outside wards; you gather every material honestly. Wood only until Bonemass is beaten. `build_road` lays a free stone-paved road between places, routing round steep ground and bridging narrow water (it stops and tells you where wider water blocks it). `blueprints` lists shared building plans you can build (template blueprint) or saves a building you're near as a new one.
 - `fish` at the nearest shore with your rod and bait. It's chancy: the right bait for the water's biome helps a lot, misses sometimes lose bait, and a few fish can take a while.
@@ -313,7 +313,9 @@ TOOLS: list[dict[str, Any]] = [
                 "gate": {"type": "boolean", "description": "wall/fence: include a gate (default: yes for a ring, no for a line)."},
                 "around": {"type": "string", "description": "wall/fence: centre it on this named place."},
                 "near": {"type": "string", "description": "Build near this player instead of near you."},
-                "name": {"type": "string", "description": "Name for the settlement (e.g. 'Lakeside Lodge'); it becomes a named place you can travel to."},
+                "name": {"type": "string", "description": "Name for the settlement (e.g. 'Lakeside Lodge'); it becomes a named place you can travel to. "
+                         "If the player didn't name it, choose a fitting Norse-sounding name yourself (e.g. 'Ravenhold', 'Ulfsvik', "
+                         "'Ironstead') and tell them what you called it."},
                 "queue": {"type": "boolean", "description": "true = run after your current work instead of right away."},
             },
             "required": ["template"],
@@ -878,7 +880,11 @@ class Brain:
         else:
             return _tool_result(tool_id, "failed: need `to` or x/z", error=True)
         label = str(args.get("to") or f"{round(x)}, {round(z)}")
-        mission = {"x": x, "z": z, "label": label, "build": args.get("build"), "come_back": bool(args.get("come_back")),
+        build = dict(args["build"]) if isinstance(args.get("build"), dict) else args.get("build")
+        if isinstance(build, dict) and build.get("template") in SETTLEMENTS and not build.get("name"):
+            # Nobody named the settlement: he does, as for a build here.
+            build["name"] = settlement_name(str(build["template"]), {p["name"] for p in self.memory.data["places"].values()})
+        mission = {"x": x, "z": z, "label": label, "build": build, "come_back": bool(args.get("come_back")),
                    "stage": "travelling"}
         r = await self.conn.command("go_to", x=x, z=z)
         if not r.ok:
@@ -887,7 +893,8 @@ class Brain:
         self._set_mission(mission)
         self.memory.log(f"set off on a mission to {label}")
         actions.append(f"mission({label})")
-        return _tool_result(tool_id, f"on the way to {label}; you'll report when you get there")
+        named = f"; the settlement will be called {build['name']}" if isinstance(build, dict) and build.get("name") else ""
+        return _tool_result(tool_id, f"on the way to {label}; you'll report when you get there{named}")
 
     async def _mission_resume(self, why: str) -> None:
         """Pick the mission up again after a death or going off duty, at whatever step it had reached."""
@@ -1215,6 +1222,11 @@ class Brain:
         if name == "travel":
             return await self._travel(block.id, args, actions)
         settlement = args.pop("name", None) if name == "build" else None
+        auto_named = False
+        if name == "build" and not settlement and args.get("template") in SETTLEMENTS and not args.get("around"):
+            # Nobody named it: he does (the model usually picks one itself; this is the fallback).
+            settlement = settlement_name(str(args["template"]), {p["name"] for p in self.memory.data["places"].values()})
+            auto_named = True
         torn_place = str(args["around"]) if name == "tear_down" and args.get("around") and args.get("confirm") else None
         if name in ("build", "repair_nearby", "tear_down", "guard", "tend_fires", "deposit", "load_smelters", "collect_output", "farm", "label_chests", "feed_animals") and args.get("around"):
             where = self.memory.place(str(args.pop("around")))
@@ -1248,11 +1260,15 @@ class Brain:
             # The settlement is coming down: forget it and take its pin off the map.
             await self.sync_places(force=True)
             actions.append(f"forget_place({torn_place})")
-        if result.ok and settlement and data and data.get("site"):
-            site = data["site"]
-            self.memory.set_place(settlement, site[0], site[2])
+        if result.ok and settlement and data and (data.get("site") or data.get("walking_to_the_area_first")):
+            # The site, or (walking to a far-off area first, the site not chosen yet) the area it's going up in.
+            site = data.get("site")
+            x, z = (site[0], site[2]) if site else data["walking_to_the_area_first"]
+            self.memory.set_place(settlement, x, z)
             await self.sync_places()
             actions.append(f"name_place({settlement})")
+            if auto_named:
+                data = {**data, "named_it": settlement}  # so he can tell the player what he called it
         if result.ok:
             if name == "say":
                 spoken.append(str(args.get("text", "")))
@@ -1344,6 +1360,37 @@ async def _async_result(result: dict[str, Any]) -> dict[str, Any]:
 
 def _dist(a: tuple[float, float], b: tuple[float, float]) -> float:
     return math.hypot(a[0] - b[0], a[1] - b[1])
+
+
+SETTLEMENTS = ("outpost", "farm", "village", "fort", "mining_camp", "port")
+
+# Norse-flavoured names for settlements nobody named: a first part, and an ending that suits the kind of place.
+NAME_STARTS = ["Ulf", "Hrafn", "Bjorn", "Ask", "Frey", "Sig", "Thor", "Eld", "Grim", "Varg", "Orm", "Jarn", "Stein",
+               "Hild", "Kol", "Rune", "Skjald", "Ylf", "Brand", "Gunn"]
+NAME_ENDS = {
+    "fort": ["hold", "borg", "wall", "garth"],
+    "port": ["vik", "havn", "strand", "nes"],
+    "farm": ["stead", "gard", "acre", "toft"],
+    "village": ["by", "heim", "thorp", "wick"],
+    "mining_camp": ["delve", "hammer", "pit", "forge"],
+    "outpost": ["watch", "vakt", "post", "fell"],
+}
+
+
+def settlement_name(kind: str, taken: set[str], pick=None) -> str:
+    """A name for a settlement nobody named, not one already used (case-insensitive)."""
+    import random
+    choose = pick or random.choice
+    ends = NAME_ENDS.get(kind, ["heim"])
+    taken_lower = {t.lower() for t in taken}
+    for _ in range(200):
+        name = choose(NAME_STARTS) + choose(ends)
+        if name.lower() not in taken_lower:
+            return name
+    n = 2
+    while f"{name} {n}".lower() in taken_lower:
+        n += 1
+    return f"{name} {n}"
 
 
 def _worth_reporting(event: Event) -> bool:

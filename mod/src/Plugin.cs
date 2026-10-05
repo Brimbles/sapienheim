@@ -109,11 +109,11 @@ namespace ValheimCompanion
                 new AcceptableValueList<string>("viking", "dverger")));
             LookHair = Config.Bind("Look", "Hair", "Hair20", "Viking body: hair style item (e.g. Hair1-Hair30, or none) (server only).");
             LookBeard = Config.Bind("Look", "Beard", "BeardNone", "Viking body: beard item (e.g. Beard1-Beard25, or BeardNone) (server only).");
-            LookHairColour = Config.Bind("Look", "HairColour", "black", "Viking body: black, brown, blond, red, grey, or r,g,b (0-1) (server only).");
+            LookHairColour = Config.Bind("Look", "HairColour", "dirtyblond", "Viking body: black, brown, dirtyblond (or lightbrown), blond, red, grey, or r,g,b (0-1) (server only).");
             LookSkinTone = Config.Bind("Look", "SkinTone", 0.4f, "Viking body: 0 = pale, 1 = dark (server only).");
             LookLegs = Config.Bind("Look", "Legs", "ArmorRagsLegs", "Viking body: what its legs show when it wears no leg armour (an item name, or none) (server only).");
             LookCape = Config.Bind("Look", "Cape", "CapeWolf", "Viking body: the cape it shows when it wears none (an item name, or none) (server only).");
-            LookChest = Config.Bind("Look", "Chest", 1.45f, "Viking body: chest and shoulder size, 1 = a normal player (0.8-1.6) (server only).");
+            LookChest = Config.Bind("Look", "Chest", 1.7f, "Viking body: chest and shoulder size, 1 = a normal player (0.8-1.8) (server only).");
             LookArms = Config.Bind("Look", "Arms", 1.55f, "Viking body: arm size, 1 = a normal player (0.8-1.6) (server only).");
             LookHeight = Config.Bind("Look", "Height", 1.05f, "Viking body: overall height, 1 = a normal player (0.8-1.3) (server only).");
             MapMarker = Config.Bind("Companion", "MapMarker", "everyone", new ConfigDescription(

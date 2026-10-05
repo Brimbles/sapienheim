@@ -88,7 +88,7 @@ namespace ValheimCompanion.Companion
                 return;
             }
             ZDO zdo = _nview.GetZDO();
-            float chest = Mathf.Clamp(zdo.GetFloat(KeyChest, 1f), 0.8f, 1.6f);
+            float chest = Mathf.Clamp(zdo.GetFloat(KeyChest, 1f), 0.8f, 1.8f);
             float arms = Mathf.Clamp(zdo.GetFloat(KeyArms, 1f), 0.8f, 1.6f);
             float height = Mathf.Clamp(zdo.GetFloat(KeyHeight, 1f), 0.8f, 1.3f);
             if (_visual)
@@ -167,6 +167,8 @@ namespace ValheimCompanion.Companion
                 case "black": return new Vector3(0.12f, 0.1f, 0.09f);
                 case "brown": return new Vector3(0.45f, 0.3f, 0.2f);
                 case "blond": return new Vector3(1f, 0.85f, 0.55f);
+                case "dirtyblond":
+                case "lightbrown": return new Vector3(0.78f, 0.6f, 0.38f); // between blond and light brown
                 case "red": return new Vector3(0.8f, 0.35f, 0.15f);
                 case "grey": return new Vector3(0.7f, 0.7f, 0.7f);
             }

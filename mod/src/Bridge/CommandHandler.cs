@@ -110,7 +110,10 @@ namespace ValheimCompanion.Bridge
                 {
                     if (item && item.name.ToLowerInvariant().Contains(filter))
                     {
-                        names.Add(item.name);
+                        // With its in-game name where there's one (e.g. "Hair5 = Long 1").
+                        string token = item.GetComponent<ItemDrop>()?.m_itemData.m_shared.m_name;
+                        string shown = !string.IsNullOrEmpty(token) && Localization.instance != null ? Localization.instance.Localize(token) : "";
+                        names.Add(string.IsNullOrEmpty(shown) || shown == token ? item.name : $"{item.name} = {shown}");
                     }
                 }
                 Result(cmdId, true, null, new JObject { ["items"] = names });

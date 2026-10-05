@@ -109,3 +109,35 @@ def test_named_build_becomes_a_place():
     asyncio.run(b._execute(block, [], []))
     assert conn.sent[0] == ("build", {"template": "hut", "width": 2})  # the name stays in the agent
     assert b.memory.place("lakeside lodge") == (500.0, 600.0)
+
+
+def test_unnamed_settlement_gets_a_name_and_becomes_a_place():
+    conn = Conn((0, 0), [])
+    b = Brain(conn, client=None)
+    block = SimpleNamespace(type="tool_use", id="t1", name="build", input={"template": "fort"})
+    result = asyncio.run(b._execute(block, [], []))
+    places = list(b.memory.data["places"].values())
+    assert len(places) == 1 and places[0]["name"] in result["content"]
+    assert "named_it" in result["content"]
+
+
+def test_given_name_is_kept():
+    conn = Conn((0, 0), [])
+    b = Brain(conn, client=None)
+    block = SimpleNamespace(type="tool_use", id="t1", name="build", input={"template": "village", "name": "Northwatch"})
+    asyncio.run(b._execute(block, [], []))
+    assert [p["name"] for p in b.memory.data["places"].values()] == ["Northwatch"]
+
+
+def test_a_hut_is_not_named():
+    conn = Conn((0, 0), [])
+    b = Brain(conn, client=None)
+    block = SimpleNamespace(type="tool_use", id="t1", name="build", input={"template": "hut"})
+    asyncio.run(b._execute(block, [], []))
+    assert b.memory.data["places"] == {}
+
+
+def test_settlement_names_dont_repeat():
+    from companion_agent.brain import settlement_name
+    seq = iter(["Ulf", "hold", "Ulf", "hold", "Grim", "hold"])
+    assert settlement_name("fort", {"Ulfhold"}, pick=lambda options: next(seq)) == "Grimhold"

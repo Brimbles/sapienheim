@@ -166,3 +166,13 @@ def test_boss_prep_counts_what_you_have():
     b = Brain(Stocked(), FakeClient())
     info = asyncio.run(b._boss_prep("eikthyr"))
     assert info["item"] == "TrophyDeer" and info["qty"] == 2 and info["missing"] == 1
+
+
+def test_mission_settlement_without_a_name_gets_one():
+    conn = Conn()
+    b = Brain(conn, client=None)
+    b.memory.set_place("far hill", 900.0, 900.0)
+    block = SimpleNamespace(type="tool_use", id="t1", name="mission",
+                            input={"to": "far hill", "build": {"template": "port"}, "come_back": False})
+    result = asyncio.run(b._execute(block, [], []))
+    assert b.mission["build"]["name"] and b.mission["build"]["name"] in result["content"]
