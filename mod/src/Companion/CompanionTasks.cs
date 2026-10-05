@@ -201,6 +201,7 @@ namespace ValheimCompanion.Companion
 
         // go_to legs
         private bool _hasLeg;
+        private bool _triedExitDoor;
         private float _bestDist;
         private float _lastProgress;
         private int _detours;
@@ -723,6 +724,7 @@ namespace ValheimCompanion.Companion
                     // Generous for long trips (about 1 m/s with detours), but never less than the old fixed limit.
                     _deadline = Time.time + Mathf.Max(GoToTimeout, Flat(goal - _character.transform.position) + 60f);
                     _hasLeg = false;
+                    _triedExitDoor = false;
                     _bestDist = float.MaxValue;
                     _lastProgress = Time.time;
                     _detours = 0;
@@ -900,8 +902,22 @@ namespace ValheimCompanion.Companion
                 _bestDist = remaining;
                 _lastProgress = Time.time;
                 _detours = 0;
+                _triedExitDoor = false;
             }
             bool stuck = Time.time - _lastProgress > ProgressWindow;
+            if (stuck && !_triedExitDoor)
+            {
+                // Boxed in (a fence ring, a walled yard)? Head for a gate or door with the goal beyond it first.
+                _triedExitDoor = true;
+                Vector3? exit = CompanionDoors.ExitTowards(here, goal, 30f, CompanionState.GetMaster(Zdo));
+                if (exit.HasValue)
+                {
+                    _lastProgress = Time.time;
+                    _hasLeg = true;
+                    _waypoint.transform.position = exit.Value;
+                    return;
+                }
+            }
             if (stuck)
             {
                 if (++_detours > MaxDetours)

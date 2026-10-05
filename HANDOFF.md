@@ -106,7 +106,7 @@ Each task is self-contained. Model choice: a mid-size model (Sonnet) for 1–7; 
 6. ~~Storehouse labels~~ done: `label_chests` (signs stand on the floor/ground in front of each chest; a sign on a chest lid falls).
 7. ~~Scouting, simple version~~ done: `find` (headless: all 18 kinds of thing resolve; copper, tin, berries, trees and nests found in the explored Meadows/Black Forest).
 8. **Blueprints** (M5): evaluate the PlanBuild format. This needs the user's go-ahead and an example file.
-9. **Settlements and roads** (M9): a big design job, already in `PLAN.md`. Do it with the user, ideally with a stronger model for the layout design.
+9. **Settlements and roads** (M9): outpost and farm DONE (`SettlementTemplate`; `scenario.py settlement outpost|farm`). Next: roads (decisions recorded below: free stone paving, route round steep ground, bridge narrow water up to ~12 m, else stop and report), then more settlement types (village, fort, port, mining camp) and stone pieces after Bonemass. Lessons: give test materials with `debug_give` (now adds full stacks) after `debug_clear all=true`; distant build sites must be walked to first (build steps walk straight); a walk boxed in by a fence now heads for a gate (`CompanionDoors.ExitTowards`).
 10. **Boats, fishing, long missions** (M10, M11): each needs a spike first, since vanilla boat and fishing code is player-driven. Leave these until the user prioritises them.
 
 ### Decisions for tasks 8-10 (agreed with the user, 5 Oct 2026)

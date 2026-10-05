@@ -219,6 +219,20 @@ namespace ValheimCompanion.Bridge
             data = null;
             switch (action)
             {
+                case "debug_clear":
+                {
+                    // Testing command (not an LLM tool): empty the pack of everything but gear (tools, weapons, armour),
+                    // or of everything not equipped with "all".
+                    bool all = args["all"] != null && (bool)args["all"];
+                    foreach (ItemDrop.ItemData item in new System.Collections.Generic.List<ItemDrop.ItemData>(companion.Inventory.Inventory.GetAllItems()))
+                    {
+                        if (all ? !item.m_equipped : !CompanionWorkshop.IsGear(item))
+                        {
+                            companion.Inventory.Inventory.RemoveItem(item);
+                        }
+                    }
+                    return null;
+                }
                 case "debug_give":
                 {
                     // Testing command (not an LLM tool): put an item straight into the companion's inventory.
@@ -227,7 +241,13 @@ namespace ValheimCompanion.Bridge
                     {
                         return "unknown_item";
                     }
-                    companion.Inventory.Inventory.AddItem(prefab, args["qty"] != null ? (int)args["qty"] : 1);
+                    // In stacks: AddItem with an amount adds at most one stack.
+                    int left = args["qty"] != null ? (int)args["qty"] : 1;
+                    int stack = Mathf.Max(1, prefab.GetComponent<ItemDrop>().m_itemData.m_shared.m_maxStackSize);
+                    while (left > 0 && companion.Inventory.Inventory.AddItem(prefab, Mathf.Min(left, stack)))
+                    {
+                        left -= Mathf.Min(left, stack);
+                    }
                     return null;
                 }
                 case "debug_advance_time":
@@ -521,6 +541,10 @@ namespace ValheimCompanion.Bridge
                     if (template == "sign")
                     {
                         return BuildSign(companion, args, cmdId, out data);
+                    }
+                    if (Building.SettlementTemplate.IsKind(template))
+                    {
+                        return BuildSettlement(companion, template, args, cmdId, out data);
                     }
                     if (template != "hut")
                     {
@@ -1238,6 +1262,76 @@ namespace ValheimCompanion.Bridge
         }
 
         // Day fraction: 0 = midnight, 0.5 = noon. Valheim nights run roughly 0.8 -> 0.2.
+        /// <summary>An outpost or a farm: a site far enough from bases, then the whole layout as one build.</summary>
+        private static string BuildSettlement(CompanionAI companion, string kind, JObject args, string cmdId, out JObject data)
+        {
+            data = null;
+            var inv = companion.Inventory;
+            if (Building.Builder.FindTool(inv, "Hoe") == null && !IsQueued(args))
+            {
+                return "need_hoe"; // the hut site is levelled
+            }
+            if (kind == "farm" && Building.Builder.FindTool(inv, "Cultivator") == null && !IsQueued(args))
+            {
+                return "need_cultivator";
+            }
+            Vector3 near = companion.transform.position;
+            string nearPlayer = (string)args["near"];
+            if (!string.IsNullOrEmpty(nearPlayer) && !TryFindPlayer(nearPlayer, out _, out _, out near))
+            {
+                return "player_not_found";
+            }
+            if (args["x"] != null && args["z"] != null)
+            {
+                near = new Vector3((float)args["x"], near.y, (float)args["z"]);
+            }
+            int seed = args["seed"] != null ? (int)args["seed"] : UnityEngine.Random.Range(0, 100000);
+            float facing = args["facing"] != null ? (float)args["facing"] : UnityEngine.Random.Range(0, 4) * 90f + UnityEngine.Random.Range(-20f, 20f);
+            if (!Building.SettlementTemplate.FindSite(kind, near, facing, seed, out Vector3 centre, out float floorY, out var clear, out string why))
+            {
+                return why;
+            }
+            var plan = Building.SettlementTemplate.Generate(kind, centre, floorY, facing, seed, clear, inv, (string)args["tag"],
+                CompanionState.GetMaster(companion.ZDO), out int planted);
+            var pieceNames = new System.Collections.Generic.List<string>();
+            foreach (var step in plan)
+            {
+                if (step.Clear == null && step.Piece != Building.Builder.LevelStep)
+                {
+                    pieceNames.Add(step.Piece);
+                }
+            }
+            data = new JObject
+            {
+                ["template"] = kind, ["pieces"] = pieceNames.Count, ["planted"] = planted,
+                ["site"] = new JArray(Mathf.Round(centre.x), Mathf.Round(floorY), Mathf.Round(centre.z)),
+                ["dist"] = Mathf.Round(Vector3.Distance(centre, companion.transform.position)),
+            };
+            JObject missing = Building.Builder.Missing(pieceNames, inv);
+            if (missing.Count > 0 && !IsQueued(args))
+            {
+                data["missing"] = missing;
+                return "missing_materials";
+            }
+            if (Building.Builder.FindHammer(inv) == null && !IsQueued(args))
+            {
+                return "need_hammer";
+            }
+            // The site may be well away (50 m+ from any base): walk there first, the long-distance way, then build.
+            if (Vector3.Distance(centre, companion.transform.position) > 20f)
+            {
+                string walk = Queue(companion, args, $"go_to({kind} site)", () => companion.Tasks.CommandGoTo(centre, null));
+                if (walk != null)
+                {
+                    return walk;
+                }
+                string id = TaskId(args, cmdId);
+                companion.Tasks.RunOrQueue(true, $"build({kind})", () => companion.Tasks.CommandBuild(kind, plan, id));
+                return null;
+            }
+            return Queue(companion, args, $"build({kind})", () => companion.Tasks.CommandBuild(kind, plan, TaskId(args, cmdId)));
+        }
+
         /// <summary>A sign standing on the ground with an inscription (up to 50 characters), facing the companion.</summary>
         private static string BuildSign(CompanionAI companion, JObject args, string cmdId, out JObject data)
         {

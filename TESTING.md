@@ -103,6 +103,12 @@ Each line in the server log starts with `Proactive:`. Turn it off with `Companio
 
 - [ ] With berries or carrots in his pack, `@Alvar feed the animals`: each hungry tamed boar/wolf/lox gets something it eats dropped in front of it.
 
+## 4d8. Settlements
+- [ ] `@Alvar build an outpost here called Northwatch, with a portal tagged northwatch` (he needs a hoe, a hammer, ~180 wood, a little stone, and the portal's materials): he finds a site at least 50 m from your buildings and outside wards, walks there and builds a hut with beds, a chest, a fire pit, a fence ring with a gate and the portal. It appears on the map.
+- [ ] `@Alvar build a farm` with a cultivator and seeds in his pack: a hut, a fenced field, cultivated and planted with what seeds he has.
+- [ ] Check the layouts look sensible (fire by the door, portal beside the hut, field beside the farmhouse, everything inside the fence) and that he can get out through the gate afterwards.
+- Note: headless tests built an outpost near (272, -254) and farms near (337, -220) and (302, -325).
+
 ## 4e. People and the day's tale
 - [ ] Log out for 30+ minutes after he's done a few jobs, then log back in: one greeting with a short "while you were away" of the highlights (not two greetings).
 - [ ] A friend joining for the first time gets a welcome and an introduction.

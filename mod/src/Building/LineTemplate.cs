@@ -50,8 +50,9 @@ namespace ValheimCompanion.Building
 
         /// <param name="size">Ring width (along the front) or line length, in metres.</param>
         /// <param name="depth">Ring depth (front to back) in metres; ignored for a line.</param>
+        /// <param name="plannedBenches">Workbenches the same build will place earlier, which cover sections too.</param>
         public static List<BuildStep> Generate(string template, bool ring, int size, int depth, Vector3 centre, float facingYaw, bool gate,
-                                               long masterId, out Dictionary<string, int> skipped)
+                                               long masterId, out Dictionary<string, int> skipped, List<Vector3> plannedBenches = null)
         {
             Kind kind = Kinds[template];
             size = ClampSize(size);
@@ -117,7 +118,7 @@ namespace ValheimCompanion.Building
             {
                 steps.Add(new BuildStep { Piece = "(clear)", Pos = d.transform.position, Rot = Quaternion.identity, Clear = d });
             }
-            steps.AddRange(Benches(kind, placed, inward));
+            steps.AddRange(Benches(kind, placed, inward, plannedBenches));
             steps.AddRange(pieces);
             return steps;
         }
@@ -298,7 +299,7 @@ namespace ValheimCompanion.Building
         }
 
         /// <summary>Workbenches wherever a section would be out of range of an existing or planned one.</summary>
-        private static List<BuildStep> Benches(Kind kind, List<Vector3> sections, List<Vector3> inward)
+        private static List<BuildStep> Benches(Kind kind, List<Vector3> sections, List<Vector3> inward, List<Vector3> alreadyPlanned)
         {
             var benches = new List<BuildStep>();
             Piece piece = PieceCatalog.Get(kind.Piece);
@@ -307,7 +308,7 @@ namespace ValheimCompanion.Building
             {
                 return benches;
             }
-            var planned = new List<Vector3>();
+            var planned = new List<Vector3>(alreadyPlanned ?? new List<Vector3>());
             for (int i = 0; i < sections.Count; i++)
             {
                 Vector3 s = sections[i];

@@ -15,7 +15,7 @@ namespace ValheimCompanion.Building
         private const float MaxSlope = 1.0f;
         private static readonly Vector2 Half = new Vector2(3.5f, 2f); // portal plus the bench beside it
 
-        public static List<BuildStep> Generate(Vector3 origin, float facingYaw, string tag, List<Destructible> clear)
+        public static List<BuildStep> Generate(Vector3 origin, float facingYaw, string tag, List<Destructible> clear, bool needBench = true)
         {
             Quaternion facing = Quaternion.Euler(0f, facingYaw, 0f);
             var steps = new List<BuildStep>();
@@ -25,7 +25,7 @@ namespace ValheimCompanion.Building
             }
             Piece portal = PieceCatalog.Get(Piece);
             string station = portal && portal.m_craftingStation ? portal.m_craftingStation.m_name : null;
-            if (station != null && !CraftingStation.HaveBuildStationInRange(station, origin))
+            if (needBench && station != null && !CraftingStation.HaveBuildStationInRange(station, origin))
             {
                 Vector3 bench = origin + facing * new Vector3(2.5f, 0f, 0f);
                 if (ZoneSystem.instance.GetGroundHeight(bench, out float h))

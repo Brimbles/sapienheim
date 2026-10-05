@@ -246,6 +246,10 @@ namespace ValheimCompanion.Building
             return bounds.size.x <= MaxClearableSize && bounds.size.z <= MaxClearableSize && bounds.size.y <= MaxClearableSize * 2f;
         }
 
+        /// <summary>The hut's site rules, for settlements that place a hut as one part of a bigger layout.</summary>
+        internal static bool CheckSitePublic(Vector3 centre, Vector2 half, Quaternion facing, bool level, out float floorY, out string why,
+                                             out List<Destructible> clear) => CheckSite(centre, half, facing, level, out floorY, out why, out clear);
+
         private static bool CheckSite(Vector3 centre, Vector2 half, Quaternion facing, bool level, out float floorY, out string why,
                                       out List<Destructible> clear)
         {

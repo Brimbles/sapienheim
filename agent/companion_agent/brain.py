@@ -295,13 +295,13 @@ TOOLS: list[dict[str, Any]] = [
         "whatever size you ask; elsewhere it's a square of `size`. Spots blocked by trees, buildings, water or wards "
         "are left as gaps (reported as gaps). portal: a wooden portal with a `tag` (GreydwarfEye 10, FineWood 20, "
         "SurtlingCore 2, plus a workbench, Wood 10, if none is near); tell your master the tag so they can build the "
-        "matching one. sign: a sign with your `text` (Wood 2, Coal 1), e.g. to mark a place or commemorate a deed. Needs a hammer. Rejected straight away with "
+        "matching one. outpost: a small settlement (hut with beds, chest, fire pit, fence ring, and a portal if you give a `tag`); farm: a hut, a cultivated field planted with the seeds you carry, and a fence. Both are placed at least 50 m from any existing building and outside wards, so they may be well away from you; they need a hoe (farm: and a cultivator) and lots of wood: ask build first and it tells you what's missing. Name them with `name`. sign: a sign with your `text` (Wood 2, Coal 1), e.g. to mark a place or commemorate a deed. Needs a hammer. Rejected straight away with "
         "missing_materials (and what's missing) or need_hammer unless queued. task_done/task_failed reports the result; "
         "a failed build can be continued with resume_build.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "template": {"type": "string", "enum": ["hut", "wall", "fence", "portal", "sign"]},
+                "template": {"type": "string", "enum": ["hut", "wall", "fence", "portal", "sign", "outpost", "farm"]},
                 "text": {"type": "string", "description": "sign: the inscription, up to 50 characters."},
                 "tag": {"type": "string", "description": "portal: its tag; a portal pairs with the one other portal with the same tag."},
                 "width": {"type": "integer", "description": "hut: width in 2 m floor tiles, 3-5 (default 3)."},

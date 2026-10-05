@@ -597,7 +597,7 @@ async def advance_until_done(r: Runner, name: str, res, max_real_s: float = 240.
         except asyncio.TimeoutError:
             continue
         log.info("event %s %s", ev.name, ev.data)
-        if ev.name in ("task_done", "task_failed"):
+        if ev.name == "task_failed" or (ev.name == "task_done" and ev.data.get("queue_remaining", 0) == 0):
             r.results.append((name, f"{ev.name} {json.dumps(ev.data)}"))
             return ev.name
     r.results.append((name, "TIMEOUT"))
@@ -704,9 +704,46 @@ async def scenario_tamecheck(r: Runner) -> None:
     r.results.append(("animals", str((res.data or {}).get("animals"))))
 
 
+async def scenario_settlement(r: Runner) -> None:
+    """Build a settlement: scenario.py settlement outpost|farm. Materials given; counts what stands 20 s after."""
+    kind = sys.argv[2] if len(sys.argv) > 2 else "outpost"
+    await r.cmd("debug_clear", all=True)  # room in the pack (earlier tests leave tools and loot behind)
+    gifts = [("Wood", 500), ("Stone", 10), ("Hoe", 1), ("Hammer", 1), ("FineWood", 20), ("GreydwarfEye", 10), ("SurtlingCore", 2)]
+    if kind == "farm":
+        gifts += [("Cultivator", 1), ("CarrotSeeds", 20), ("TurnipSeeds", 10)]
+    for item, qty in gifts:
+        await r.cmd("debug_give", item=item, qty=qty)
+    st = await r.state()
+    r.results.append(("pack before", f"{ {i['item']: i['qty'] for i in st['self'].get('inventory', [])} } free_slots={st['self'].get('free_slots')}"))
+    args = {"template": kind}
+    if kind == "outpost":
+        args["tag"] = f"outpost-{int(time.time()) % 10000}"
+    res = await r.cmd("build", **args)
+    r.results.append(("plan", f"{res.error or 'ok'} {res.data}"))
+    if not res.ok:
+        return
+    await advance_until_done(r, f"build {kind}", res, max_real_s=1500, step_s=1)
+    await asyncio.sleep(20)
+    near = await r.conn.command("pieces_near", pos=res.data["site"], radius=16)
+    kinds = {}
+    for p in (near.data or {}).get("pieces", []):
+        if p["creator"] != 0:
+            kinds[p["piece"]] = kinds.get(p["piece"], 0) + 1
+    r.results.append(("standing after 20 s", f"{sum(kinds.values())}: {kinds}"))
+    await r.cmd("save_world")
+
+
+async def scenario_prefabs(r: Runner) -> None:
+    """How many of each prefab exist, nearest first: scenario.py prefabs sapling_carrot ..."""
+    for prefab in sys.argv[2:]:
+        res = await r.conn.command("find", prefabs=[prefab], max=3)
+        d = res.data or {}
+        r.results.append((prefab, f"total={d.get('total_objects')} nearest={[f['dist'] for f in d.get('found', [])]}"))
+
+
 SCENARIOS = {
     "m4": scenario_m4, "pieces": scenario_pieces, "build": scenario_build, "inspect": scenario_inspect,
-    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds, "buildportal": scenario_buildportal, "gravestone": scenario_gravestone, "guard": scenario_guard, "fires": scenario_fires, "items": scenario_items, "deposit": scenario_deposit, "tidy_chests": scenario_tidy_chests, "hold": scenario_hold, "sign": scenario_sign, "pieceinfo": scenario_pieceinfo, "stations": scenario_stations, "cookdebug": scenario_cookdebug, "collect": scenario_collect, "find": scenario_find, "farm": scenario_farm, "labels": scenario_labels, "feed": scenario_feed, "tamecheck": scenario_tamecheck,
+    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds, "buildportal": scenario_buildportal, "gravestone": scenario_gravestone, "guard": scenario_guard, "fires": scenario_fires, "items": scenario_items, "deposit": scenario_deposit, "tidy_chests": scenario_tidy_chests, "hold": scenario_hold, "sign": scenario_sign, "pieceinfo": scenario_pieceinfo, "stations": scenario_stations, "cookdebug": scenario_cookdebug, "collect": scenario_collect, "find": scenario_find, "farm": scenario_farm, "labels": scenario_labels, "feed": scenario_feed, "settlement": scenario_settlement, "prefabs": scenario_prefabs, "tamecheck": scenario_tamecheck,
 }
 
 

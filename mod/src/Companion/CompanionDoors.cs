@@ -48,6 +48,39 @@ namespace ValheimCompanion.Companion
             return false;
         }
 
+        /// <summary>
+        /// The nearest door or gate within <paramref name="radius"/> that it may open and that has the goal on its far
+        /// side, for a walk that's boxed in (e.g. inside a fence ring): head there, and the stuck handling above opens it.
+        /// Returns a point just in front of it on our side, or null.
+        /// </summary>
+        public static Vector3? ExitTowards(Vector3 pos, Vector3 goal, float radius, long master)
+        {
+            Door best = null;
+            float bestDist = radius;
+            foreach (Door door in Object.FindObjectsByType<Door>(FindObjectsSortMode.None))
+            {
+                if (!door || !door.m_nview || !door.m_nview.IsValid() || door.m_keyItem != null || !Builder.WardAllows(door.transform.position, master))
+                {
+                    continue;
+                }
+                float d = Vector3.Distance(door.transform.position, pos);
+                if (d < bestDist && GoalBeyond(door, pos, goal))
+                {
+                    best = door;
+                    bestDist = d;
+                }
+            }
+            if (!best)
+            {
+                return null;
+            }
+            Vector3 normal = best.transform.forward;
+            normal.y = 0f;
+            normal.Normalize();
+            float side = Mathf.Sign(Vector3.Dot(normal, pos - best.transform.position));
+            return best.transform.position + normal * side * 1.5f;
+        }
+
         /// <summary>Is the goal on the other side of this doorway from us? Only then is stepping through useful.</summary>
         private static bool GoalBeyond(Door door, Vector3 pos, Vector3 goal)
         {
