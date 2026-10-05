@@ -669,6 +669,10 @@ namespace ValheimCompanion.Companion
             {
                 return; // the current task waits
             }
+            if (UpdateEscape())
+            {
+                return; // going round a building he's just stepped out of; then the task carries on
+            }
 
             string task = Current;
             if (task != _applied)
@@ -1121,6 +1125,67 @@ namespace ValheimCompanion.Companion
             CompanionBoat.TryClimb(_character, _ship);
         }
 
+        private GameObject _escapeMark;
+        private GameObject _escapeResume;
+        private float _escapeStarted;
+
+        /// <summary>
+        /// Just stepped out of a building, whatever the task: go round it (out from the door, then its corner nearest
+        /// where he's heading) before carrying on. Heading straight for a goal past the far wall took him back in through
+        /// the doorway, over and over. True while doing so.
+        /// </summary>
+        private bool UpdateEscape()
+        {
+            Vector3 here = _character.transform.position;
+            CompanionDoors doors = _character.GetComponent<CompanionAI>()?.Doors;
+            GameObject target = _ai.GetFollowTarget();
+            if (doors != null && doors.TakeLeftBuilding(out Door leftBy) && target && target != _escapeMark
+                && Flat(target.transform.position - here) > 4f)
+            {
+                _escape.Clear();
+                foreach (Vector3 p in RoundBuilding(leftBy, here, target.transform.position))
+                {
+                    _escape.Enqueue(p);
+                }
+                _escapeResume = target;
+                _escapeStarted = Time.time;
+                _escapeUntil = Time.time + 20f;
+            }
+            if (_escape.Count == 0)
+            {
+                return false;
+            }
+            if (Flat(_escape.Peek() - here) <= 1.5f || Time.time > _escapeUntil)
+            {
+                _escape.Dequeue();
+                _escapeUntil = Time.time + 20f;
+            }
+            if (_escape.Count == 0)
+            {
+                // Round it: back to the task, with its clocks as they were before the detour.
+                float detour = Time.time - _escapeStarted;
+                _deadline += detour;
+                _stepDeadline = 0f;
+                _lastProgress = Time.time;
+                _hasLeg = false;
+                if (_escapeResume)
+                {
+                    _ai.SetFollowTarget(_escapeResume);
+                }
+                return false;
+            }
+            if (!_escapeMark)
+            {
+                _escapeMark = new GameObject("CompanionEscapeMark");
+            }
+            _escapeMark.transform.position = _escape.Peek();
+            if (_ai.GetFollowTarget() != _escapeMark)
+            {
+                _ai.SetFollowTarget(_escapeMark);
+            }
+            return true;
+        }
+
         /// <summary>
         /// From a door just stepped out of: 3 m straight out, then the building's corner (2 m clear of its footprint)
         /// that makes the shortest way on to the goal.
@@ -1200,38 +1265,6 @@ namespace ValheimCompanion.Companion
             {
                 Complete(false, new JObject { ["task"] = GoTo, ["reason"] = "timeout", ["remaining_m"] = Mathf.Round(remaining) }, afterwards: Stay);
                 return;
-            }
-
-            // Just stepped out of a building: round it (out from the door, then its corner nearest the goal), not back
-            // in through the doorway because the goal lies past the far wall.
-            CompanionDoors doors = _character.GetComponent<CompanionAI>()?.Doors;
-            if (doors != null && doors.TakeLeftBuilding(out Door leftBy) && remaining > 8f)
-            {
-                _escape.Clear();
-                foreach (Vector3 p in RoundBuilding(leftBy, here, goal))
-                {
-                    _escape.Enqueue(p);
-                }
-                _escapeUntil = Time.time + 30f;
-            }
-            if (_escape.Count > 0)
-            {
-                if (Flat(_escape.Peek() - here) <= 1.5f || Time.time > _escapeUntil)
-                {
-                    _escape.Dequeue();
-                    _escapeUntil = Time.time + 20f;
-                    if (_escape.Count == 0)
-                    {
-                        _hasLeg = false;
-                        _lastProgress = Time.time;
-                        _bestDist = remaining;
-                    }
-                }
-                if (_escape.Count > 0)
-                {
-                    _waypoint.transform.position = _escape.Peek();
-                    return;
-                }
             }
 
             // Starting inside a fence or wall ring with the goal well outside it: out through the gate first.
@@ -3030,6 +3063,10 @@ namespace ValheimCompanion.Companion
             if (_swimMark)
             {
                 UnityEngine.Object.Destroy(_swimMark);
+            }
+            if (_escapeMark)
+            {
+                UnityEngine.Object.Destroy(_escapeMark);
             }
             _gather.Stop();
         }

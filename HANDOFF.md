@@ -114,13 +114,18 @@ Each task is self-contained. Model choice: a mid-size model (Sonnet) for 1–7; 
 
 New test-only commands: `debug_boat op=find_coast|spawn|clear|push|overboard|status|shore_scan`, `debug_kill`, `debug_respawn_now`, `debug_global_key key [remove]`, `debug_teleport x z`. New scenarios: `teleport x z`, `near x z [r]` (pieces with positions), `shore [x z]` (distance to water in 16 directions).
 
-### Open problems (5 Oct 2026, end of session)
-Verified headlessly: outpost, farm, fort (wooden), port (once, at (353, -532)), mining camp (58/58 at (168, -372)), boats end to end, fishing, missions, blueprints, roads. Not yet verified, each for a reason that looks like walking or site finding rather than the template:
-- **Village:** walked to the area (260, -160), built the first hut (53 pieces), then `cant_reach_build_site` for the next hut. Check whether the first hut's levelling bank or the hut itself blocks the way to the others.
-- **Port:** at (446, -332) the site search returned `no_shore_nearby` (no candidate saw water 7-12 m off) although `find_coast` reports water there. Run `scenario.py shore 440 -330` once he's actually there (the last walk timed out on a hill at (376, -67)) and compare with `WaterAhead` in `SettlementTemplate`.
-- **Stone fort** (after Bonemass): no clean run yet; the test area round (150, -450) is crowded with test buildings, and the walk to (420, -200) timed out. The stone wall (`stone_wall_2x1`, two courses, pivot 0.5 m up, Stone 4 each) and stonecutter placement are written but unproven.
-- **Long walks** on hilly ground sometimes time out; he can end up far off course.
-- Fixed along the way (verified): leaving a fence/wall ring goes through its gate; stepping out of a hut he closes the door, routes round the building and doesn't step back in; a levelled path is cut in front of every hut door; settlement extras beside a hut sit at its floor height; nothing goes in front of a door.
+### Status and open problems (5 Oct 2026, end of session)
+Verified headlessly (each test starts with `scenario.py teleport x z` so it doesn't depend on where the last run left him; a server restart without `save_world` puts him back where the world was last saved):
+- **outpost, farm, wooden fort, mining camp** (58/58), **stone fort** after Bonemass (156/156: 86 `stone_wall_2x1` in two courses, 3 stonecutters), **village** (216/216: three huts on one shared floor height, fire pit, 52-section fence and gate), **port** (66-76 placed with the hut, a workbench by the dock, posts and floor out into the water).
+- boats end to end, fishing, missions, blueprints, roads.
+
+Open:
+- **Port dock:** a few far-end dock pieces (3-4) can still fall; check post support on the deepest sections (`Dock` in `SettlementTemplate`).
+- **Port on a narrow spit** (e.g. (446, -332), water on three sides): no site, correctly; it reports `too_close_to_water` with `spots_rejected` counts in the reply.
+- **Long walks** on hilly ground can still time out and leave him well off course.
+- Site searches report `spots_rejected` (how many candidate spots failed for each reason) when nothing is found.
+
+Fixed this session (all verified): a walk starting inside a fence or wall ring goes out through the gate; stepping through a doorway moves his physics body too (moving only the transform let physics drag him back, which caused every "in and out of the hut" loop); stepping out of a building he closes the door and, whatever the task, goes round the building before carrying on; wedged indoors with the goal elsewhere he squeezes over to the door; a levelled path is cut in front of every hut door; settlements clear and level their whole site before building; extras beside a hut sit at its floor height; nothing goes in front of a door; a hut's floor must be dry (0.5 m+ above the sea, raised a little on a flat beach) while its margins may run to the waterline.
 - Alvar showed 100/100 HP (not 350) after some restarts with nobody online; check `CompanionLevelling` if it matters.
 
 ### Decisions for tasks 8-10 (agreed with the user, 5 Oct 2026)

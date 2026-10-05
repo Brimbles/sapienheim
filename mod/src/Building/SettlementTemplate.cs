@@ -35,6 +35,9 @@ namespace ValheimCompanion.Building
 
         public static readonly string[] Kinds = { "outpost", "farm", "village", "fort", "mining_camp", "port" };
 
+        /// <summary>How many candidate spots failed for each reason, in the last search that found nothing.</summary>
+        public static Dictionary<string, int> LastReasons = new Dictionary<string, int>();
+
         public static bool IsKind(string template) => System.Array.IndexOf(Kinds, template) >= 0;
 
         /// <summary>Stone only once Bonemass is beaten (agreed with the user); before that, everything is wood.</summary>
@@ -116,7 +119,7 @@ namespace ValheimCompanion.Building
                     if (kind == "port")
                     {
                         // Face the water: it must start just beyond the hut's dry margin.
-                        if (!WaterAhead(c, hd + 3f, hd + 8f, out Vector3 dir))
+                        if (!WaterAhead(c, hd + 4f, hd + 14f, out Vector3 dir))  // on a gentle beach the dry ground starts well back
                         {
                             reasons.TryGetValue("no_shore_nearby", out int m);
                             reasons["no_shore_nearby"] = m + 1;
@@ -137,6 +140,7 @@ namespace ValheimCompanion.Building
             }
             // The commonest reason, but for a port only among spots by the water if there were any (most of a search
             // circle is inland, which hides why the shore itself wouldn't do).
+            LastReasons = new Dictionary<string, int>(reasons);
             if (reasons.Count > 1)
             {
                 reasons.Remove("no_shore_nearby");
@@ -187,7 +191,7 @@ namespace ValheimCompanion.Building
             float sea = ZoneSystem.instance.m_waterLevel;
             Vector3 dir = facing * Vector3.back;
             Vector3 edge = centre;
-            for (float d = 1f; d <= 16f; d += 0.5f)
+            for (float d = 1f; d <= 24f; d += 0.5f)
             {
                 edge = centre + dir * d;
                 if (Ground(edge) < sea)
@@ -198,6 +202,10 @@ namespace ValheimCompanion.Building
             Vector3 start = edge - dir * 1.5f;
             float deck = Mathf.Max(Ground(start) + 0.1f, sea + 0.6f);
             Quaternion rot = Quaternion.LookRotation(dir);
+            // Its own workbench on the bank beside where it starts: the far end is beyond the hut's bench (20 m reach).
+            Vector3 bench = start + rot * new Vector3(2.5f, 0f, -1f);
+            bench.y = Ground(bench);
+            steps.Add(new BuildStep { Piece = "piece_workbench", Pos = bench, Rot = rot });
             var posts = new List<BuildStep>();
             for (int i = 0; i < 7; i++)
             {
@@ -208,10 +216,18 @@ namespace ValheimCompanion.Building
                     break;
                 }
                 // Posts bottom up (a 2 m post is centred on its pivot), then the floor on top.
+                // At least one post wherever the floor isn't on the ground (over shallow water a floor with none fell);
+                // the bottom one may sink into the bed.
                 posts.Clear();
-                for (float top = deck; top - 2f > bed - 1f; top -= 2f)
+                if (bed < deck - 0.2f)
                 {
-                    posts.Add(new BuildStep { Piece = "wood_pole2", Pos = new Vector3(c.x, top - 1f, c.z), Rot = rot });
+                    float top = deck;
+                    do
+                    {
+                        posts.Add(new BuildStep { Piece = "wood_pole2", Pos = new Vector3(c.x, top - 1f, c.z), Rot = rot });
+                        top -= 2f;
+                    }
+                    while (top - 2f > bed - 1f);
                 }
                 posts.Reverse();
                 steps.AddRange(posts);
@@ -264,7 +280,9 @@ namespace ValheimCompanion.Building
                     {
                         return "terrain_not_loaded";
                     }
-                    if (h < ZoneSystem.instance.m_waterLevel + 0.3f)
+                    // A port's yard may run down to the waterline (a low beach is just where one goes); the hut itself
+                    // has its own, stricter check above.
+                    if (h < ZoneSystem.instance.m_waterLevel + (kind == "port" ? -1f : 0.3f))
                     {
                         return "too_close_to_water";
                     }
@@ -309,6 +327,8 @@ namespace ValheimCompanion.Building
 
             var steps = HutTemplate.Generate(l.HutWidth, hutOrigin, facingYaw, clear, level: true);
             Vector3 bench = Local(new Vector3(hw - 0.9f, 0f, -hd + 1.5f)); // where the hut puts its bench when levelled
+            // A chest inside (now, while he's in that hut), in the front corner opposite the bench, its back to the side wall.
+            steps.Add(new BuildStep { Piece = "piece_chest_wood", Pos = Local(new Vector3(-hw + 0.8f, 0f, -hd + 1.4f)), Rot = facing * Quaternion.Euler(0f, 90f, 0f) });
             var benches = new List<Vector3> { bench };
             var floors = new List<(Vector3 centre, int width, float y)> { (hutCentre, l.HutWidth, floorY) };
             // The other huts (a village's): each levelled on its own floor, with its bench and a chest.
@@ -320,6 +340,9 @@ namespace ValheimCompanion.Building
                 {
                     continue; // checked when the site was chosen; nothing has changed since unless something moved in
                 }
+                // A village's huts share the main hut's floor height: levelled separately on a slope, banks of earth
+                // between them blocked the way from one to the next.
+                fy = floorY;
                 Vector3 origin = new Vector3(hc.x, fy, hc.z);
                 floors.Add((hc, w, fy));
                 steps.AddRange(HutTemplate.Generate(w, origin, facingYaw, more.Where(d => !clear.Contains(d)).ToList(), level: true));
@@ -327,8 +350,6 @@ namespace ValheimCompanion.Building
                 steps.Add(new BuildStep { Piece = "piece_chest_wood", Pos = origin + facing * new Vector3(-w + 0.8f, 0f, -hd + 1.4f), Rot = facing * Quaternion.Euler(0f, 90f, 0f) });
             }
 
-            // A chest inside, in the front corner opposite the bench, its back to the side wall.
-            steps.Add(new BuildStep { Piece = "piece_chest_wood", Pos = Local(new Vector3(-hw + 0.8f, 0f, -hd + 1.4f)), Rot = facing * Quaternion.Euler(0f, 90f, 0f) });
 
             // On the ground as it will be: inside a hut's levelled area that's the hut's floor height (the ground there
             // is only levelled during the build, so reading it now would leave the piece floating or buried).
@@ -400,7 +421,12 @@ namespace ValheimCompanion.Building
                 steps.AddRange(LineTemplate.Generate(kind == "fort" ? (StoneAllowed ? "stonewall" : "wall") : "fence", true, Mathf.RoundToInt(ringHalf.x * 2f), Mathf.RoundToInt(ringHalf.y * 2f),
                     new Vector3(centre.x, floorY, centre.z), facingYaw, true, masterId, out _, benches));
             }
-            return steps;
+            // Clear and level the whole site before anything goes up: levelling round one hut after another stands
+            // left banks of earth where he had to walk.
+            return steps.Where(st => st.Clear != null)
+                .Concat(steps.Where(st => st.Clear == null && st.Piece == Builder.LevelStep))
+                .Concat(steps.Where(st => st.Clear == null && st.Piece != Builder.LevelStep))
+                .ToList();
         }
 
         /// <summary>The field: cultivate it in 2 m squares, then a crop every metre from the seeds in the pack.</summary>

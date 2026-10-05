@@ -1706,6 +1706,7 @@ namespace ValheimCompanion.Bridge
             float facing = args["facing"] != null ? (float)args["facing"] : UnityEngine.Random.Range(0, 4) * 90f + UnityEngine.Random.Range(-20f, 20f);
             if (!Building.SettlementTemplate.FindSite(kind, near, ref facing, seed, out Vector3 centre, out float floorY, out var clear, out string why))
             {
+                data = new JObject { ["spots_rejected"] = JObject.FromObject(Building.SettlementTemplate.LastReasons) };
                 return why;
             }
             var plan = Building.SettlementTemplate.Generate(kind, centre, floorY, facing, seed, clear, inv, (string)args["tag"],

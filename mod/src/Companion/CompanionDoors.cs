@@ -197,8 +197,12 @@ namespace ValheimCompanion.Companion
             {
                 beyond.y = h + 0.1f;
             }
+            // Move the physics body too: moving only the transform, the body dragged him back inside on the next physics
+            // step (the log said "stepped through" while he stood in the same corner for minutes).
             _character.m_body.linearVelocity = Vector3.zero;
+            _character.m_body.position = beyond;
             _character.transform.position = beyond;
+            Physics.SyncTransforms();
             _lastPos = beyond;
             _stillSince = Time.time;
             _closeBehind = door;
@@ -310,6 +314,40 @@ namespace ValheimCompanion.Companion
                 Jotunn.Logger.LogInfo($"{_character.m_name}: opened a door to get out");
                 _character.GetComponent<CompanionAI>()?.PlayMoment("door");
                 return;
+            }
+
+            // Stuck indoors with no door in reach (wedged behind the beds in a corner, say), and the goal is further off
+            // than this room (maybe in another building):
+            // squeeze across the room to just inside the nearest door; the next tries take him out through it.
+            if (indoors && Vector3.Distance(goal.transform.position, pos) > 8f)
+            {
+                Door nearest = null;
+                float best = 9f;
+                foreach (Door door in Object.FindObjectsByType<Door>(FindObjectsSortMode.None))
+                {
+                    float d = door ? Vector3.Distance(door.transform.position, pos) : float.MaxValue;
+                    if (d < best && d > DoorRange && door.m_keyItem == null && Builder.WardAllows(door.transform.position, master))
+                    {
+                        nearest = door;
+                        best = d;
+                    }
+                }
+                if (nearest)
+                {
+                    Vector3 normal = nearest.transform.forward;
+                    normal.y = 0f;
+                    normal.Normalize();
+                    float side = Mathf.Sign(Vector3.Dot(normal, pos - nearest.transform.position));
+                    Vector3 inside = nearest.transform.position + normal * side * 1.2f;
+                    inside.y = pos.y;
+                    _character.m_body.linearVelocity = Vector3.zero;
+                    _character.m_body.position = inside;
+                    _character.transform.position = inside;
+                    Physics.SyncTransforms();
+                    _lastPos = inside;
+                    _stillSince = Time.time;
+                    Jotunn.Logger.LogInfo($"{_character.m_name}: wedged indoors; squeezed over to the door at {nearest.transform.position:F0}");
+                }
             }
         }
     }

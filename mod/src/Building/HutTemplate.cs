@@ -300,9 +300,9 @@ namespace ValheimCompanion.Building
                         why = "terrain_not_loaded";
                         return false;
                     }
-                    if (h < ZoneSystem.instance.m_waterLevel + 0.3f)
+                    if (h < ZoneSystem.instance.m_waterLevel - 0.5f)
                     {
-                        why = "too_close_to_water";
+                        why = "site_in_water"; // in water deeper than levelling fills
                         return false;
                     }
                     // Unlevelled, the floor sits at the highest ground under the floor itself (not the margin around it).
@@ -328,6 +328,18 @@ namespace ValheimCompanion.Building
             else if (floorY - minY > MaxHeightRange)
             {
                 why = "ground_too_uneven";
+                return false;
+            }
+            // The floor must be dry; the margins round it may run down to the waterline (a beach, for a port). On a flat
+            // beach just above the sea, levelling raises the floor a little (the hoe fills as well as cuts).
+            float sea = ZoneSystem.instance.m_waterLevel;
+            if (level && floorY < sea + 0.6f && maxY >= sea + 0.1f && sea + 0.6f - minY <= MaxLevelRange)
+            {
+                floorY = sea + 0.6f;
+            }
+            if (floorY < sea + 0.5f)
+            {
+                why = "floor_too_low";
                 return false;
             }
 

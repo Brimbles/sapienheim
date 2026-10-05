@@ -813,8 +813,12 @@ async def scenario_teleport(r: Runner) -> None:
     """Move him (test only): scenario.py teleport x z."""
     res = await r.cmd("debug_teleport", x=float(sys.argv[2]), z=float(sys.argv[3]))
     r.results.append(("teleport", res.error or "ok"))
-    await asyncio.sleep(3)
-    r.results.append(("now at", str((await r.state())["self"]["pos"])))
+    for _ in range(5):  # right after the move the state can come back without him for a moment
+        await asyncio.sleep(3)
+        st = await r.state()
+        if st and "self" in st:
+            r.results.append(("now at", str(st["self"]["pos"])))
+            break
 
 
 async def scenario_near(r: Runner) -> None:
@@ -835,6 +839,15 @@ async def scenario_shore(r: Runner) -> None:
         await r.task("walk", "go_to", x=float(sys.argv[2]), z=float(sys.argv[3]))
     res = await r.cmd("debug_boat", op="shore_scan")
     r.results.append(("shore scan", f"{res.error or 'ok'} {res.data} at {(await r.state())['self']['pos']}"))
+
+
+async def scenario_resume(r: Runner) -> None:
+    """Carry on a build that stopped (resume_build) and report how it ends."""
+    res = await r.cmd("resume_build")
+    r.results.append(("resume", f"{res.error or 'ok'} {res.data}"))
+    if res.ok:
+        await advance_until_done(r, "resumed build", res, max_real_s=1500, step_s=1)
+        await r.cmd("save_world")
 
 
 async def scenario_tamecheck(r: Runner) -> None:
@@ -968,7 +981,7 @@ async def scenario_blueprint(r: Runner) -> None:
 
 SCENARIOS = {
     "m4": scenario_m4, "pieces": scenario_pieces, "build": scenario_build, "inspect": scenario_inspect,
-    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds, "buildportal": scenario_buildportal, "gravestone": scenario_gravestone, "guard": scenario_guard, "fires": scenario_fires, "items": scenario_items, "deposit": scenario_deposit, "tidy_chests": scenario_tidy_chests, "hold": scenario_hold, "sign": scenario_sign, "pieceinfo": scenario_pieceinfo, "stations": scenario_stations, "cookdebug": scenario_cookdebug, "collect": scenario_collect, "find": scenario_find, "farm": scenario_farm, "labels": scenario_labels, "feed": scenario_feed, "settlement": scenario_settlement, "prefabs": scenario_prefabs, "road": scenario_road, "bridge": scenario_bridge, "blueprint": scenario_blueprint, "fish": scenario_fish, "boat": scenario_boat, "teleport": scenario_teleport, "near": scenario_near, "shore": scenario_shore, "mission": scenario_mission, "coast": scenario_coast, "tamecheck": scenario_tamecheck,
+    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds, "buildportal": scenario_buildportal, "gravestone": scenario_gravestone, "guard": scenario_guard, "fires": scenario_fires, "items": scenario_items, "deposit": scenario_deposit, "tidy_chests": scenario_tidy_chests, "hold": scenario_hold, "sign": scenario_sign, "pieceinfo": scenario_pieceinfo, "stations": scenario_stations, "cookdebug": scenario_cookdebug, "collect": scenario_collect, "find": scenario_find, "farm": scenario_farm, "labels": scenario_labels, "feed": scenario_feed, "settlement": scenario_settlement, "prefabs": scenario_prefabs, "road": scenario_road, "bridge": scenario_bridge, "blueprint": scenario_blueprint, "fish": scenario_fish, "boat": scenario_boat, "teleport": scenario_teleport, "near": scenario_near, "shore": scenario_shore, "resume": scenario_resume, "mission": scenario_mission, "coast": scenario_coast, "tamecheck": scenario_tamecheck,
 }
 
 
