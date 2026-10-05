@@ -367,9 +367,32 @@ async def scenario_sounds(r: Runner) -> None:
         r.results.append((f"{moment} vs {subject}", str(sorted(p for p in picks if p))))
 
 
+async def scenario_buildportal(r: Runner) -> None:
+    """Build a tagged portal (materials given), check the game lists it, then tear it down again."""
+    for item, qty in (("FineWood", 20), ("GreydwarfEye", 10), ("SurtlingCore", 2), ("Wood", 10), ("Hammer", 1)):
+        await r.cmd("debug_give", item=item, qty=qty)
+    s = await r.state()
+    here = s["self"]["pos"]
+    await r.task("walk to open ground", "go_to", x=here[0] + 15, z=here[2] + 15)
+    tag = f"sapien-pb-{int(time.time()) % 100000}"
+    res = await r.cmd("build", template="portal", tag=tag)
+    if not res.ok:
+        r.results.append(("build portal", f"rejected: {res.error} {res.data}"))
+        return
+    await r.task_wait("build portal", res)
+    listing = await r.conn.command("portals")
+    mine = [p for p in (listing.data or {}).get("portals", []) if p["tag"] == tag]
+    r.results.append(("portal listed with its tag", str(mine)))
+    site = res.data["site"]
+    down = await r.cmd("tear_down", x=site[0], z=site[2], scope="radius", radius=4, confirm=True)
+    if down.ok:
+        await r.task_wait("tear the portal down again", down)
+    await r.cmd("save_world")
+
+
 SCENARIOS = {
     "m4": scenario_m4, "pieces": scenario_pieces, "build": scenario_build, "inspect": scenario_inspect,
-    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds,
+    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds, "buildportal": scenario_buildportal,
 }
 
 

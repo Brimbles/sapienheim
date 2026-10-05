@@ -66,6 +66,7 @@ RULES = """
 - Work tools (go_to, attack, pick_up, give, gather, store_items, fetch_items, craft, build, resume_build, repair_nearby) take `queue: true` to run one after another. Plan multi-step jobs as a queue, e.g. gather wood, then give it. If one task fails, the rest of the queue is dropped and you'll hear about it.
 - You'll be told when queued work finishes or fails. Report back in character; if something failed (e.g. need_axe), say what you need.
 - `build` puts up a structure from a template: "hut" (a wooden hut with two beds, a door, a roof and a workbench beside it, 3-5 tiles wide), "wall" (a stakewall palisade) or "fence" (a roundpole fence). Walls and fences go in a ring with a gate or a straight line; a ring next to a building goes around that building. You choose the template, its size and roughly where; the build code picks the exact spots, clears bushes and places every piece. It needs a hammer (craft one: Wood 3, Stone 2) and wood: a 3-wide hut is about 125, a fence ring round a hut about 30, a wall ring round a hut about 110. Carry a hoe (Wood 5, Stone 2) and you level the ground for a hut first, so it fits on rougher ground. If it fails with missing_materials, gather or fetch what's missing and then call resume_build. The pieces belong to your master.
+- Portals: `build` with template "portal" and a `tag` puts one up (e.g. far away, at the end of a `travel` or `go_to`, queued). Pick a short memorable tag, tell your master, and name the spot with `name` so you can find it again. A portal only connects to one other portal with the same tag.
 - `repair_nearby` fixes damaged buildings around you (or a player or named place) with your hammer.
 - `tear_down` (only for your master) takes buildings down with your hammer. Never confirm without asking: the first call tells you what would come down; describe it ("that's 53 pieces: walls, roof, two beds...") and only call again with confirm=true once your master says yes. If the player doesn't say which building, use the one nearest them (`near`). The materials drop on the ground; offer to pick them up afterwards.
 - Travel: to go to a named place, use `travel` (it picks the best route, through portals when that's shorter). `use_portal` steps through a specific portal. You can walk up to 5 km, but not across open water (no boats yet).
@@ -255,13 +256,16 @@ TOOLS: list[dict[str, Any]] = [
         "gate facing you (shape=ring) or a straight line facing you (shape=line). A ring next to a building (near you, "
         "the player, or `around` a named place) is automatically fitted around that building with 3 m to spare, "
         "whatever size you ask; elsewhere it's a square of `size`. Spots blocked by trees, buildings, water or wards "
-        "are left as gaps (reported as gaps). Needs a hammer. Rejected straight away with "
+        "are left as gaps (reported as gaps). portal: a wooden portal with a `tag` (GreydwarfEye 10, FineWood 20, "
+        "SurtlingCore 2, plus a workbench, Wood 10, if none is near); tell your master the tag so they can build the "
+        "matching one. Needs a hammer. Rejected straight away with "
         "missing_materials (and what's missing) or need_hammer unless queued. task_done/task_failed reports the result; "
         "a failed build can be continued with resume_build.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "template": {"type": "string", "enum": ["hut", "wall", "fence"]},
+                "template": {"type": "string", "enum": ["hut", "wall", "fence", "portal"]},
+                "tag": {"type": "string", "description": "portal: its tag; a portal pairs with the one other portal with the same tag."},
                 "width": {"type": "integer", "description": "hut: width in 2 m floor tiles, 3-5 (default 3)."},
                 "shape": {"type": "string", "enum": ["ring", "line"], "description": "wall/fence: ring (default) or line."},
                 "size": {"type": "integer", "description": "wall/fence: line length, or ring side when not around a building; metres, 4-40 (default 12 for a ring, 10 for a line)."},

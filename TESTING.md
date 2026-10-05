@@ -42,6 +42,7 @@ Things that can't be tested headlessly because they need a player in the world. 
 ## 4b2. Named places, portals and travel
 - [ ] `@Alvar build a hut here called Testville` (he needs ~125 wood and a hammer). **Testville appears as a house pin on your map** (and on everyone's). Walk away, then `@Alvar travel to Testville`. `@Alvar remember this spot as Far Field` adds a pin too.
 - [ ] Build two portals with the same tag, one near you and one far away (e.g. at another base). Then `@Alvar go through the portal`, or name a place near the far end and `@Alvar travel to <place>`: he walks to the near portal, comes out of the far one and walks the rest.
+- [ ] **Building portals:** give him 20 fine wood, 10 greydwarf eyes and 2 surtling cores, then `@Alvar walk 300 m east, build a portal there and tell me the tag`. He walks, builds a workbench and the portal, and says the tag; build yours at home with the same tag and walk through.
 - [ ] Give him some copper ore and ask again: he should refuse, because ore can't go through portals.
 - [ ] Name a place 1-2 km away (`@Alvar remember this spot as Far Field`), come back, then `@Alvar travel to Far Field`. With no portals he walks there in legs; across open water he stops and says so.
 - [ ] Shut him in the hut and call him: he opens the door (or steps through the doorway) to come out.

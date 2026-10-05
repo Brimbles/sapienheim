@@ -421,6 +421,10 @@ namespace ValheimCompanion.Bridge
                     {
                         return BuildLine(companion, template, args, cmdId, out data);
                     }
+                    if (template == "portal")
+                    {
+                        return BuildPortal(companion, args, cmdId, out data);
+                    }
                     if (template != "hut")
                     {
                         return "unknown_template";
@@ -824,6 +828,59 @@ namespace ValheimCompanion.Bridge
         }
 
         // Day fraction: 0 = midnight, 0.5 = noon. Valheim nights run roughly 0.8 -> 0.2.
+        /// <summary>A tagged portal (with a workbench if none is in range), facing the companion.</summary>
+        private static string BuildPortal(CompanionAI companion, JObject args, string cmdId, out JObject data)
+        {
+            data = null;
+            string tag = ((string)args["tag"] ?? "").Trim();
+            if (tag.Length == 0)
+            {
+                return "need_tag";
+            }
+            if (tag.Length > Building.PortalTemplate.MaxTagLength)
+            {
+                tag = tag.Substring(0, Building.PortalTemplate.MaxTagLength);
+            }
+            Vector3 near = companion.transform.position;
+            string nearPlayer = (string)args["near"];
+            if (!string.IsNullOrEmpty(nearPlayer) && !TryFindPlayer(nearPlayer, out _, out _, out near))
+            {
+                return "player_not_found";
+            }
+            Vector3 toUs = companion.transform.position - near;
+            toUs.y = 0f;
+            float facing = toUs.sqrMagnitude > 1f ? Quaternion.LookRotation(toUs).eulerAngles.y : companion.transform.eulerAngles.y + 180f;
+            if (!Building.PortalTemplate.FindSite(near, facing, 20f, out Vector3 origin, out string why, out var clear))
+            {
+                return why;
+            }
+            var plan = Building.PortalTemplate.Generate(origin, facing, tag, clear);
+            var pieceNames = new System.Collections.Generic.List<string>();
+            foreach (var step in plan)
+            {
+                if (step.Clear == null)
+                {
+                    pieceNames.Add(step.Piece);
+                }
+            }
+            data = new JObject
+            {
+                ["template"] = "portal", ["tag"] = tag, ["pieces"] = pieceNames.Count,
+                ["site"] = new JArray(Mathf.Round(origin.x), Mathf.Round(origin.y), Mathf.Round(origin.z)),
+            };
+            JObject missingMaterials = Building.Builder.Missing(pieceNames, companion.Inventory);
+            if (missingMaterials.Count > 0 && !IsQueued(args))
+            {
+                data["missing"] = missingMaterials;
+                return "missing_materials";
+            }
+            if (Building.Builder.FindHammer(companion.Inventory) == null && !IsQueued(args))
+            {
+                return "need_hammer";
+            }
+            return Queue(companion, args, $"build(portal {tag})", () => companion.Tasks.CommandBuild($"portal '{tag}'", plan, TaskId(args, cmdId)));
+        }
+
         /// <summary>A wall or fence: a ring with a gate around a spot, or a straight line across it.</summary>
         private static string BuildLine(CompanionAI companion, string template, JObject args, string cmdId, out JObject data)
         {

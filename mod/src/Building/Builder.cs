@@ -15,6 +15,8 @@ namespace ValheimCompanion.Building
         public Destructible Clear;
         /// <summary>A piece the build can do without (a wall or fence section): if it can't be reached, it's skipped.</summary>
         public bool Optional;
+        /// <summary>Set as the placed piece's tag (a portal's name, which pairs it with another).</summary>
+        public string Tag;
     }
 
     /// <summary>
