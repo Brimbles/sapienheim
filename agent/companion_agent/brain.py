@@ -293,6 +293,22 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "cook",
+        "description": "Cook the raw food you carry (meat, fish...) on a cooking station near you over a lit fire: you keep "
+        "it loaded, take each piece off before it burns and pick it up. task_done says what was cooked.",
+        "input_schema": {"type": "object", "properties": {"queue": {"type": "boolean"}}},
+    },
+    {
+        "name": "load_smelters",
+        "description": "Load the kilns, smelters, furnaces (and the like) around you or a named place with what they take "
+        "from your pack: ore or wood in, coal (or other fuel) to burn. They then work on their own; collect the bars or "
+        "coal later with pick_up. task_done says what went in and any fuel you lacked.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"radius": {"type": "number"}, "around": {"type": "string"}, "queue": {"type": "boolean"}},
+        },
+    },
+    {
         "name": "deposit",
         "description": "Put everything you carry except your gear (tools, weapons, armour, ammo) into the chests around you "
         "or a named place: each kind of thing goes into a chest that already has some, the rest into any chest with room. "
@@ -905,7 +921,7 @@ class Brain:
             return await self._travel(block.id, args, actions)
         settlement = args.pop("name", None) if name == "build" else None
         torn_place = str(args["around"]) if name == "tear_down" and args.get("around") and args.get("confirm") else None
-        if name in ("build", "repair_nearby", "tear_down", "guard", "tend_fires", "deposit") and args.get("around"):
+        if name in ("build", "repair_nearby", "tear_down", "guard", "tend_fires", "deposit", "load_smelters") and args.get("around"):
             where = self.memory.place(str(args.pop("around")))
             if where is None:
                 known = ", ".join(p["name"] for p in self.memory.data["places"].values()) or "none yet"
@@ -1032,7 +1048,7 @@ def _worth_reporting(event: Event) -> bool:
     if event.name == "task_failed":
         return True
     return event.data.get("queue_remaining", 0) == 0 and event.data.get("task") in (
-        "gather", "give", "pick_up", "craft", "store", "fetch", "build", "go_to", "portal", "repair", "tear_down", "gravestone", "tend_fires", "deposit"
+        "gather", "give", "pick_up", "craft", "store", "fetch", "build", "go_to", "portal", "repair", "tear_down", "gravestone", "tend_fires", "deposit", "cook", "load_smelters"
     )
 
 

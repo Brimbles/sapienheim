@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Newtonsoft.Json.Linq;
 using UnityEngine;
 using ValheimCompanion.Companion;
@@ -525,6 +526,38 @@ namespace ValheimCompanion.Bridge
                     string name = $"hut {width}x{Building.HutTemplate.Depth}";
                     return Queue(companion, args, $"build({name})",
                         () => companion.Tasks.CommandBuild(name, plan, TaskId(args, cmdId)));
+                }
+                case "cook":
+                {
+                    var stations = CompanionStations.Near<CookingStation>(companion.transform.position, 30f, CompanionState.GetMaster(companion.ZDO));
+                    CookingStation station = stations.FirstOrDefault(s => CompanionStations.RawFor(s).Any(r => companion.Inventory.Count(r) > 0));
+                    if (station == null)
+                    {
+                        return stations.Count == 0 ? "no_cooking_station_nearby" : "nothing_to_cook";
+                    }
+                    if (!CompanionStations.CanCook(station))
+                    {
+                        return "fire_not_lit";
+                    }
+                    data = new JObject { ["station"] = Localization.instance.Localize(station.GetComponent<Piece>().m_name) };
+                    return Queue(companion, args, "cook", () => companion.Tasks.CommandCook(station, TaskId(args, cmdId)));
+                }
+                case "load_smelters":
+                {
+                    Vector3 centre = companion.transform.position;
+                    if (args["x"] != null && args["z"] != null)
+                    {
+                        centre = new Vector3((float)args["x"], centre.y, (float)args["z"]);
+                    }
+                    float radius = Mathf.Clamp(args["radius"] != null ? (float)args["radius"] : 30f, 5f, 60f);
+                    var smelters = CompanionStations.Near<Smelter>(centre, radius, CompanionState.GetMaster(companion.ZDO))
+                        .Where(s => CompanionStations.InputsFor(s).Any(i => companion.Inventory.Count(i) > 0)).ToList();
+                    if (smelters.Count == 0)
+                    {
+                        return "nothing_to_smelt_here";
+                    }
+                    data = new JObject { ["stations"] = new JArray(smelters.Select(s => Localization.instance.Localize(s.m_name))) };
+                    return Queue(companion, args, "load_smelters", () => companion.Tasks.CommandLoadSmelters(smelters, TaskId(args, cmdId)));
                 }
                 case "deposit":
                 {

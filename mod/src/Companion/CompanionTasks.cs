@@ -50,6 +50,8 @@ namespace ValheimCompanion.Companion
         public const string Guard = "guard";
         public const string TendFires = "tend_fires";
         public const string Deposit = "deposit";
+        public const string Cook = "cook";
+        public const string LoadSmelters = "load_smelters";
         public const string TearDown = "tear_down";
 
         private const float ArriveDistance = 3.5f;
@@ -121,6 +123,16 @@ namespace ValheimCompanion.Companion
         // deposit: each chest visited twice, first only for what it already holds (like with like), then for anything
         private Queue<(Container chest, bool matchOnly)> _depositPlan;
         private Dictionary<string, int> _deposited;
+
+        // cook
+        private CookingStation _cookStation;
+        private Dictionary<string, int> _cooked;
+        private float _cookDeadline;
+
+        // load smelters
+        private Queue<Smelter> _smelters;
+        private Dictionary<string, int> _loaded;
+        private HashSet<string> _smelterFuelMissing;
 
         // tend fires
         private Queue<Fireplace> _fires;
@@ -216,6 +228,8 @@ namespace ValheimCompanion.Companion
                     case Guard:
                     case TendFires:
                     case Deposit:
+                    case Cook:
+                    case LoadSmelters:
                         return task;
                     default:
                         return Follow;
@@ -348,6 +362,23 @@ namespace ValheimCompanion.Companion
             _deposited = new Dictionary<string, int>();
             _deadline = Time.time + StationTimeout;
             SetTask(Deposit, taskId);
+        }
+
+        public void CommandCook(CookingStation station, string taskId)
+        {
+            _cookStation = station;
+            _cooked = new Dictionary<string, int>();
+            _cookDeadline = Time.time + 600f;
+            SetTask(Cook, taskId);
+        }
+
+        public void CommandLoadSmelters(List<Smelter> smelters, string taskId)
+        {
+            _smelters = new Queue<Smelter>(smelters);
+            _loaded = new Dictionary<string, int>();
+            _smelterFuelMissing = new HashSet<string>();
+            _stepDeadline = 0f;
+            SetTask(LoadSmelters, taskId);
         }
 
         public void CommandTendFires(List<Fireplace> fires, string taskId)
@@ -569,6 +600,12 @@ namespace ValheimCompanion.Companion
                 case Deposit:
                     UpdateDeposit();
                     break;
+                case Cook:
+                    UpdateCook();
+                    break;
+                case LoadSmelters:
+                    UpdateLoadSmelters();
+                    break;
             }
         }
 
@@ -594,7 +631,9 @@ namespace ValheimCompanion.Companion
                         || (task == Gravestone && _grave.IsNone())
                         || (task == Guard && _guardRadius <= 0f)
                         || (task == TendFires && _fires == null)
-                        || (task == Deposit && _depositPlan == null);
+                        || (task == Deposit && _depositPlan == null)
+                        || (task == Cook && !_cookStation)
+                        || (task == LoadSmelters && _smelters == null);
             if (lost)
             {
                 CompanionState.SetTask(Zdo, Follow);
@@ -1487,6 +1526,119 @@ namespace ValheimCompanion.Companion
             _teardownPlan.Dequeue();
             _teardownSkipped.TryGetValue(reason, out int n);
             _teardownSkipped[reason] = n + 1;
+            _stepDeadline = 0f;
+        }
+
+        /// <summary>
+        /// Stand at the cooking station: keep its slots full of raw food from the pack, take each piece off as soon as
+        /// it's done (before it burns) and pick it up. Done when there's nothing raw left and nothing on the station.
+        /// </summary>
+        private void UpdateCook()
+        {
+            CookingStation st = _cookStation;
+            if (!st || !st.m_nview || !st.m_nview.IsValid())
+            {
+                _cookStation = null;
+                Complete(_cooked.Count > 0, new JObject { ["task"] = Cook, ["cooked"] = JObject.FromObject(_cooked), ["reason"] = "station_gone" });
+                return;
+            }
+            if (!WalkTo(st))
+            {
+                if (Time.time > _cookDeadline)
+                {
+                    _cookStation = null;
+                    Complete(false, new JObject { ["task"] = Cook, ["reason"] = "cant_reach_station" });
+                }
+                return;
+            }
+            if (!CompanionStations.Own(st.m_nview))
+            {
+                return;
+            }
+            // Pick up what's come off already.
+            HashSet<string> cookedKinds = CompanionStations.CookedFor(st);
+            foreach (ItemDrop drop in ItemDrop.s_instances)
+            {
+                if (drop && Vector3.Distance(drop.transform.position, _character.transform.position) < 4f
+                    && cookedKinds.Contains(CompanionInventory.PrefabName(drop.m_itemData)))
+                {
+                    int before = _inventory.Count(CompanionInventory.PrefabName(drop.m_itemData));
+                    string kind = CompanionInventory.PrefabName(drop.m_itemData);
+                    if (_inventory.TryPickup(drop))
+                    {
+                        _cooked.TryGetValue(kind, out int n);
+                        _cooked[kind] = n + Mathf.Max(1, _inventory.Count(kind) - before);
+                    }
+                }
+            }
+            if (!CompanionStations.CanCook(st))
+            {
+                _cookStation = null;
+                Complete(_cooked.Count > 0, new JObject { ["task"] = Cook, ["cooked"] = JObject.FromObject(_cooked), ["reason"] = "fire_not_lit" });
+                return;
+            }
+            CompanionStations.TakeDone(st, _character.transform.position);
+            CompanionStations.AddRaw(st, _inventory);
+            bool rawLeft = CompanionStations.RawFor(st).Any(r => _inventory.Count(r) > 0);
+            if ((!rawLeft && !CompanionStations.Busy(st)) || Time.time > _cookDeadline)
+            {
+                _cookStation = null;
+                var done = new JObject { ["task"] = Cook, ["cooked"] = JObject.FromObject(_cooked) };
+                if (Time.time > _cookDeadline)
+                {
+                    done["note"] = "stopped after 10 minutes; anything still on the station is left there";
+                }
+                Complete(_cooked.Count > 0, done);
+            }
+        }
+
+        /// <summary>Walk to each smelter, kiln or furnace and load fuel and ore from the pack.</summary>
+        private void UpdateLoadSmelters()
+        {
+            Smelter sm = null;
+            while (_smelters.Count > 0 && !sm)
+            {
+                sm = _smelters.Peek();
+                if (!sm || !sm.m_nview || !sm.m_nview.IsValid())
+                {
+                    _smelters.Dequeue();
+                    sm = null;
+                }
+            }
+            if (!sm)
+            {
+                var done = new JObject { ["task"] = LoadSmelters, ["loaded"] = JObject.FromObject(_loaded) };
+                if (_smelterFuelMissing.Count > 0)
+                {
+                    done["need_fuel"] = new JArray(_smelterFuelMissing);
+                }
+                _smelters = null;
+                Complete(_loaded.Count > 0, done);
+                return;
+            }
+            if (_stepDeadline <= 0f)
+            {
+                _stepDeadline = Time.time + BuildStepTimeout;
+            }
+            if (!WalkTo(sm))
+            {
+                if (Time.time > _stepDeadline)
+                {
+                    _smelters.Dequeue();
+                    _stepDeadline = 0f;
+                }
+                return;
+            }
+            if (!CompanionStations.Own(sm.m_nview))
+            {
+                return;
+            }
+            foreach (var kv in CompanionStations.Load(sm, _inventory, _smelterFuelMissing))
+            {
+                _loaded.TryGetValue(kv.Key, out int n);
+                _loaded[kv.Key] = n + kv.Value;
+            }
+            _smelters.Dequeue();
             _stepDeadline = 0f;
         }
 

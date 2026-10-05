@@ -557,9 +557,27 @@ async def scenario_pieceinfo(r: Runner) -> None:
             r.results.append((p["piece"], json.dumps({k: p.get(k) for k in ("station", "bounds", "snap_points", "cost")})))
 
 
+async def scenario_stations(r: Runner) -> None:
+    """Cooking and a kiln: a fire with a spit over it and a charcoal kiln (built as the master); cook 3 meat, load the kiln."""
+    s = await r.state()
+    here = s["self"]["pos"]
+    fire = [here[0] + 4, here[2] + 4]
+    await r.cmd("debug_place", piece="fire_pit", pos=fire, as_master=True)
+    await r.cmd("debug_place", piece="piece_cookingstation", pos=fire, as_master=True)
+    await r.cmd("debug_place", piece="charcoal_kiln", pos=[here[0] + 9, here[2] + 4], as_master=True)
+    await r.cmd("debug_give", item="Wood", qty=20)
+    await r.cmd("debug_give", item="RawMeat", qty=3)
+    await r.task("light the fire", "tend_fires", radius=8)
+    await r.task("cook", "cook")
+    await r.task("load the kiln", "load_smelters", radius=15)
+    s = await r.state()
+    r.results.append(("inventory after", str({i["item"]: i["qty"] for i in s["self"].get("inventory", []) if i["item"] in ("CookedMeat", "RawMeat", "Wood", "Coal")})))
+    await r.cmd("save_world")
+
+
 SCENARIOS = {
     "m4": scenario_m4, "pieces": scenario_pieces, "build": scenario_build, "inspect": scenario_inspect,
-    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds, "buildportal": scenario_buildportal, "gravestone": scenario_gravestone, "guard": scenario_guard, "fires": scenario_fires, "items": scenario_items, "deposit": scenario_deposit, "tidy_chests": scenario_tidy_chests, "hold": scenario_hold, "sign": scenario_sign, "pieceinfo": scenario_pieceinfo,
+    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds, "buildportal": scenario_buildportal, "gravestone": scenario_gravestone, "guard": scenario_guard, "fires": scenario_fires, "items": scenario_items, "deposit": scenario_deposit, "tidy_chests": scenario_tidy_chests, "hold": scenario_hold, "sign": scenario_sign, "pieceinfo": scenario_pieceinfo, "stations": scenario_stations,
 }
 
 
