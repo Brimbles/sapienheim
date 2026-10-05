@@ -53,6 +53,7 @@ namespace ValheimCompanion.Companion
         public const string Cook = "cook";
         public const string LoadSmelters = "load_smelters";
         public const string CollectOutput = "collect_output";
+        public const string Farm = "farm";
         public const string TearDown = "tear_down";
 
         private const float ArriveDistance = 3.5f;
@@ -134,6 +135,16 @@ namespace ValheimCompanion.Companion
         private Queue<Smelter> _smelters;
         private Dictionary<string, int> _loaded;
         private HashSet<string> _smelterFuelMissing;
+
+        // farm
+        private Queue<Pickable> _crops;
+        private Dictionary<string, string> _cropSaplings;
+        private Dictionary<string, int> _harvested;
+        private int _replanted;
+        private HashSet<string> _seedsMissing;
+        private Vector3 _pickedAt;
+        private string _pickedKind;
+        private float _pickedTime = -1f;
 
         // collect output
         private Queue<Smelter> _outputs;
@@ -237,6 +248,7 @@ namespace ValheimCompanion.Companion
                     case Cook:
                     case LoadSmelters:
                     case CollectOutput:
+                    case Farm:
                         return task;
                     default:
                         return Follow;
@@ -386,6 +398,18 @@ namespace ValheimCompanion.Companion
             _smelterFuelMissing = new HashSet<string>();
             _stepDeadline = 0f;
             SetTask(LoadSmelters, taskId);
+        }
+
+        public void CommandFarm(List<Pickable> crops, string taskId)
+        {
+            _crops = new Queue<Pickable>(crops);
+            _cropSaplings = PieceCatalog.Crops;
+            _harvested = new Dictionary<string, int>();
+            _replanted = 0;
+            _seedsMissing = new HashSet<string>();
+            _pickedTime = -1f;
+            _stepDeadline = 0f;
+            SetTask(Farm, taskId);
         }
 
         public void CommandCollectOutput(List<Smelter> smelters, string taskId)
@@ -625,6 +649,9 @@ namespace ValheimCompanion.Companion
                 case CollectOutput:
                     UpdateCollectOutput();
                     break;
+                case Farm:
+                    UpdateFarm();
+                    break;
             }
         }
 
@@ -653,7 +680,8 @@ namespace ValheimCompanion.Companion
                         || (task == Deposit && _depositPlan == null)
                         || (task == Cook && !_cookStation)
                         || (task == LoadSmelters && _smelters == null)
-                        || (task == CollectOutput && _outputs == null);
+                        || (task == CollectOutput && _outputs == null)
+                        || (task == Farm && _crops == null);
             if (lost)
             {
                 CompanionState.SetTask(Zdo, Follow);
@@ -1626,6 +1654,105 @@ namespace ValheimCompanion.Companion
                 }
                 Complete(_cooked.Count > 0, done);
             }
+        }
+
+        /// <summary>
+        /// Harvest each ripe crop (pick it, as a player does), collect what it drops, and replant the spot with the
+        /// same crop's sapling from the seeds in the pack (with a cultivator, like a player). No seeds: it's left bare.
+        /// </summary>
+        private void UpdateFarm()
+        {
+            // A crop just picked: gather its drops for a moment, then replant where it stood.
+            if (_pickedTime >= 0f)
+            {
+                foreach (ItemDrop drop in new List<ItemDrop>(ItemDrop.s_instances))
+                {
+                    if (drop && Vector3.Distance(drop.transform.position, _pickedAt) < 3f)
+                    {
+                        string kind = CompanionInventory.PrefabName(drop.m_itemData);
+                        int before = _inventory.Count(kind);
+                        if (_inventory.TryPickup(drop))
+                        {
+                            _harvested.TryGetValue(kind, out int n);
+                            _harvested[kind] = n + Mathf.Max(1, _inventory.Count(kind) - before);
+                        }
+                    }
+                }
+                if (Time.time - _pickedTime < 2.5f)
+                {
+                    return;
+                }
+                _pickedTime = -1f;
+                Replant(_pickedKind, _pickedAt);
+                return;
+            }
+
+            Pickable crop = null;
+            while (_crops.Count > 0 && !crop)
+            {
+                crop = _crops.Peek();
+                if (!crop || !crop.m_nview || !crop.m_nview.IsValid() || !crop.CanBePicked())
+                {
+                    _crops.Dequeue();
+                    crop = null;
+                }
+            }
+            if (!crop)
+            {
+                var done = new JObject { ["task"] = Farm, ["harvested"] = JObject.FromObject(_harvested), ["replanted"] = _replanted };
+                if (_seedsMissing.Count > 0)
+                {
+                    done["no_seeds_for"] = new JArray(_seedsMissing);
+                }
+                _crops = null;
+                Complete(_harvested.Count > 0, done);
+                return;
+            }
+            if (_stepDeadline <= 0f)
+            {
+                _stepDeadline = Time.time + BuildStepTimeout / 2f;
+            }
+            if (!WalkTo(crop))
+            {
+                if (Time.time > _stepDeadline)
+                {
+                    _crops.Dequeue();
+                    _stepDeadline = 0f;
+                }
+                return;
+            }
+            _pickedAt = crop.transform.position;
+            _pickedKind = Utils.GetPrefabName(crop.gameObject);
+            crop.Interact(_character, false, false);
+            _pickedTime = Time.time;
+            _crops.Dequeue();
+            _stepDeadline = 0f;
+        }
+
+        private void Replant(string grownKind, Vector3 at)
+        {
+            if (grownKind == null || !_cropSaplings.TryGetValue(grownKind, out string sapling))
+            {
+                return;
+            }
+            Piece piece = PieceCatalog.Get(sapling);
+            if (!piece)
+            {
+                return;
+            }
+            if (Builder.Missing(new[] { sapling }, _inventory).Count > 0 || Builder.ToolFor(piece, _inventory) == null)
+            {
+                _seedsMissing.Add(sapling);
+                return;
+            }
+            ItemDrop.ItemData tool = Builder.ToolFor(piece, _inventory);
+            _character.GetComponent<CompanionAI>()?.PlaySwing(tool);
+            if (ZoneSystem.instance.GetGroundHeight(at, out float ground))
+            {
+                at.y = ground;
+            }
+            Builder.Place(piece, at, Quaternion.Euler(0f, UnityEngine.Random.Range(0f, 360f), 0f), CompanionState.GetMaster(Zdo), _inventory);
+            _replanted++;
         }
 
         /// <summary>

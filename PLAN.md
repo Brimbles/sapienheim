@@ -351,6 +351,7 @@ Builds on M5 (placement, blueprints, templates) and M6 (named places).
 
 ### M12 — Base keeper
 Make the offline simulation (M7) earn its keep.
+- [x] **Farming** (chore): `farm` harvests ripe crops (cultivator crops, from the Cultivator piece table via `PieceCatalog.Crops`) around a spot, collects the harvest and replants each spot with its sapling from the seeds in the pack (needs a cultivator). Headless: 3 carrots grown on an advanced clock, harvested and replanted. Not done: feeding tamed animals.
 - [x] **Tend fires** (first chore): `tend_fires` tops up player-built campfires, hearths, torches and braziers around a spot with each one's own fuel from the pack (one fuel RPC per unit, as a player adds it); reports fuel used and what it lacked. Headless: campfire 9 wood, torch 2 resin.
 - [ ] **Chores routine while players are away:** refuel fires, kilns and smelters, harvest and replant crops, repair damage (`repair_nearby`), feed tamed animals. Builds on M4's `refuel` / `load_smelter` ideas.
 - [x] **Corpse runs:** `fetch_gravestone` (master's by default): walks to the nearest of the player's gravestones (found by owner among all tombstone ZDOs, up to 5 km), empties it into its pack (each stack added before it's removed; what doesn't fit stays), then walks back to the owner and hands it all over (`give` of a list). If the owner is offline it keeps the items until asked. Headless: 15 items taken, gravestone despawned.

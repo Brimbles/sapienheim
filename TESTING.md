@@ -96,6 +96,9 @@ Each line in the server log starts with `Proactive:`. Turn it off with `Companio
 ## 4d6. Scouting
 - [ ] `@Alvar where is there copper?` / `@Alvar find me some raspberries and mark it`: he names the nearest spots in land you have explored, and with marking it appears on the map so `@Alvar travel to Copper 301m` works.
 
+## 4d7. Farming
+- [ ] With a cultivator and seeds in his pack: `@Alvar harvest the crops` once they are ripe: he picks them, collects the harvest and replants each spot; without seeds he says which he lacked.
+
 ## 4e. People and the day's tale
 - [ ] Log out for 30+ minutes after he's done a few jobs, then log back in: one greeting with a short "while you were away" of the highlights (not two greetings).
 - [ ] A friend joining for the first time gets a welcome and an introduction.

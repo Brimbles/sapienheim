@@ -642,9 +642,28 @@ async def scenario_find(r: Runner) -> None:
         r.results.append((thing, f"{res.error or 'ok'} unknown={d.get('unknown_prefabs')} nearest={[f['dist'] for f in d.get('found', [])]} objects={d.get('total_objects')}"))
 
 
+async def scenario_farm(r: Runner) -> None:
+    """Farming: plant 3 carrots with a cultivator (as the master), grow them on an advanced clock, then harvest and replant."""
+    s = await r.state()
+    here = s["self"]["pos"]
+    for item, qty in (("Cultivator", 1), ("CarrotSeeds", 6)):
+        await r.cmd("debug_give", item=item, qty=qty)
+    for i in range(3):  # cultivate the spot first: crops only grow on cultivated ground
+        spot = [here[0] - 6 - i * 1.0, here[2] - 6]
+        await r.cmd("debug_place", piece="cultivate_v2", pos=spot, as_master=True)
+        await r.cmd("debug_place", piece="sapling_carrot", pos=spot, as_master=True)
+    for _ in range(60):  # carrots take a few in-game hours
+        await r.conn.command("debug_advance_time", seconds=300)
+        await asyncio.sleep(0.3)
+    res = await r.cmd("farm", radius=15)
+    r.results.append(("ripe", f"{res.error or 'ok'} {res.data}"))
+    if res.ok:
+        await advance_until_done(r, "farm", res, step_s=1)
+
+
 SCENARIOS = {
     "m4": scenario_m4, "pieces": scenario_pieces, "build": scenario_build, "inspect": scenario_inspect,
-    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds, "buildportal": scenario_buildportal, "gravestone": scenario_gravestone, "guard": scenario_guard, "fires": scenario_fires, "items": scenario_items, "deposit": scenario_deposit, "tidy_chests": scenario_tidy_chests, "hold": scenario_hold, "sign": scenario_sign, "pieceinfo": scenario_pieceinfo, "stations": scenario_stations, "cookdebug": scenario_cookdebug, "collect": scenario_collect, "find": scenario_find,
+    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds, "buildportal": scenario_buildportal, "gravestone": scenario_gravestone, "guard": scenario_guard, "fires": scenario_fires, "items": scenario_items, "deposit": scenario_deposit, "tidy_chests": scenario_tidy_chests, "hold": scenario_hold, "sign": scenario_sign, "pieceinfo": scenario_pieceinfo, "stations": scenario_stations, "cookdebug": scenario_cookdebug, "collect": scenario_collect, "find": scenario_find, "farm": scenario_farm,
 }
 
 

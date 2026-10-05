@@ -626,6 +626,32 @@ namespace ValheimCompanion.Bridge
                     }
                     return found.Count > 0 ? null : "none_found_in_explored_land";
                 }
+                case "farm":
+                {
+                    Vector3 centre = companion.transform.position;
+                    if (args["x"] != null && args["z"] != null)
+                    {
+                        centre = new Vector3((float)args["x"], centre.y, (float)args["z"]);
+                    }
+                    float radius = Mathf.Clamp(args["radius"] != null ? (float)args["radius"] : 30f, 5f, 60f);
+                    var cropKinds = Building.PieceCatalog.Crops;
+                    long master = CompanionState.GetMaster(companion.ZDO);
+                    var ripe = UnityEngine.Object.FindObjectsByType<Pickable>(FindObjectsSortMode.None)
+                        .Where(p => p && p.m_nview && p.m_nview.IsValid() && cropKinds.ContainsKey(Utils.GetPrefabName(p.gameObject))
+                                    && p.CanBePicked() && Vector3.Distance(p.transform.position, centre) <= radius
+                                    && Building.Builder.WardAllows(p.transform.position, master))
+                        .OrderBy(p => Vector3.Distance(p.transform.position, centre)).ToList();
+                    if (ripe.Count == 0)
+                    {
+                        return "nothing_ripe";
+                    }
+                    data = new JObject
+                    {
+                        ["ripe"] = ripe.Count,
+                        ["has_cultivator"] = Building.Builder.FindTool(companion.Inventory, "Cultivator") != null,
+                    };
+                    return Queue(companion, args, "farm", () => companion.Tasks.CommandFarm(ripe, TaskId(args, cmdId)));
+                }
                 case "collect_output":
                 {
                     Vector3 centre = companion.transform.position;

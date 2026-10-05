@@ -10,7 +10,32 @@ namespace ValheimCompanion.Building
         private static Dictionary<string, Piece> s_pieces;
         private static Dictionary<string, string> s_tools;
 
-        /// <summary>The tool item (prefab name) a piece is built with: "Hammer" or "Hoe".</summary>
+        /// <summary>Crops: the grown (pickable) prefab -> the sapling piece the cultivator plants for it.</summary>
+        public static Dictionary<string, string> Crops
+        {
+            get
+            {
+                EnsureLoaded();
+                var crops = new Dictionary<string, string>();
+                foreach (var kv in s_pieces)
+                {
+                    Plant plant = kv.Value.GetComponent<Plant>();
+                    if (plant && s_tools[kv.Key] == "Cultivator")
+                    {
+                        foreach (GameObject grown in plant.m_grownPrefabs)
+                        {
+                            if (grown && !crops.ContainsKey(grown.name))
+                            {
+                                crops[grown.name] = kv.Key;
+                            }
+                        }
+                    }
+                }
+                return crops;
+            }
+        }
+
+        /// <summary>The tool item (prefab name) a piece is built with: "Hammer", "Hoe" or "Cultivator".</summary>
         public static string ToolFor(string prefab)
         {
             EnsureLoaded();
@@ -41,7 +66,7 @@ namespace ValheimCompanion.Building
             }
             s_pieces = new Dictionary<string, Piece>();
             s_tools = new Dictionary<string, string>();
-            foreach (string tool in new[] { "Hammer", "Hoe" })
+            foreach (string tool in new[] { "Hammer", "Hoe", "Cultivator" })
             {
                 GameObject item = ObjectDB.instance ? ObjectDB.instance.GetItemPrefab(tool) : null;
                 PieceTable table = item ? item.GetComponent<ItemDrop>().m_itemData.m_shared.m_buildPieces : null;
