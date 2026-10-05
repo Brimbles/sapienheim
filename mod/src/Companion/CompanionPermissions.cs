@@ -33,7 +33,7 @@ namespace ValheimCompanion.Companion
             return "friend";
         }
 
-        private static HashSet<long> FriendIds(ZDO companion) =>
+        internal static HashSet<long> FriendIds(ZDO companion) =>
             new HashSet<long>(companion.GetString(KeyFriendIds).Split(',').Select(v => long.TryParse(v, out long id) ? id : 0).Where(id => id != 0));
 
         private static void LearnFriendId(ZDO companion, long playerId)

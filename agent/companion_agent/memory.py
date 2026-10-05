@@ -84,6 +84,12 @@ class Memory:
         self.data["places"][name.strip().lower()] = {"name": name.strip(), "x": round(x, 1), "z": round(z, 1)}
         self.save()
 
+    def forget_place(self, name: str) -> bool:
+        if self.data["places"].pop(name.strip().lower(), None) is None:
+            return False
+        self.save()
+        return True
+
     def place(self, name: str) -> tuple[float, float] | None:
         p = self.data["places"].get(name.strip().lower())
         return (p["x"], p["z"]) if p else None

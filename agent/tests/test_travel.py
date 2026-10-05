@@ -91,6 +91,17 @@ def test_naming_a_place_puts_it_on_the_map():
     assert conn.sent[-1] == ("set_places", {"places": [{"name": "Testville", "x": 500.0, "z": 600.0}]})
 
 
+def test_tearing_down_a_named_place_forgets_it_and_its_pin():
+    conn = Conn((0, 0), [])
+    b = Brain(conn, client=None)
+    b.memory.set_place("Testville", 500.0, 600.0)
+    block = SimpleNamespace(type="tool_use", id="t1", name="tear_down", input={"around": "testville", "confirm": True})
+    asyncio.run(b._execute(block, [], []))
+    assert conn.sent[0] == ("tear_down", {"x": 500.0, "z": 600.0, "confirm": True})
+    assert b.memory.place("testville") is None
+    assert conn.sent[-1] == ("set_places", {"places": []})
+
+
 def test_named_build_becomes_a_place():
     conn = Conn((0, 0), [])
     b = Brain(conn, client=None)

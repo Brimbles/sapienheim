@@ -133,36 +133,11 @@ namespace ValheimCompanion.Building
             centre = near;
             yaw = 0f;
             width = depth = pieces = 0;
-            var all = new List<Piece>();
-            Piece.GetAllPiecesInRadius(near, search + 40f, all);
-            all.RemoveAll(p => !p || !p.IsPlacedByPlayer() || p.GetComponent<TerrainOp>()
-                               || Kinds.Values.Any(k => Utils.GetPrefabName(p.gameObject) == k.Piece || Utils.GetPrefabName(p.gameObject) == k.Gate));
-            Piece seed = null;
-            float best = search;
-            foreach (Piece p in all)
-            {
-                float d = Flat(p.transform.position - near);
-                if (d < best)
-                {
-                    best = d;
-                    seed = p;
-                }
-            }
-            if (!seed)
+            List<Piece> cluster = FindBuilding(near, search, p =>
+                !Kinds.Values.Any(k => Utils.GetPrefabName(p.gameObject) == k.Piece || Utils.GetPrefabName(p.gameObject) == k.Gate));
+            if (cluster.Count == 0)
             {
                 return false;
-            }
-            // Everything joined to it: pieces within 3 m of one already found.
-            var cluster = new List<Piece> { seed };
-            for (int i = 0; i < cluster.Count; i++)
-            {
-                for (int k = all.Count - 1; k >= 0; k--)
-                {
-                    if (Flat(all[k].transform.position - cluster[i].transform.position) <= 3f && !cluster.Contains(all[k]))
-                    {
-                        cluster.Add(all[k]);
-                    }
-                }
             }
             // Line up with the building: the most common piece heading, folded into 0-90°.
             var votes = new Dictionary<int, int>();
@@ -208,6 +183,49 @@ namespace ValheimCompanion.Building
             depth = Mathf.CeilToInt((max.y - min.y + 2f * margin) / 2f) * 2;
             pieces = cluster.Count;
             return true;
+        }
+
+        /// <summary>
+        /// The building nearest <paramref name="near"/> (within <paramref name="search"/> m): a player-built piece and
+        /// everything joined to it, i.e. within 3 m of a piece already found, among the pieces <paramref name="filter"/>
+        /// accepts. Terrain pieces (paths, levelling) are never part of a building. Empty if there's none.
+        /// </summary>
+        public static List<Piece> FindBuilding(Vector3 near, float search, System.Func<Piece, bool> filter = null)
+        {
+            var all = new List<Piece>();
+            Piece.GetAllPiecesInRadius(near, search + 60f, all);
+            all.RemoveAll(p => !p || !p.IsPlacedByPlayer() || p.GetComponent<TerrainOp>() || p.GetComponent<TerrainModifier>()
+                               || (filter != null && !filter(p)));
+            Piece seed = null;
+            float best = search;
+            foreach (Piece p in all)
+            {
+                float d = Flat(p.transform.position - near);
+                if (d < best)
+                {
+                    best = d;
+                    seed = p;
+                }
+            }
+            var cluster = new List<Piece>();
+            if (!seed)
+            {
+                return cluster;
+            }
+            cluster.Add(seed);
+            var found = new HashSet<Piece> { seed };
+            for (int i = 0; i < cluster.Count; i++)
+            {
+                for (int k = all.Count - 1; k >= 0; k--)
+                {
+                    if (!found.Contains(all[k]) && Vector3.Distance(all[k].transform.position, cluster[i].transform.position) <= 3f)
+                    {
+                        found.Add(all[k]);
+                        cluster.Add(all[k]);
+                    }
+                }
+            }
+            return cluster;
         }
 
         private static float Flat(Vector3 v) => new Vector2(v.x, v.z).magnitude;

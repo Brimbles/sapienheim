@@ -315,9 +315,35 @@ async def scenario_hut(r: Runner) -> None:
     await r.cmd("save_world")
 
 
+async def scenario_teardown(r: Runner) -> None:
+    """Tear down the building at x z (ask, then confirm), collect the materials, rebuild a hut there: scenario.py teardown x z."""
+    x, z = float(sys.argv[2]), float(sys.argv[3])
+    await r.task("walk there", "go_to", x=x, z=z)
+    ask = await r.cmd("tear_down", x=x, z=z)
+    r.results.append(("tear_down without confirm", f"{ask.error} {ask.data}"))
+    if ask.error != "needs_confirmation":
+        return
+    await r.task("tear it down (confirmed)", "tear_down", x=x, z=z, confirm=True)
+    left = await r.conn.command("pieces_near", pos=[x, 40.0, z], radius=10)
+    mine = [p for p in (left.data or {}).get("pieces", []) if p["creator"] != 0]
+    r.results.append(("pieces left within 10 m", str(len(mine))))
+    await r.task("pick up the materials", "pick_up", radius=15)
+    s = await r.state()
+    have = {i["item"]: i["qty"] for i in s.get("self", {}).get("inventory", [])}
+    r.results.append(("wood after pick-up", str(have.get("Wood", 0))))
+    t0 = time.monotonic()
+    res = await r.cmd("build", template="hut", width=3)
+    if res.ok:
+        await r.task_wait("rebuild a hut (levelling)", res)
+        r.results.append(("  hut build time", f"{time.monotonic() - t0:.0f} s, plan {json.dumps(res.data)}"))
+    else:
+        r.results.append(("rebuild", f"rejected: {res.error} {res.data}"))
+    await r.cmd("save_world")
+
+
 SCENARIOS = {
     "m4": scenario_m4, "pieces": scenario_pieces, "build": scenario_build, "inspect": scenario_inspect,
-    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut,
+    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown,
 }
 
 

@@ -279,8 +279,8 @@ def test_only_the_master_gets_set_friend():
         await Brain(Conn(), client).on_chat({"player": "X", "text": "hi", "role": role, "can_command": True})
         return {t["name"] for t in client.calls[0]["tools"]}
 
-    assert "set_friend" in asyncio.run(offered("master"))
-    assert "set_friend" not in asyncio.run(offered("friend"))
+    assert {"set_friend", "tear_down"} <= asyncio.run(offered("master"))
+    assert not {"set_friend", "tear_down"} & asyncio.run(offered("friend"))
 
 
 def test_history_carries_previous_exchange():

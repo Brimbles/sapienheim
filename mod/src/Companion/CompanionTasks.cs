@@ -45,6 +45,7 @@ namespace ValheimCompanion.Companion
         public const string Build = "build";
         public const string UsePortal = "portal";
         public const string Repair = "repair";
+        public const string TearDown = "tear_down";
 
         private const float ArriveDistance = 3.5f;
         private const float GoToTimeout = 180f;
@@ -60,6 +61,7 @@ namespace ValheimCompanion.Companion
         private const float StationTimeout = 120f;
         private const float BuildReach = 5f;
         private const float PlaceInterval = 1.2f;
+        private const float LevelSwingInterval = 1.6f;
         private const float BuildStepTimeout = 60f;
         private const float PortalReach = 2.5f;
         private const float PortalWalkTimeout = 240f;
@@ -142,6 +144,11 @@ namespace ValheimCompanion.Companion
         private float _lastProgress;
         private int _detours;
 
+        // tear down
+        private Queue<Piece> _teardownPlan;
+        private int _removed;
+        private Dictionary<string, int> _teardownSkipped;
+
         // portal
         private PortalNetwork.Portal? _portal;
         private bool _inTransit;
@@ -178,6 +185,7 @@ namespace ValheimCompanion.Companion
                     case Build:
                     case UsePortal:
                     case Repair:
+                    case TearDown:
                         return task;
                     default:
                         return Follow;
@@ -214,6 +222,10 @@ namespace ValheimCompanion.Companion
             if (Current == Build && _buildPlan != null)
             {
                 return new JObject { ["build"] = _buildName, ["placed"] = _buildPlaced, ["total"] = _buildTotal };
+            }
+            if (Current == TearDown && _teardownPlan != null)
+            {
+                return new JObject { ["removed"] = _removed, ["remaining"] = _teardownPlan.Count };
             }
             if (Current == Repair && _repairPlan != null)
             {
@@ -372,6 +384,16 @@ namespace ValheimCompanion.Companion
             SetTask(Repair, taskId);
         }
 
+        public void CommandTearDown(List<Piece> pieces, string taskId)
+        {
+            _teardownPlan = new Queue<Piece>(pieces);
+            _removed = 0;
+            _teardownSkipped = new Dictionary<string, int>();
+            _nextPlace = 0f;
+            _stepDeadline = 0f;
+            SetTask(TearDown, taskId);
+        }
+
         public void CommandUsePortal(PortalNetwork.Portal portal, string taskId)
         {
             _portal = portal;
@@ -448,6 +470,9 @@ namespace ValheimCompanion.Companion
                 case Repair:
                     UpdateRepair();
                     break;
+                case TearDown:
+                    UpdateTearDown();
+                    break;
             }
         }
 
@@ -467,7 +492,8 @@ namespace ValheimCompanion.Companion
                         || (task == Craft && !_recipe)
                         || (task == Build && (_buildPlan == null || _buildPlan.Count == 0))
                         || (task == UsePortal && _portal == null)
-                        || (task == Repair && _repairPlan == null);
+                        || (task == Repair && _repairPlan == null)
+                        || (task == TearDown && _teardownPlan == null);
             if (lost)
             {
                 CompanionState.SetTask(Zdo, Follow);
@@ -1127,7 +1153,14 @@ namespace ValheimCompanion.Companion
             _stepDeadline = 0f;
         }
 
-        /// <summary>Level a square of the site: walk to it and work it with the hoe.</summary>
+        private int _levelSwings = -1; // swings this square needs (-1: not worked out yet)
+        private int _levelSwung;
+        private float _levelFrom;
+
+        /// <summary>
+        /// Level a square of the site: walk to it and work it with the hoe, a swing at a time. The more earth to move,
+        /// the more swings (2 to 10), and each swing takes the ground a step closer to the floor height.
+        /// </summary>
         private void UpdateLevel(BuildStep step)
         {
             if (_stepDeadline <= 0f)
@@ -1181,10 +1214,130 @@ namespace ValheimCompanion.Companion
             {
                 _character.SetLookDir(delta.normalized);
             }
+            if (_levelSwings < 0)
+            {
+                // How much earth: the average and the furthest the ground is from the target, over the square.
+                float sum = 0f, worst = 0f;
+                int n = 0;
+                foreach (Vector2 o in new[] { Vector2.zero, new Vector2(-1.5f, -1.5f), new Vector2(1.5f, -1.5f), new Vector2(-1.5f, 1.5f), new Vector2(1.5f, 1.5f) })
+                {
+                    if (ZoneSystem.instance.GetGroundHeight(step.Pos + new Vector3(o.x, 0f, o.y), out float h))
+                    {
+                        sum += h;
+                        worst = Mathf.Max(worst, Mathf.Abs(h - step.Pos.y));
+                        n++;
+                    }
+                }
+                _levelFrom = n > 0 ? sum / n : step.Pos.y;
+                _levelSwings = Mathf.Clamp(2 + Mathf.CeilToInt(worst / 0.4f), 2, 10);
+                _levelSwung = 0;
+            }
             _character.GetComponent<CompanionAI>()?.PlaySwing(hoe);
-            LevelGround.Apply(step.Pos);
-            _buildPlan.Dequeue();
+            _levelSwung++;
+            Vector3 at = step.Pos;
+            at.y = Mathf.Lerp(_levelFrom, step.Pos.y, _levelSwung / (float)_levelSwings);
+            LevelGround.Apply(at);
+            _nextPlace = Time.time + LevelSwingInterval;
+            _stepDeadline = Time.time + BuildStepTimeout;
+            if (_levelSwung >= _levelSwings)
+            {
+                _buildPlan.Dequeue();
+                _levelSwings = -1;
+                _stepDeadline = 0f;
+            }
+        }
+
+        /// <summary>Walk up to each piece and take it down with the hammer, top down; its materials drop where it stood.</summary>
+        private void UpdateTearDown()
+        {
+            Piece piece = null;
+            while (_teardownPlan.Count > 0 && !piece)
+            {
+                piece = _teardownPlan.Peek();
+                if (!piece || !piece.m_nview || !piece.m_nview.IsValid())
+                {
+                    _teardownPlan.Dequeue(); // already gone (fell down with something else)
+                    piece = null;
+                }
+            }
+            if (!piece)
+            {
+                var done = new JObject { ["task"] = TearDown, ["removed"] = _removed, ["materials"] = "dropped where each piece stood" };
+                if (_teardownSkipped.Count > 0)
+                {
+                    done["skipped"] = JObject.FromObject(_teardownSkipped);
+                }
+                _teardownPlan = null;
+                Complete(true, done);
+                return;
+            }
+            ItemDrop.ItemData hammer = Builder.FindHammer(_inventory);
+            if (hammer == null)
+            {
+                _teardownPlan = null;
+                Complete(false, new JObject { ["task"] = TearDown, ["reason"] = "need_hammer", ["removed"] = _removed });
+                return;
+            }
+
+            if (!_waypoint)
+            {
+                _waypoint = new GameObject("CompanionWaypoint");
+            }
+            Vector3 stand = piece.transform.position;
+            if (ZoneSystem.instance.GetGroundHeight(stand, out float ground))
+            {
+                stand.y = ground;
+            }
+            _waypoint.transform.position = stand;
+            if (_ai.GetFollowTarget() != _waypoint)
+            {
+                _ai.SetFollowTarget(_waypoint);
+            }
+            if (_stepDeadline <= 0f)
+            {
+                _stepDeadline = Time.time + BuildStepTimeout / 2f;
+            }
+            Vector3 delta = piece.transform.position - _character.transform.position;
+            delta.y = 0f;
+            if (delta.magnitude > BuildReach)
+            {
+                if (Time.time > _stepDeadline)
+                {
+                    SkipTearDown("cant_reach");
+                }
+                return;
+            }
+            if (Time.time < _nextPlace)
+            {
+                return;
+            }
+            string why = Teardown.Check(piece, _character.transform.position);
+            if (why != null)
+            {
+                SkipTearDown(why);
+                return;
+            }
+            if (!_character.IsItemEquiped(hammer))
+            {
+                _character.EquipItem(hammer);
+            }
+            if (delta.sqrMagnitude > 0.01f)
+            {
+                _character.SetLookDir(delta.normalized);
+            }
+            _character.GetComponent<CompanionAI>()?.PlaySwing(hammer);
+            Teardown.Remove(piece);
+            _teardownPlan.Dequeue();
+            _removed++;
             _nextPlace = Time.time + PlaceInterval;
+            _stepDeadline = 0f;
+        }
+
+        private void SkipTearDown(string reason)
+        {
+            _teardownPlan.Dequeue();
+            _teardownSkipped.TryGetValue(reason, out int n);
+            _teardownSkipped[reason] = n + 1;
             _stepDeadline = 0f;
         }
 

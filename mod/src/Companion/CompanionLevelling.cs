@@ -8,7 +8,7 @@ namespace ValheimCompanion.Companion
     /// <summary>
     /// Owner only: keeps the companion level with its master, so it doesn't need micromanaging.
     /// <list type="bullet">
-    /// <item><b>Level</b> (damage ×(1 + 0.5 per level above 1), stars over its head): from bosses defeated.</item>
+    /// <item><b>Level</b> (stars over its head, and damage per hit, see <see cref="HitDamage"/>): from bosses defeated.</item>
     /// <item><b>Max health</b>: the master's max health (food) × 2.5 + 50 per boss, never below the body's own.</item>
     /// <item><b>Armour</b>: the master's equipped armour total, applied to incoming hits.</item>
     /// </list>
@@ -42,6 +42,13 @@ namespace ValheimCompanion.Companion
         }
 
         private ZDO Zdo => _nview.GetZDO();
+
+        // Damage per hit by level (1 + bosses defeated), roughly what a player of that stage does: a club in the
+        // Meadows, bronze after Eikthyr, iron, silver, black metal, then Mistlands gear. Times Companion.DamageScale.
+        private static readonly float[] HitDamageByLevel = { 18f, 32f, 48f, 65f, 85f, 110f };
+
+        public static float HitDamage(int level) =>
+            HitDamageByLevel[Mathf.Clamp(level, 1, HitDamageByLevel.Length) - 1] * Mathf.Max(0f, Plugin.DamageScale.Value);
 
         public int Level => Zdo.GetInt(KeyLevel, 1);
         public float Armor => Zdo.GetFloat(KeyArmor, 0f);

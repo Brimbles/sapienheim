@@ -305,14 +305,20 @@ namespace ValheimCompanion.Companion
 
             private static bool IsHostileTowardUs(Character animal, Character companion)
             {
-                BaseAI ai = animal.GetBaseAI();
-                Character target = ai ? ai.GetTargetCreature() : null;
+                // Prey (deer, hares...) run an AnimalAI, which can't attack: its "target" is what it's fleeing from.
+                // Only a MonsterAI animal (a boar that's been provoked, say) going for us or a player is a threat.
+                if (!(animal.GetBaseAI() is MonsterAI ai))
+                {
+                    return false;
+                }
+                Character target = ai.GetTargetCreature();
                 return target && (target == companion || target.IsPlayer());
             }
         }
 
-        // Spike data for M1: do the companion's attacks land when the server simulates it headless?
-        // Character.Damage runs on the attacker's side, before the RPC to the target's owner.
+        // The companion's hits on creatures: scaled to its level (see CompanionLevelling.HitDamage), since the Dverger
+        // body's own weapons hit far harder than an early player, then logged. Character.Damage runs on the
+        // attacker's side, before the RPC to the target's owner.
         [HarmonyLib.HarmonyPatch(typeof(Character), nameof(Character.Damage))]
         private static class DamageDealtLog
         {
@@ -321,6 +327,11 @@ namespace ValheimCompanion.Companion
                 Character attacker = hit.GetAttacker();
                 if (attacker && attacker.GetComponent<CompanionAI>())
                 {
+                    float total = hit.GetTotalDamage();
+                    if (total > 0f)
+                    {
+                        hit.ApplyModifier(CompanionLevelling.HitDamage(attacker.GetLevel()) * Random.Range(0.9f, 1.1f) / total);
+                    }
                     Jotunn.Logger.LogInfo($"[hit] {attacker.m_name} hit {__instance.m_name} for {hit.GetTotalDamage():F0} " +
                                           $"({__instance.GetHealth():F0}hp before)");
                 }

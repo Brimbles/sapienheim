@@ -29,6 +29,7 @@ namespace ValheimCompanion
         public static ConfigEntry<string> MapMarker;
         public static ConfigEntry<bool> Levelling;
         public static ConfigEntry<bool> Proactive;
+        public static ConfigEntry<float> DamageScale;
         public static ConfigEntry<string> Commanders;
         public static ConfigEntry<string> Friends;
         public static ConfigEntry<string> ChestAccess;
@@ -58,6 +59,8 @@ namespace ValheimCompanion
                 new AcceptableValueList<string>("own", "any")));
             Proactive = Config.Bind("Companion", "Proactive", true,
                 "Speak up unprompted at dusk, when badly hurt, after a long idle spell, and when the master comes back (server only).");
+            DamageScale = Config.Bind("Companion", "DamageScale", 1f,
+                "Multiplier on the companion's damage per hit (18 at level 1, rising to 110 at level 6) (server only).");
             Levelling = Config.Bind("Companion", "Levelling", true,
                 "Scale the companion with its master: level (damage) from bosses defeated, max health from the master's, armour from theirs (server only).");
             MapMarker = Config.Bind("Companion", "MapMarker", "everyone", new ConfigDescription(

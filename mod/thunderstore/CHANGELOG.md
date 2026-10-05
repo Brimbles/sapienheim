@@ -8,5 +8,7 @@ First test release.
 - Gather (wood, stone, pickables) with tools, respecting wards; chests; crafting at stations.
 - Build from templates: a hut (3-5 x 4 floor tiles, two beds, levels the ground first if it has a hoe), wall and fence rings fitted around a building, or lines. Repair nearby buildings, use portals, open doors.
 - Named places (settlements it built, spots it was told to remember) show as pins on everyone's map.
+- Tear down buildings on its master's orders (a building, everything within a radius, or only one material), always after asking.
+- Damage per hit grows with bosses defeated (18 at the start, 110 at the end), tunable with `Companion.DamageScale`.
 - Keeps its inventory through death, restarts and going off duty; levels with its master; map marker.
 - Permissions: who may command it, and whose chests it may use.

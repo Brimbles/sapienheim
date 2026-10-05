@@ -34,6 +34,8 @@ Things that can't be tested headlessly because they need a player in the world. 
 
 - [ ] Stand by a hut and `@Alvar put a fence around the hut`: the ring is fitted to the hut (workbench included) with about 3 m to spare, lined up with it, gate facing you. Try `@Alvar put a fence around Testville` from elsewhere too. Then `@Alvar build a palisade wall in a line here`. Gaps (trees, rocks) are reported, not built through.
 - Note: headless tests left two new huts. One at about (205, −266) is levelled, with beds, a workbench inside and a fitted fence ring (30/30 standing). One at about (92, −303) was built before levelling worked properly. A test pin "Scenario Hut" may show until the agent restarts; your own named places replace it.
+- [ ] **Tearing down:** `@Alvar tear down Testville`, `@Alvar tear down everything within 10 meters of you`, `@Alvar tear down that stone tower` (stand near it). He first says what would come down and asks; only after you say yes does he start, top down, and the materials drop where each piece stood. He refuses other players' buildings. Torn-down named places disappear from the map.
+- [ ] Levelling takes a while now: several hoe swings per patch, more on rough ground, and the ground comes down or up in steps.
 - [ ] Hit a few of your walls with a weapon, then `@Alvar repair the base`. He walks round with the hammer and fixes them.
 - Note: the headless test left a **fence ring with a gate** (and three stakewall sections inside it) at about (141, −313), 40 m north-east of the test hut. Headlessly: 20 of 20 fence pieces standing, 4 gaps for trees and rocks, 24 of 24 damaged pieces repaired.
 
@@ -46,6 +48,7 @@ Things that can't be tested headlessly because they need a player in the world. 
 - Note: the headless tests left **test portals** (tags `sapien-test…`) next to the test hut at about (115, −345), and their partners around (170, −284). Feel free to remove them.
 
 ## 4c. Levelling (M4.5)
+- [ ] With no bosses beaten he hits for about 18, so a greyling (20 HP) takes two hits. It rises with each boss (32, 48, 65, 85, 110). `Companion.DamageScale` in the server config tunes it.
 - [ ] Stand near Alvar for a minute. With no bosses beaten he stays **level 1**, and his max health becomes about **2.5 × yours**, never below 350. With armour on, the dashboard (or `@Alvar how tough are you?`) shows his armour matching your total.
 - [ ] After a boss kill he levels up (stars over his head), and boasts about it.
 

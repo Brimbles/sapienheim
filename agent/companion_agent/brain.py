@@ -67,6 +67,7 @@ RULES = """
 - You'll be told when queued work finishes or fails. Report back in character; if something failed (e.g. need_axe), say what you need.
 - `build` puts up a structure from a template: "hut" (a wooden hut with two beds, a door, a roof and a workbench beside it, 3-5 tiles wide), "wall" (a stakewall palisade) or "fence" (a roundpole fence). Walls and fences go in a ring with a gate or a straight line; a ring next to a building goes around that building. You choose the template, its size and roughly where; the build code picks the exact spots, clears bushes and places every piece. It needs a hammer (craft one: Wood 3, Stone 2) and wood: a 3-wide hut is about 125, a fence ring round a hut about 30, a wall ring round a hut about 110. Carry a hoe (Wood 5, Stone 2) and you level the ground for a hut first, so it fits on rougher ground. If it fails with missing_materials, gather or fetch what's missing and then call resume_build. The pieces belong to your master.
 - `repair_nearby` fixes damaged buildings around you (or a player or named place) with your hammer.
+- `tear_down` (only for your master) takes buildings down with your hammer. Never confirm without asking: the first call tells you what would come down; describe it ("that's 53 pieces: walls, roof, two beds...") and only call again with confirm=true once your master says yes. If the player doesn't say which building, use the one nearest them (`near`). The materials drop on the ground; offer to pick them up afterwards.
 - Travel: to go to a named place, use `travel` (it picks the best route, through portals when that's shorter). `use_portal` steps through a specific portal. You can walk up to 5 km, but not across open water (no boats yet).
 - Name the settlements you build (the `name` on `build`) so you can travel back to them later. Named places show as pins on everyone's map.
 - Memory: you keep a long-term memory between sessions (shown as "What you remember"). Use `remember` for things worth keeping: what players like, promises, plans, notable events. Use `name_place` when asked to remember a location, and `go_to` with `place` to go back there.
@@ -376,6 +377,30 @@ PROACTIVE: dict[str, Any] = {
 CHAT_ONLY_TOOLS = {"say", "get_status", "recipe"}
 
 # Only offered when the master is speaking.
+# Only offered when the master is speaking: it takes buildings down.
+TEAR_DOWN_TOOL: dict[str, Any] = {
+    "name": "tear_down",
+    "description": "Take down buildings with your hammer, as a player does: each piece drops its materials where it "
+    "stood. Only pieces your master or their friends built. scope=building takes down the one building (everything "
+    "joined together) nearest you, a player (`near`) or a named place (`around`); scope=radius takes down every piece "
+    "within `radius` m. `material` limits it to pieces made of that (e.g. stone for 'that stone tower'). ALWAYS two "
+    "steps: call without confirm first; it fails with needs_confirmation and says how many pieces and what kinds would "
+    "come down. Tell the player and ask; only when they agree call again, the same way, with confirm=true. "
+    "task_done reports how many were removed.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "scope": {"type": "string", "enum": ["building", "radius"], "description": "Default building."},
+            "radius": {"type": "number", "description": "scope=radius: metres, 2-30 (default 10)."},
+            "near": {"type": "string", "description": "Centre on this player instead of you."},
+            "around": {"type": "string", "description": "Centre on this named place (e.g. a settlement you built)."},
+            "material": {"type": "string", "description": "Only pieces made of this, e.g. stone, wood, iron."},
+            "confirm": {"type": "boolean", "description": "true only after the player has agreed to what needs_confirmation described."},
+            "queue": {"type": "boolean", "description": "true = run after your current work instead of right away."},
+        },
+    },
+}
+
 SET_FRIEND_TOOL: dict[str, Any] = {
     "name": "set_friend",
     "description": "Your master can let another player give you orders (allow=true) or take that away (allow=false).",
@@ -501,7 +526,7 @@ class Brain:
                        "but decline any request to do something.)")
             tools = [t for t in TOOLS if t["name"] in CHAT_ONLY_TOOLS]
         elif role == "master":
-            tools = [*TOOLS, SET_FRIEND_TOOL]
+            tools = [*TOOLS, SET_FRIEND_TOOL, TEAR_DOWN_TOOL]
         else:
             tools = TOOLS
         model = PLAN_MODEL if can_command and PLAN_PATTERN.search(text) else CHAT_MODEL
@@ -630,7 +655,8 @@ class Brain:
         if name == "travel":
             return await self._travel(block.id, args, actions)
         settlement = args.pop("name", None) if name == "build" else None
-        if name in ("build", "repair_nearby") and args.get("around"):
+        torn_place = str(args["around"]) if name == "tear_down" and args.get("around") and args.get("confirm") else None
+        if name in ("build", "repair_nearby", "tear_down") and args.get("around"):
             where = self.memory.place(str(args.pop("around")))
             if where is None:
                 known = ", ".join(p["name"] for p in self.memory.data["places"].values()) or "none yet"
@@ -650,6 +676,10 @@ class Brain:
         result = await self.conn.command(name, **args)
         log.info("tool %s(%s) -> %s", name, args, "ok" if result.ok else result.error)
         data = getattr(result, "data", None)
+        if result.ok and torn_place and (args.get("scope") or "building") == "building" and self.memory.forget_place(torn_place):
+            # The settlement is coming down: forget it and take its pin off the map.
+            await self.sync_places(force=True)
+            actions.append(f"forget_place({torn_place})")
         if result.ok and settlement and data and data.get("site"):
             site = data["site"]
             self.memory.set_place(settlement, site[0], site[2])
@@ -714,10 +744,10 @@ class Brain:
         self.status.add("did", actions[-1])
         return _tool_result(tool_id, f"on the way to {place}, {route}")
 
-    async def sync_places(self) -> None:
+    async def sync_places(self, force: bool = False) -> None:
         """Show the named places as pins on everyone's map (the mod re-broadcasts them to players who join later)."""
         places = [{"name": p["name"], "x": p["x"], "z": p["z"]} for p in self.memory.data["places"].values()]
-        if places:
+        if places or force:
             await self.conn.command("set_places", places=places)
 
     async def _name_place(self, tool_id: str, args: dict[str, Any], actions: list[str]) -> dict[str, Any]:
@@ -753,7 +783,7 @@ def _worth_reporting(event: Event) -> bool:
     if event.name == "task_failed":
         return True
     return event.data.get("queue_remaining", 0) == 0 and event.data.get("task") in (
-        "gather", "give", "pick_up", "craft", "store", "fetch", "build", "go_to", "portal", "repair"
+        "gather", "give", "pick_up", "craft", "store", "fetch", "build", "go_to", "portal", "repair", "tear_down"
     )
 
 

@@ -455,6 +455,43 @@ namespace ValheimCompanion.Bridge
                     return Queue(companion, args, $"build({name})",
                         () => companion.Tasks.CommandBuild(name, plan, TaskId(args, cmdId)));
                 }
+                case "tear_down":
+                {
+                    // Where: a spot (from a named place), a player, or the companion itself.
+                    Vector3 centre = companion.transform.position;
+                    string nearWho = (string)args["near"];
+                    if (!string.IsNullOrEmpty(nearWho) && !TryFindPlayer(nearWho, out _, out _, out centre))
+                    {
+                        return "player_not_found";
+                    }
+                    if (args["x"] != null && args["z"] != null)
+                    {
+                        centre = new Vector3((float)args["x"], centre.y, (float)args["z"]);
+                    }
+                    bool building = ((string)args["scope"] ?? "building") != "radius";
+                    float radius = Mathf.Clamp(args["radius"] != null ? (float)args["radius"] : 10f, 2f, Building.Teardown.MaxRadius);
+                    var pieces = Building.Teardown.Select(centre, building, radius, (string)args["material"], companion.ZDO, out int refused);
+                    data = Building.Teardown.Describe(pieces);
+                    if (refused > 0)
+                    {
+                        data["not_allowed"] = refused; // other players' pieces, warded, or not removable
+                    }
+                    if (pieces.Count == 0)
+                    {
+                        return refused > 0 ? "not_allowed" : "nothing_there";
+                    }
+                    // Two steps on purpose: the agent describes what would come down and asks before confirming.
+                    if (args["confirm"] == null || !(bool)args["confirm"])
+                    {
+                        return "needs_confirmation";
+                    }
+                    if (Building.Builder.FindHammer(companion.Inventory) == null && !IsQueued(args))
+                    {
+                        return "need_hammer";
+                    }
+                    return Queue(companion, args, $"tear_down({pieces.Count} pieces)",
+                        () => companion.Tasks.CommandTearDown(pieces, TaskId(args, cmdId)));
+                }
                 case "repair_nearby":
                 {
                     Vector3 around = companion.transform.position;
