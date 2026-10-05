@@ -39,6 +39,17 @@ namespace ValheimCompanion.Companion
             {
                 _character.UnequipAllItems(); // drop references to the default items Start() handed out
                 Inventory.Load(new ZPackage(saved));
+                if (CompanionPrefab.IsViking)
+                {
+                    // The Dverger body's own gear (crossbow, suit, hair) only works on a Dverger.
+                    foreach (ItemDrop.ItemData item in new System.Collections.Generic.List<ItemDrop.ItemData>(Inventory.GetAllItems()))
+                    {
+                        if (PrefabName(item).StartsWith("Dverger"))
+                        {
+                            Inventory.RemoveItem(item);
+                        }
+                    }
+                }
                 foreach (ItemDrop.ItemData item in Inventory.GetAllItems())
                 {
                     if (item.m_equipped)

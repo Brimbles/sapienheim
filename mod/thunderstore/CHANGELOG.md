@@ -2,7 +2,7 @@
 
 ## 0.1.0
 First test release.
-- Companion NPC (Dverger body, configurable name), tame from birth, simulated by the dedicated server even with nobody nearby.
+- Companion NPC on the player model (a configurable viking: hair, beard, colours, outfit and a bigger chest and arms; or the Dverger body), configurable name, tame from birth, simulated by the dedicated server even with nobody nearby.
 - Chat with it (`@Name ...` or within 10 m). Orders go to an external agent that uses the Claude API.
 - Follow, stay, go to (up to 5 km, in legs), fight (interrupts other work), pick up, give.
 - Gather (wood, stone, pickables) with tools, respecting wards; chests; crafting at stations.

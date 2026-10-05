@@ -47,6 +47,11 @@ Things that can't be tested headlessly because they need a player in the world. 
 - [ ] Shut him in the hut and call him: he opens the door (or steps through the doorway) to come out.
 - Note: the headless tests left **test portals** (tags `sapien-test…`) next to the test hut at about (115, −345), and their partners around (170, −284). Feel free to remove them.
 
+## 4b3. His new body (restart your client first)
+- [ ] Alvar is now a **viking on the player model**: long dark hair, no beard, tanned, bare-chested in a wolf cape and rag leggings, with a big chest and arms on normal legs. Check the head and hands look normal size, and nothing looks stretched when he runs, swings or climbs.
+- [ ] Tune him in the server config's `[Look]` section, then restart the server: `Hair` (Hair1-Hair38), `Beard` (Beard1-Beard26 or BeardNone), `HairColour`, `SkinTone`, `Cape`, `Legs`, `Chest`, `Arms`, `Height`. `Body = dverger` brings the old look back.
+- [ ] He swings axes, pickaxes, the hammer and weapons like a player now; check chopping, mining, building and a fight.
+
 ## 4c. Levelling (M4.5)
 - [ ] With no bosses beaten he hits for about 18, so a greyling (20 HP) takes two hits. It rises with each boss (32, 48, 65, 85, 110). `Companion.DamageScale` in the server config tunes it.
 - [ ] Stand near Alvar for a minute. With no bosses beaten he stays **level 1**, and his max health becomes about **2.5 × yours**, never below 350. With armour on, the dashboard (or `@Alvar how tough are you?`) shows his armour matching your total.

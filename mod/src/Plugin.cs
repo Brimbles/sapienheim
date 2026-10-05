@@ -30,6 +30,16 @@ namespace ValheimCompanion
         public static ConfigEntry<bool> Levelling;
         public static ConfigEntry<bool> Proactive;
         public static ConfigEntry<float> DamageScale;
+        public static ConfigEntry<string> Body;
+        public static ConfigEntry<string> LookHair;
+        public static ConfigEntry<string> LookBeard;
+        public static ConfigEntry<string> LookHairColour;
+        public static ConfigEntry<float> LookSkinTone;
+        public static ConfigEntry<string> LookLegs;
+        public static ConfigEntry<string> LookCape;
+        public static ConfigEntry<float> LookChest;
+        public static ConfigEntry<float> LookArms;
+        public static ConfigEntry<float> LookHeight;
         public static ConfigEntry<string> Commanders;
         public static ConfigEntry<string> Friends;
         public static ConfigEntry<string> ChestAccess;
@@ -63,6 +73,18 @@ namespace ValheimCompanion
                 "Multiplier on the companion's damage per hit (18 at level 1, rising to 110 at level 6) (server only).");
             Levelling = Config.Bind("Companion", "Levelling", true,
                 "Scale the companion with its master: level (damage) from bosses defeated, max health from the master's, armour from theirs (server only).");
+            Body = Config.Bind("Look", "Body", "viking", new ConfigDescription(
+                "The companion's body: viking (the player model, shows its gear) or dverger. Needs a restart; set it the same on every machine.",
+                new AcceptableValueList<string>("viking", "dverger")));
+            LookHair = Config.Bind("Look", "Hair", "Hair20", "Viking body: hair style item (e.g. Hair1-Hair30, or none) (server only).");
+            LookBeard = Config.Bind("Look", "Beard", "BeardNone", "Viking body: beard item (e.g. Beard1-Beard25, or BeardNone) (server only).");
+            LookHairColour = Config.Bind("Look", "HairColour", "black", "Viking body: black, brown, blond, red, grey, or r,g,b (0-1) (server only).");
+            LookSkinTone = Config.Bind("Look", "SkinTone", 0.4f, "Viking body: 0 = pale, 1 = dark (server only).");
+            LookLegs = Config.Bind("Look", "Legs", "ArmorRagsLegs", "Viking body: what its legs show when it wears no leg armour (an item name, or none) (server only).");
+            LookCape = Config.Bind("Look", "Cape", "CapeWolf", "Viking body: the cape it shows when it wears none (an item name, or none) (server only).");
+            LookChest = Config.Bind("Look", "Chest", 1.25f, "Viking body: chest and shoulder size, 1 = a normal player (0.8-1.6) (server only).");
+            LookArms = Config.Bind("Look", "Arms", 1.3f, "Viking body: arm size, 1 = a normal player (0.8-1.6) (server only).");
+            LookHeight = Config.Bind("Look", "Height", 1.05f, "Viking body: overall height, 1 = a normal player (0.8-1.3) (server only).");
             MapMarker = Config.Bind("Companion", "MapMarker", "everyone", new ConfigDescription(
                 "Who sees the companion on the minimap and big map: everyone, master (only its master) or off (server only).",
                 new AcceptableValueList<string>("everyone", "master", "off")));

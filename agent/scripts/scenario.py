@@ -341,9 +341,24 @@ async def scenario_teardown(r: Runner) -> None:
     await r.cmd("save_world")
 
 
+async def scenario_body(r: Runner) -> None:
+    """The viking body: list hair/beard/cape items, then check it still walks, gathers and keeps its inventory."""
+    for f in ("Hair", "Beard", "Cape", "Rags"):
+        res = await r.conn.command("item_names", filter=f)
+        r.results.append((f"items: {f}", ", ".join((res.data or {}).get("items", []))))
+    s = await r.state()
+    me = s["self"]
+    r.results.append(("inventory", str({i["item"]: i["qty"] for i in me.get("inventory", [])})))
+    here = me["pos"]
+    await r.task("walk 20 m", "go_to", x=here[0] + 20, z=here[2])
+    await r.task("gather 5 wood", "gather", item="Wood", qty=5)
+    await r.state()
+    await r.cmd("save_world")
+
+
 SCENARIOS = {
     "m4": scenario_m4, "pieces": scenario_pieces, "build": scenario_build, "inspect": scenario_inspect,
-    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown,
+    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body,
 }
 
 

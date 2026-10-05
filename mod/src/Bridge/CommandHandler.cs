@@ -93,6 +93,22 @@ namespace ValheimCompanion.Bridge
                 return;
             }
 
+            if (action == "item_names")
+            {
+                // Testing command: item prefab names containing a filter (e.g. Hair, Beard, Cape).
+                string filter = ((string)args["filter"] ?? "").ToLowerInvariant();
+                var names = new JArray();
+                foreach (GameObject item in ObjectDB.instance.m_items)
+                {
+                    if (item && item.name.ToLowerInvariant().Contains(filter))
+                    {
+                        names.Add(item.name);
+                    }
+                }
+                Result(cmdId, true, null, new JObject { ["items"] = names });
+                return;
+            }
+
             if (action == "debug_place")
             {
                 // Testing command: place a piece with no rules or materials (e.g. two tagged portals). Not an LLM tool.
