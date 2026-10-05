@@ -315,9 +315,9 @@ Each milestone ends with something playable. Acceptance criteria in **bold**.
 - **Companion runs on the test world with friends connected, and keeps working overnight.**
 
 ### Decisions for M5 blueprints, M9, M10, M11 (agreed with the user, 5 Oct 2026)
-- **Blueprints:** PlanBuild `.blueprint` files dropped in a server folder, built by name; pieces from other mods are skipped and reported; ship 3-4 small starters (longhouse, watchtower, gate house, dock).
-- **Settlements:** outpost and farm first; small (2-4 buildings, ~30 x 30 m); materials gathered honestly, with a server `Creative` switch for free building; may clear forest and level, but only outside wards and 50 m+ from existing bases; wood only until Bonemass is beaten, then stone too.
-- **Roads:** paved where it has the stone, dirt otherwise; follow the land, level only where too steep; go round water (no bridges).
+- **Blueprints:** PlanBuild `.blueprint` files dropped in a server folder, built by name; pieces from other mods are never used (skipped and reported); ship 3-4 small starters (longhouse, watchtower, gate house, dock).
+- **Settlements:** outpost and farm first; small (2-4 buildings, ~30 x 30 m); all materials gathered honestly (no free-building switch); may clear forest and level, but only outside wards and 50 m+ from existing bases; wood only until Bonemass is beaten, then stone too.
+- **Roads:** stone-paved, and the paving is free (no stone cost, unlike a player's paving); steep ground: route around it (no levelling hills); water: if the crossing is narrow (up to ~12 m, adjustable), build a wooden bridge across; if wider, stop building there and report back.
 - **Boats:** passenger only (swim to the boat, climb the ladder, hold the mast; never steers). Don't swim far from shore to reach a boat; but if it falls in from a boat in deep water, it swims back to the boat.
 - **Fishing:** simulated (at water with rod and bait), catches on a timer by bait and biome, with real chance in it (misses, lost bait, small catches); it shouldn't be too easy.
 - **Long missions:** still go off duty (log out) 60 min after everyone leaves, missions included, and carry on when someone's back. Death on a mission: respawn at the mission site and carry on. Progress reports at milestones only (arrived, building done, coming home).
