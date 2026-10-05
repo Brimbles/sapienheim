@@ -16,7 +16,8 @@ respawn (add a suffix for variants: battle_cry2, battle_cry_angry; battle_cry__t
 name is one the agent can choose to add to something it says. `{enemy}` lines are made once per `@enemies` entry.
 
 --accent gives English an Austrian-German accent by rewriting the pronunciation before it's spoken: 1 = "v" for "w",
-"z"/"s" for "th", "bek" for "back", hard word endings; 2 (default) also "sht"/"shp", a tapped r and "ch" for "j".
+"z"/"s" for "th", "bek" for "back", hard word endings; 2 also "sht"/"shp", a tapped r and "ch" for "j"; 3 (default) is
+thick: a German r, "-a" for "-er", pure vowels ("goh", "shtohn"), "d" for "th", "schw-", and glottal stops between words.
 
 The "barbarian" sound: the voice is generated a little fast, then slowed down, which drops its pitch (--pitch 0.85 is
 about two semitones deeper) without changing the pace; --grit adds a touch of rasp. The first run downloads the
@@ -55,6 +56,8 @@ def austrian(phonemes: str, level: int) -> str:
         while core and core[-1] in ".,!?;:—…\"”":
             core, tail = core[:-1], core[-1] + tail
         w = core
+        if level >= 3:
+            w = re.sub(r"^([ˈˌ]?)ð", r"\1d", w)  # "this" -> "dis", before level 1 makes the rest of the "th"s "z"
         w = w.replace("w", "v").replace("ð", "z").replace("θ", "s")
         w = w.replace("æ", "ɛ").replace("a", "ɛ")  # TRAP vowel: "back" -> "bek" (A, the FACE diphthong, is untouched)
         w = w.replace("ɪ", "i").replace("ʊ", "u").replace("ɜː", "œː").replace("ɜ", "œ")
@@ -66,11 +69,30 @@ def austrian(phonemes: str, level: int) -> str:
                     w = w[:lead] + sh + w[lead + len(s):]
             if w.endswith("ŋ"):
                 w += "k"
+        if level >= 3:
+            w = thick(w)
         # Final devoicing: German ends words on hard consonants ("bad" -> "bat").
         if w and w[-1] in VOICED_TO_UNVOICED:
             w = w[:-1] + VOICED_TO_UNVOICED[w[-1]]
         words.append(w + tail)
     return " ".join(words)
+
+
+def thick(w: str) -> str:
+    """Level 3, thick Austrian: German r, the -er ending, pure vowels, "schw-", and a glottal stop before a word that
+    starts with a vowel (the clipped, staccato delivery)."""
+    w = w.replace("ɹ", "ʁ").replace("ɾ", "ʁ")
+    plain = w.replace("ˈ", "").replace("ˌ", "")
+    for s, sh in (("sv", "ʃv"), ("sl", "ʃl"), ("sm", "ʃm"), ("sn", "ʃn")):
+        if plain.startswith(s):
+            w = sh + w[len(s):] if w.startswith(s) else w[0] + sh + w[1 + len(s):]
+    # Pure German vowels for the English glides: "go" -> "goː", "stone" -> "ʃtoːn", "day" -> "deː".
+    w = w.replace("Q", "oː").replace("O", "oː").replace("A", "eː").replace("ɒ", "ɔ").replace("ɛː", "ɛɐ")
+    if len(plain) > 2 and w[-1] in "əɚ":
+        w = w[:-1] + "ɐ"  # "over" -> "oːvɐ", "water" -> "vɔːtɐ"
+    if plain[:1] in "aeiouɐɑɔəɛɜʊʌæœIAOQW":
+        w = "ʔ" + w
+    return w
 
 
 def parse_lines(path: Path) -> list[tuple[str, str]]:
@@ -156,7 +178,7 @@ def main() -> None:
     ap.add_argument("lines", nargs="?", type=Path, help="text file of `name: text` lines")
     ap.add_argument("--only", help="make just this clip")
     ap.add_argument("--voice", default="bm_george", help="Kokoro voice (default bm_george)")
-    ap.add_argument("--accent", type=int, default=2, choices=[0, 1, 2], help="Austrian accent: 0 none, 1 light, 2 strong (default)")
+    ap.add_argument("--accent", type=int, default=3, choices=[0, 1, 2, 3], help="Austrian accent: 0 none, 1 light, 2 strong, 3 thick (default)")
     ap.add_argument("--pitch", type=float, default=0.85, help="pitch factor, below 1 is deeper (default 0.85)")
     ap.add_argument("--speed", type=float, default=0.95, help="speaking pace (default 0.95)")
     ap.add_argument("--grit", type=float, default=0.3, help="rasp, 0-1 (default 0.3)")
@@ -170,7 +192,7 @@ def main() -> None:
         print("Auditions:")
         if args.voice_given:
             # One voice at each accent strength.
-            for level in (0, 1, 2):
+            for level in (0, 1, 2, 3):
                 write(HERE / "auditions" / f"{args.voice}_accent{level}.wav",
                       voice.speak(args.audition, args.voice, args.pitch, args.speed, args.grit, level))
         else:
