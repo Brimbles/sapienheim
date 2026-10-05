@@ -314,6 +314,15 @@ Each milestone ends with something playable. Acceptance criteria in **bold**.
 - [x] **Permissions (before friends join):** (done: `CompanionPermissions`; `Permissions.Commanders` master/friends/everyone, `Permissions.Friends` + master-granted friends via `set_friend`; non-commanders' chat gets only say/get_status/recipe in code, and action tool calls are refused; `Permissions.ChestAccess` own/any by piece creator; friends survive death/logout via the away record.) who may command the companion (master, friends list, everyone) and which chests it may take from or store into; enforced in the mod, not just the prompt.
 - **Companion runs on the test world with friends connected, and keeps working overnight.**
 
+### Decisions for M5 blueprints, M9, M10, M11 (agreed with the user, 5 Oct 2026)
+- **Blueprints:** PlanBuild `.blueprint` files dropped in a server folder, built by name; pieces from other mods are skipped and reported; ship 3-4 small starters (longhouse, watchtower, gate house, dock).
+- **Settlements:** outpost and farm first; small (2-4 buildings, ~30 x 30 m); materials gathered honestly, with a server `Creative` switch for free building; may clear forest and level, but only outside wards and 50 m+ from existing bases; wood only until Bonemass is beaten, then stone too.
+- **Roads:** paved where it has the stone, dirt otherwise; follow the land, level only where too steep; go round water (no bridges).
+- **Boats:** passenger only (swim to the boat, climb the ladder, hold the mast; never steers). Don't swim far from shore to reach a boat; but if it falls in from a boat in deep water, it swims back to the boat.
+- **Fishing:** simulated (at water with rod and bait), catches on a timer by bait and biome, with real chance in it (misses, lost bait, small catches); it shouldn't be too easy.
+- **Long missions:** still go off duty (log out) 60 min after everyone leaves, missions included, and carry on when someone's back. Death on a mission: respawn at the mission site and carry on. Progress reports at milestones only (arrived, building done, coming home).
+- **Order:** settlements (outpost, farm) -> long missions -> roads -> blueprints -> boats and fishing.
+
 ### M9 — Settlements & roads
 Builds on M5 (placement, blueprints, templates) and M6 (named places).
 - [x] **Map pins for named places:** the agent sends its places (`set_places`) on connect and on every change; the server re-broadcasts them every 30 s as labelled house pins (not saved into players' maps).

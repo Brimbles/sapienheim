@@ -91,7 +91,7 @@ See `git log` and the `[x]` items in `PLAN.md`.
 
 ## 3. Next tasks, in order
 
-Each task is self-contained. Model choice: a mid-size model (Sonnet) for 1–7; ask the user before 8–10, which need design decisions.
+Each task is self-contained. Model choice: a mid-size model (Sonnet) for 1–7; 8–10 now have agreed decisions (below); settlement layout design benefits from a stronger model.
 
 1. ~~Finish cook~~ done.
 2. ~~Smelter output pickup~~ done: `collect_output` (headless: 48 coal from two kilns, `scenario.py collect`).
@@ -108,6 +108,15 @@ Each task is self-contained. Model choice: a mid-size model (Sonnet) for 1–7; 
 8. **Blueprints** (M5): evaluate the PlanBuild format. This needs the user's go-ahead and an example file.
 9. **Settlements and roads** (M9): a big design job, already in `PLAN.md`. Do it with the user, ideally with a stronger model for the layout design.
 10. **Boats, fishing, long missions** (M10, M11): each needs a spike first, since vanilla boat and fishing code is player-driven. Leave these until the user prioritises them.
+
+### Decisions for tasks 8-10 (agreed with the user, 5 Oct 2026)
+- **Blueprints:** PlanBuild `.blueprint` files dropped in a server folder, built by name; pieces from other mods are skipped and reported; ship 3-4 small starters (longhouse, watchtower, gate house, dock).
+- **Settlements:** outpost and farm first; small (2-4 buildings, ~30 x 30 m); materials gathered honestly, with a server `Creative` switch for free building; may clear forest and level, but only outside wards and 50 m+ from existing bases; wood only until Bonemass is beaten, then stone too.
+- **Roads:** paved where it has the stone, dirt otherwise; follow the land, level only where too steep; go round water (no bridges).
+- **Boats:** passenger only (swim to the boat, climb the ladder, hold the mast; never steers). Don't swim far from shore to reach a boat; but if it falls in from a boat in deep water, it swims back to the boat.
+- **Fishing:** simulated (at water with rod and bait), catches on a timer by bait and biome, with real chance in it (misses, lost bait, small catches); it shouldn't be too easy.
+- **Long missions:** still go off duty (log out) 60 min after everyone leaves, missions included, and carry on when someone's back. Death on a mission: respawn at the mission site and carry on. Progress reports at milestones only (arrived, building done, coming home).
+- **Order:** settlements (outpost, farm) -> long missions -> roads -> blueprints -> boats and fishing.
 
 **Not code:** the Discord bridge needs the user's bot token. Publishing needs the user's accounts.
 
