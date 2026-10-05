@@ -259,7 +259,7 @@ def test_someone_who_cant_command_only_gets_chat_tools():
 
     client, sent = asyncio.run(run())
     offered = {t["name"] for t in client.calls[0]["tools"]}
-    assert offered == {"say", "get_status", "recipe"}
+    assert offered == {"say", "get_status", "recipe", "opinion"}
     assert "not allowed to give you orders" in client.calls[0]["messages"][-1]["content"]
     # Even if the model calls an action tool anyway, it never reaches the game.
     assert sent == ["say"]
@@ -320,7 +320,7 @@ def test_proactive_events_speak_with_chat_tools_only():
         client, sent = _proactive(name, data)
         assert sent == ["say"], name
         assert phrase in client.calls[0]["messages"][-1]["content"], name
-        assert {t["name"] for t in client.calls[0]["tools"]} <= {"say", "get_status", "recipe"}, name
+        assert {t["name"] for t in client.calls[0]["tools"]} <= {"say", "get_status", "recipe", "opinion"}, name
 
 
 def test_proactive_event_is_skipped_quietly_when_budget_is_spent():

@@ -255,16 +255,16 @@ Each milestone ends with something playable. Acceptance criteria in **bold**.
 - **Natural conversation plus the companion obeying simple spoken commands.**
 
 ### M4 — Inventory & crafting
-- [ ] Companion inventory (ZDO-persisted), `give`/`take` interaction with players.
+- [x] Companion inventory (ZDO-persisted), `give`/`take` interaction with players.
   - Persists through death. The inventory, including equipped items, is serialized into the respawn record (`CompanionRespawn`) and restored when he bounces back. Nothing is dropped.
   - **Never lost (hard rule).** Every way of leaving the world (death, logout, `cmp_despawn` = dismiss) writes the away record from the ZDO copy of the inventory. The record is deleted only after a successful return, and is written atomically; an unreadable record is set aside as `.corrupt`, never dropped. `cmp_spawn` while away brings the same companion back instead of a new empty one. A return that finds a companion already in the world gives it the inventory: same ZDO (stale copy after a crash) = replace with the newer record; different companion = merge, overflow dropped at its feet.
-- [ ] Chest tools: `store_items`, `fetch_items`, chest registry.
-- [ ] `gather` action (chop trees, pick up drops, mine rocks).
+- [x] Chest tools: `store_items`, `fetch_items`, chest registry.
+- [x] `gather` action (chop trees, pick up drops, mine rocks).
   - Amounts: vague requests ("some wood") mean 20; "everything nearby" only when asked explicitly; hard cap of 100 items per gather (mod-enforced).
   - Wards: never chops or mines inside any active ward (anyone's, the master's included), so falling trees and hits can't damage a base. Picking up drops and harvesting (branches, berries, crops) are allowed there.
   - [x] Source priority when no `source` is given: loose drops, then pickables and fallen logs, then stumps, bushes and rocks, then standing trees only when nothing else is left. The nearest in the best tier wins.
-- [ ] `craft` using `ObjectDB` recipes + station-in-range checks.
-- [ ] Task queue with ids, progress, done/failed events.
+- [x] `craft` using `ObjectDB` recipes + station-in-range checks.
+- [x] Task queue with ids, progress, done/failed events.
 - [x] Combat pre-empts work: an aggressive enemy within 20 m (alerted, or targeting the companion, a player or a tamed animal) pauses the current task until it's dead, gone or beyond 35 m. The task then resumes with its clocks shifted by the pause. There's a rate-limited battle cry, and `combat` started/ended events go to the agent.
 - **"Get 20 wood and make me a club" works end to end, including fetching from a chest.**
 
@@ -289,17 +289,18 @@ Each milestone ends with something playable. Acceptance criteria in **bold**.
 ### M6 — Memory & personality
 - [x] Persona file; rolling conversation summary; facts store (player preferences, named places, base location). (`agent/companion_agent/memory.py`: one JSON file per world in `agent/data/`; history persisted, oldest 20 messages folded into a summary by Haiku past 40; `remember`, `name_place` and `go_to(place)` tools; a "What you remember" block in each turn.)
 - [x] Proactive events: dusk, low HP, idle too long, master nearby after absence. (`CompanionProactive.cs` detects and rate-limits them on the server, only while a player is online; the agent turns each into one short chat-only turn, skipped when the budget is spent. `Companion.Proactive` config.)
-- [ ] **Per-player memory:** knows each player on the server, what they've done together, and has opinions about them.
-- [ ] **Skaldic Hour:** each in-game evening, a short saga of the day's events (fights, deaths, builds, journeys), told from the agent's event log. A revival of his cancelled mead-hall show.
+- [x] **Per-player memory:** knows each player on the server, what they've done together, and has opinions about them. (Memory `players`: first/last seen, recent things they asked of it, an `opinion` tool; shown as "People you know" in each turn.)
+- [x] **Evening tale** (was "Skaldic Hour", made persona-neutral): at dusk, if the day had deeds in the journal, a two-sentence tale of them instead of the plain dusk line.
+- [ ] ~~**Skaldic Hour:**~~ each in-game evening, a short saga of the day's events (fights, deaths, builds, journeys), told from the agent's event log. A revival of his cancelled mead-hall show.
 - [ ] **Commemorations:** after milestones (boss kills, first iron, a finished settlement), writes a runestone or sign at the base.
 - **The companion remembers named places and past conversations across server restarts.**
 
 ### M7 — Offline operation
-- [ ] `ZoneKeeper`: keep the companion's zone active on the server when no players are near/online, building on the M1 spike.
+- [x] `ZoneKeeper`: keep the companion's zone active on the server when no players are near/online, building on the M1 spike.
 - [ ] Headless tests: pathfinding, animations, building placement with no clients connected.
 - [ ] Offline budget mode: LLM called only on task completion/failure, plus a slow heartbeat.
 - [x] **Off duty:** after everyone has been offline for `Companion.OfflineMinutes` (default 60; -1 = never) the companion goes off duty, per `Companion.OfflineMode`: `logout` (default) leaves the world and logs back in beside its master (or the first player) when someone joins, keeping inventory; `idle` freezes it in place (no simulation) until someone joins. No LLM calls while off duty; on return it greets the player with a "while you were away".
-- [ ] "While you were away…" summary when a player joins.
+- [x] "While you were away…" summary when a player joins. (Mod sends `player_joined`/`player_left`; the agent keeps a journal of notable events and greets a player back after 30+ min with the highlights since they left, welcomes newcomers, and avoids double greetings with `logged_in`/`master_returned`.)
 - [ ] Fallback: catch-up simulation (compute progress from elapsed time) if headless simulation proves unreliable.
 - **Leave the companion a build task, disconnect all clients, reconnect later, and the work is done and summarized** (within the off-duty grace period; long jobs need a longer `OfflineMinutes`).
 

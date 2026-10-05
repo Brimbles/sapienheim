@@ -314,6 +314,16 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "opinion",
+        "description": "Set your opinion of a player in a few words (replaces the old one). Update it when they do "
+        "something that changes how you see them.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"player": {"type": "string"}, "opinion": {"type": "string", "description": "A few words."}},
+            "required": ["player", "opinion"],
+        },
+    },
+    {
         "name": "remember",
         "description": "Write something to your long-term memory (kept between sessions): a player's preference, a promise, "
         "a plan, a notable event.",
@@ -344,6 +354,40 @@ TOOLS: list[dict[str, Any]] = [
         "input_schema": {"type": "object", "properties": {}},
     },
 ]
+
+GREET_DELAY = 8.0  # seconds a join greeting waits for a back-on-duty greeting to happen first
+
+
+def _hours(seconds: float) -> str:
+    h = seconds / 3600
+    return f"{int(seconds // 60)} minutes" if h < 1 else (f"{h:.0f} hours" if h < 48 else f"{h / 24:.0f} days")
+
+
+def _journal_text(event: Event) -> str:
+    """A finished or failed job, as a line for the journal."""
+    d = event.data
+    task = d.get("task", "job")
+    if event.name == "task_failed":
+        return f"a {task} job failed ({d.get('reason')})"
+    if task == "gather":
+        return f"gathered {d.get('collected')} {d.get('item')}"
+    if task == "build":
+        return f"built {d.get('build')} ({d.get('placed')} pieces)"
+    if task == "craft":
+        return f"crafted {d.get('crafted')} {d.get('item')}"
+    if task == "repair":
+        return f"repaired {d.get('repaired')} damaged pieces"
+    if task == "tear_down":
+        return f"tore down {d.get('removed')} pieces"
+    if task == "go_to":
+        return "made a journey"
+    return f"finished a {task} job"
+
+
+def _evening_tale(deeds: list[str]) -> str:
+    return ("(Evening is falling. Tell a very short tale of today's deeds in character, two short sentences at most, "
+            "picking the best of these:\n" + "\n".join(f"- {d}" for d in deeds[-15:]) + ")")
+
 
 def _dusk(d: dict[str, Any]) -> tuple[str, str]:
     doing = "you're in a fight" if d.get("in_combat") else (
@@ -379,7 +423,7 @@ PROACTIVE: dict[str, Any] = {
 }
 
 # Tools anyone may trigger by chatting; everything else needs the speaker to be allowed to command.
-CHAT_ONLY_TOOLS = {"say", "get_status", "recipe"}
+CHAT_ONLY_TOOLS = {"say", "get_status", "recipe", "opinion"}
 
 # Only offered when the master is speaking.
 # Only offered when the master is speaking: it takes buildings down.
@@ -465,9 +509,15 @@ class Brain:
             self.status.add("event", f"{event.name} {json.dumps(event.data)}")
         if event.name == "player_chat":
             await self.on_chat(event.data)
+        elif event.name == "player_joined":
+            await self.on_player_joined(event.data)
+        elif event.name == "player_left":
+            # Last seen as they leave, so a return measures the time they were really away.
+            self.memory.note_player_seen(str(event.data.get("player") or "someone"))
         elif event.name in ("task_done", "task_failed") and _worth_reporting(event):
             # The whole job is finished (or failed): tell the players.
             log.info("%s %s", event.name, event.data)
+            self.memory.log(_journal_text(event))
             await self.take_turn(
                 f"({event.name}: {json.dumps(event.data)}. Report back to the players in character.)",
                 history_line=f"({event.name}: {json.dumps(event.data)})",
@@ -476,6 +526,10 @@ class Brain:
             # Informational: fed into the next turn's context instead of costing an LLM call now.
             self.notes.append(f"{event.name}: {json.dumps(event.data)}")
             log.info("%s %s", event.name, event.data)
+            if event.name == "died":
+                self.memory.log(f"you were killed by {event.data.get('killer') or 'something'}")
+            elif event.name == "combat" and event.data.get("state") == "started" and event.data.get("enemy"):
+                self.memory.log(f"fought a {event.data['enemy']}")
         elif event.name == "logged_out":
             # Off duty while nobody is online: no LLM call; mentioned when it logs back in.
             self.notes.append("logged_out: everyone was offline for a while, so you went off duty")
@@ -486,9 +540,19 @@ class Brain:
             if not self.budget.available():
                 log.info("skipping %s: budget spent", event.name)
                 return
+            if event.name == "master_returned" and self._greeted_recently():
+                return  # already welcomed them as they logged in
             prompt, history_line = PROACTIVE[event.name](event.data)
+            if event.name == "dusk":
+                deeds = self._deeds_today()
+                if deeds:
+                    prompt, history_line = _evening_tale(deeds), "(you told the tale of the day)"
+                    self._last_tale = time.time()
+            if event.name == "master_returned":
+                self._last_greeting = time.time()
             await self.take_turn(prompt, history_line=history_line, tools=[t for t in TOOLS if t["name"] in CHAT_ONLY_TOOLS])
         elif event.name == "levelled_up":
+            self.memory.log(f"you grew stronger: level {event.data.get('level')}")
             await self.take_turn(
                 f"(You've grown stronger alongside your master: now level {event.data.get('level')}, "
                 f"{event.data.get('max_hp')} max health, {event.data.get('armor')} armour. Boast about it, briefly.)",
@@ -500,6 +564,9 @@ class Brain:
                 history_line="(you were summoned back)",
             )
         elif event.name == "logged_in":
+            if self._greeted_recently():
+                return  # the player who brought it back has just been welcomed
+            self._last_greeting = time.time()
             await self.take_turn(
                 "(A player has logged in and you're back on duty beside them. Greet them in character, and if anything "
                 "notable happened before you went off duty (see notes), give a one-line 'while you were away'.)",
@@ -514,6 +581,44 @@ class Brain:
             )
         else:
             log.info("event %s: %s", event.name, event.data)
+
+    # ---------- people ----------
+
+    GREETING_WINDOW = 60.0   # one welcome per arrival, however many events announce it
+    AWAY_FOR_SUMMARY = 1800  # seconds away before a returning player gets a "while you were away"
+
+    def _greeted_recently(self) -> bool:
+        return time.time() - getattr(self, "_last_greeting", 0.0) < self.GREETING_WINDOW
+
+    def _deeds_today(self) -> list[str]:
+        """Journal entries since the last evening tale (at most the last 20 hours), for the next one."""
+        since = max(getattr(self, "_last_tale", 0.0), time.time() - 20 * 3600)
+        return self.memory.journal_since(int(since))
+
+    async def on_player_joined(self, data: dict[str, Any]) -> None:
+        """Someone logged in: welcome a newcomer, or tell a returning player what they missed."""
+        player = str(data.get("player") or "someone")
+        before = self.memory.note_player_seen(player)
+        self.memory.log(f"{player} arrived")
+        # Coming back on duty for them already includes a greeting; let that event land first.
+        await asyncio.sleep(GREET_DELAY)
+        if self._greeted_recently() or not self.budget.available():
+            return
+        if before is None:
+            prompt = (f"({player} has joined the world for the first time you know of. Welcome them in character "
+                      "and say who you are, in one or two short lines.)")
+        elif time.time() - before >= self.AWAY_FOR_SUMMARY:
+            missed = self.memory.journal_since(before)[-15:]
+            if missed:
+                prompt = (f"({player} is back after {_hours(time.time() - before)} away. Greet them in character with a "
+                          "short 'while you were away': the highlights of what happened (pick two or three):\n"
+                          + "\n".join(f"- {m}" for m in missed) + ")")
+            else:
+                prompt = f"({player} is back after {_hours(time.time() - before)} away. Greet them briefly in character.)"
+        else:
+            return  # only popped out; no fuss
+        self._last_greeting = time.time()
+        await self.take_turn(prompt, history_line=f"({player} logged in)", tools=[t for t in TOOLS if t["name"] in CHAT_ONLY_TOOLS])
 
     async def on_chat(self, data: dict[str, Any]) -> None:
         player = data.get("player", "someone")
@@ -535,16 +640,19 @@ class Brain:
         else:
             tools = TOOLS
         model = PLAN_MODEL if can_command and PLAN_PATTERN.search(text) else CHAT_MODEL
-        await self.take_turn(prompt, history_line=line, model=model, tools=tools)
+        actions = await self.take_turn(prompt, history_line=line, model=model, tools=tools)
+        jobs = [a.split("(")[0] for a in actions if not a.startswith(("remember", "opinion", "name_place"))]
+        if jobs:
+            self.memory.note_together(player, f"asked you to {', '.join(dict.fromkeys(jobs))}")
 
     async def take_turn(
         self, prompt: str, history_line: str, model: str = CHAT_MODEL, tools: list[dict[str, Any]] | None = None
-    ) -> None:
-        """One LLM turn: prompt plus notes and a fresh state snapshot, then record it in history."""
+    ) -> list[str]:
+        """One LLM turn: prompt plus notes and a fresh state snapshot, then record it in history. Returns what it did."""
         if not self.budget.available():
             log.warning("LLM budget exhausted; canned reply")
             await self.conn.command("say", text=random.choice(OUT_OF_BREATH))
-            return
+            return []
 
         state = await self.conn.request_state()
         content = prompt
@@ -565,6 +673,7 @@ class Brain:
         self.memory.add_exchange(history_line, summary)
         if self.memory.needs_compaction() and self.budget.available():
             await self.memory.compact(self._summarise)
+        return actions
 
     async def _summarise(self, previous: str, messages: list[dict[str, Any]]) -> str:
         """Fold old conversation into the running summary (one cheap call)."""
@@ -651,6 +760,10 @@ class Brain:
 
     async def _execute(self, block: Any, spoken: list[str], actions: list[str]) -> dict[str, Any]:
         name, args = block.name, dict(block.input or {})
+        if name == "opinion":
+            self.memory.set_opinion(str(args.get("player", "")), str(args.get("opinion", "")))
+            actions.append(f"opinion({args.get('player')}: {args.get('opinion')})")
+            return _tool_result(block.id, "noted")
         if name == "remember":
             self.memory.remember(str(args.get("fact", "")), args.get("player"))
             actions.append(f"remember({args.get('fact')})")

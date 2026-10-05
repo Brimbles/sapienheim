@@ -20,9 +20,46 @@ namespace ValheimCompanion.Companion
     {
         private static float s_emptySince = -1f;
         private static bool s_frozen;
+        private static readonly System.Collections.Generic.HashSet<string> s_online = new System.Collections.Generic.HashSet<string>();
+        private static float s_nextRoster;
+
+        /// <summary>Tell the agent who comes and goes (for greetings and "while you were away").</summary>
+        private static void UpdateRoster()
+        {
+            if (Time.time < s_nextRoster)
+            {
+                return;
+            }
+            s_nextRoster = Time.time + 2f;
+            var now = new System.Collections.Generic.HashSet<string>();
+            foreach (ZNet.PlayerInfo info in ZNet.instance.GetPlayerList())
+            {
+                if (!string.IsNullOrEmpty(info.m_name))
+                {
+                    now.Add(info.m_name);
+                }
+            }
+            foreach (string name in now)
+            {
+                if (s_online.Add(name))
+                {
+                    AgentClient.SendEvent("player_joined", new JObject { ["player"] = name });
+                }
+            }
+            s_online.RemoveWhere(name =>
+            {
+                if (now.Contains(name))
+                {
+                    return false;
+                }
+                AgentClient.SendEvent("player_left", new JObject { ["player"] = name });
+                return true;
+            });
+        }
 
         public static void Update()
         {
+            UpdateRoster();
             bool playersOnline = ZNet.instance.GetNrOfPlayers() > 0;
             if (playersOnline)
             {

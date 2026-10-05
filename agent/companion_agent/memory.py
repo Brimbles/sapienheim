@@ -1,8 +1,9 @@
 """Long-term memory for the companion, one JSON file per world.
 
 Holds what doesn't fit in the game's ZDO: the running conversation (survives agent restarts), a summary of
-older conversation, remembered facts (optionally about a player) and named places. It's rendered into each
-turn's prompt as a "what you remember" block.
+older conversation, remembered facts (optionally about a player), named places, a journal of notable events
+(for "while you were away" and the evening tale) and the people it knows (when it last saw them, what they did
+together, its opinion of them). It's rendered into each turn's prompt as a "what you remember" block.
 """
 
 from __future__ import annotations
@@ -19,6 +20,9 @@ DATA_DIR = Path(os.environ.get("AGENT_DATA_DIR", Path(__file__).resolve().parent
 HISTORY_LIMIT = 40          # messages kept verbatim before the oldest are summarised
 COMPACT_CHUNK = 20          # how many of the oldest messages to fold into the summary at a time
 MAX_FACTS_IN_PROMPT = 40
+JOURNAL_LIMIT = 300         # notable events kept
+TOGETHER_LIMIT = 12         # per player: recent things done together
+MAX_PEOPLE_IN_PROMPT = 12
 
 Summariser = Callable[[str, list[dict[str, Any]]], Awaitable[str]]
 
@@ -30,7 +34,7 @@ def _slug(name: str) -> str:
 class Memory:
     def __init__(self, path: Path | None = None) -> None:
         self.path = path
-        self.data: dict[str, Any] = {"summary": "", "history": [], "facts": [], "places": {}, "players": {}}
+        self.data: dict[str, Any] = {"summary": "", "history": [], "facts": [], "places": {}, "players": {}, "journal": []}
         if path and path.exists():
             loaded = json.loads(path.read_text(encoding="utf-8"))
             self.data.update({k: loaded[k] for k in self.data if k in loaded})
@@ -76,9 +80,37 @@ class Memory:
         self.data["facts"].append({"text": fact.strip(), "player": player, "t": int(time.time())})
         self.save()
 
-    def note_player_seen(self, player: str) -> None:
-        self.data["players"].setdefault(player, {})["last_seen"] = int(time.time())
+    def note_player_seen(self, player: str) -> int | None:
+        """Mark the player as seen now; returns when they were last seen before (None: never)."""
+        p = self.data["players"].setdefault(player, {})
+        before = p.get("last_seen")
+        now = int(time.time())
+        p["last_seen"] = now
+        p.setdefault("first_seen", now)
         self.save()
+        return before
+
+    def note_together(self, player: str, what: str) -> None:
+        p = self.data["players"].setdefault(player, {})
+        together = p.setdefault("together", [])
+        together.append(what.strip()[:160])
+        del together[:-TOGETHER_LIMIT]
+        self.save()
+
+    def set_opinion(self, player: str, opinion: str) -> None:
+        self.data["players"].setdefault(player, {})["opinion"] = opinion.strip()[:200]
+        self.save()
+
+    # ---------- journal ----------
+
+    def log(self, text: str) -> None:
+        """A notable event, for 'while you were away' and the evening tale."""
+        self.data["journal"].append({"t": int(time.time()), "text": text.strip()[:200]})
+        del self.data["journal"][:-JOURNAL_LIMIT]
+        self.save()
+
+    def journal_since(self, since: int) -> list[str]:
+        return [e["text"] for e in self.data["journal"] if e["t"] > since]
 
     def set_place(self, name: str, x: float, z: float) -> None:
         self.data["places"][name.strip().lower()] = {"name": name.strip(), "x": round(x, 1), "z": round(z, 1)}
@@ -108,4 +140,28 @@ class Memory:
         if self.data["places"]:
             lines = [f"- {p['name']}: x={p['x']}, z={p['z']}" for p in self.data["places"].values()]
             parts.append("Named places (use go_to with place=...):\n" + "\n".join(lines))
+        people = sorted(self.data["players"].items(), key=lambda kv: -kv[1].get("last_seen", 0))[:MAX_PEOPLE_IN_PROMPT]
+        if people:
+            lines = []
+            for name, p in people:
+                bits = [f"last seen {_ago(p.get('last_seen'))}"]
+                if p.get("opinion"):
+                    bits.append(f"your opinion: {p['opinion']}")
+                if p.get("together"):
+                    bits.append("recently: " + "; ".join(p["together"][-3:]))
+                lines.append(f"- {name}: " + ", ".join(bits))
+            parts.append("People you know:\n" + "\n".join(lines))
         return "\n\n".join(parts)
+
+
+def _ago(t: int | None) -> str:
+    if not t:
+        return "never"
+    s = int(time.time()) - t
+    if s < 120:
+        return "just now"
+    if s < 7200:
+        return f"{s // 60} min ago"
+    if s < 172800:
+        return f"{s // 3600} h ago"
+    return f"{s // 86400} days ago"
