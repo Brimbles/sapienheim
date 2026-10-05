@@ -54,6 +54,7 @@ namespace ValheimCompanion.Companion
         public const string LoadSmelters = "load_smelters";
         public const string CollectOutput = "collect_output";
         public const string Farm = "farm";
+        public const string FeedAnimals = "feed_animals";
         public const string TearDown = "tear_down";
 
         private const float ArriveDistance = 3.5f;
@@ -135,6 +136,11 @@ namespace ValheimCompanion.Companion
         private Queue<Smelter> _smelters;
         private Dictionary<string, int> _loaded;
         private HashSet<string> _smelterFuelMissing;
+
+        // feed animals
+        private Queue<Tameable> _hungry;
+        private Dictionary<string, int> _fed;
+        private int _noFood;
 
         // farm
         private Queue<Pickable> _crops;
@@ -249,6 +255,7 @@ namespace ValheimCompanion.Companion
                     case LoadSmelters:
                     case CollectOutput:
                     case Farm:
+                    case FeedAnimals:
                         return task;
                     default:
                         return Follow;
@@ -398,6 +405,15 @@ namespace ValheimCompanion.Companion
             _smelterFuelMissing = new HashSet<string>();
             _stepDeadline = 0f;
             SetTask(LoadSmelters, taskId);
+        }
+
+        public void CommandFeedAnimals(List<Tameable> hungry, string taskId)
+        {
+            _hungry = new Queue<Tameable>(hungry);
+            _fed = new Dictionary<string, int>();
+            _noFood = 0;
+            _stepDeadline = 0f;
+            SetTask(FeedAnimals, taskId);
         }
 
         public void CommandFarm(List<Pickable> crops, string taskId)
@@ -652,6 +668,9 @@ namespace ValheimCompanion.Companion
                 case Farm:
                     UpdateFarm();
                     break;
+                case FeedAnimals:
+                    UpdateFeedAnimals();
+                    break;
             }
         }
 
@@ -681,7 +700,8 @@ namespace ValheimCompanion.Companion
                         || (task == Cook && !_cookStation)
                         || (task == LoadSmelters && _smelters == null)
                         || (task == CollectOutput && _outputs == null)
-                        || (task == Farm && _crops == null);
+                        || (task == Farm && _crops == null)
+                        || (task == FeedAnimals && _hungry == null);
             if (lost)
             {
                 CompanionState.SetTask(Zdo, Follow);
@@ -1726,6 +1746,64 @@ namespace ValheimCompanion.Companion
             crop.Interact(_character, false, false);
             _pickedTime = Time.time;
             _crops.Dequeue();
+            _stepDeadline = 0f;
+        }
+
+        /// <summary>
+        /// Walk up to each hungry tamed animal and drop one thing it eats from the pack in front of it; it eats it
+        /// the way it would anything it finds (vanilla MonsterAI looks for food within a few metres).
+        /// </summary>
+        private void UpdateFeedAnimals()
+        {
+            Tameable animal = null;
+            while (_hungry.Count > 0 && !animal)
+            {
+                animal = _hungry.Peek();
+                if (!animal || !animal.m_nview || !animal.m_nview.IsValid() || !animal.IsHungry())
+                {
+                    _hungry.Dequeue();
+                    animal = null;
+                }
+            }
+            if (!animal)
+            {
+                var done = new JObject { ["task"] = FeedAnimals, ["fed"] = JObject.FromObject(_fed) };
+                if (_noFood > 0)
+                {
+                    done["no_food_for"] = _noFood; // hungry animals it had nothing for
+                }
+                _hungry = null;
+                Complete(_fed.Count > 0, done);
+                return;
+            }
+            if (_stepDeadline <= 0f)
+            {
+                _stepDeadline = Time.time + BuildStepTimeout / 2f;
+            }
+            if (!WalkTo(animal))
+            {
+                if (Time.time > _stepDeadline)
+                {
+                    _hungry.Dequeue();
+                    _stepDeadline = 0f;
+                }
+                return;
+            }
+            MonsterAI ai = animal.GetComponent<MonsterAI>();
+            string food = ai && ai.m_consumeItems != null
+                ? ai.m_consumeItems.Where(f => f).Select(f => f.gameObject.name).FirstOrDefault(f => _inventory.Count(f) > 0)
+                : null;
+            if (food == null)
+            {
+                _noFood++;
+            }
+            else if (_inventory.Drop(food, 1) > 0)
+            {
+                string who = Localization.instance.Localize(animal.GetComponent<Character>().m_name);
+                _fed.TryGetValue(who, out int n);
+                _fed[who] = n + 1;
+            }
+            _hungry.Dequeue();
             _stepDeadline = 0f;
         }
 

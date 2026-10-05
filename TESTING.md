@@ -101,6 +101,8 @@ Each line in the server log starts with `Proactive:`. Turn it off with `Companio
 
 - [ ] After `deposit`, `@Alvar label the chests` (2 wood + 1 coal per sign): a sign in front of each chest naming what is in it. Note: the headless test left a chest with stone and a label, and an empty chest, near the other test pieces.
 
+- [ ] With berries or carrots in his pack, `@Alvar feed the animals`: each hungry tamed boar/wolf/lox gets something it eats dropped in front of it.
+
 ## 4e. People and the day's tale
 - [ ] Log out for 30+ minutes after he's done a few jobs, then log back in: one greeting with a short "while you were away" of the highlights (not two greetings).
 - [ ] A friend joining for the first time gets a welcome and an introduction.

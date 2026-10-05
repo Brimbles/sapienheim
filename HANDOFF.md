@@ -102,9 +102,7 @@ Each task is self-contained. Model choice: a mid-size model (Sonnet) for 1–7; 
 4. **Archery and hunting** (M13, user said later; design in `PLAN.md`).
    - **Range:** player weapons have `m_aiAttackRange` 2 m. Never change shared item data, because that would affect players. Instead, while a bow plus arrows is the chosen weapon, the companion should keep 10–20 m away (move away if closer) and attack at full draw. Patch `Humanoid.GetAttackDrawPercentage` to return 1 for the companion.
    - **Hunting:** a `hunt` command that makes prey (`AnimalAI`) valid targets until it's done (a flag checked in `CompanionAI.IgnorePassiveWildlife`).
-5. **Chores, part 2:** crops DONE (`farm`, headless: 3 carrots harvested and replanted); still to do: feeding tamed animals. Original notes:
-   - harvest ripe crops (`Pickable` on player-planted pieces) and replant them (needs the cultivator and the plant piece, placed via `Builder.Place` with the right piece from the Cultivator's piece table, much as `PieceCatalog` handles the Hoe);
-   - feed tamed animals (the `Tameable`/`MonsterAI` consume-items list; drop food nearby).
+5. ~~Chores, part 2~~ done: `farm` (3 carrots harvested and replanted) and `feed_animals` (a tamed boar fed and no longer hungry).
 6. ~~Storehouse labels~~ done: `label_chests` (signs stand on the floor/ground in front of each chest; a sign on a chest lid falls).
 7. ~~Scouting, simple version~~ done: `find` (headless: all 18 kinds of thing resolve; copper, tin, berries, trees and nests found in the explored Meadows/Black Forest).
 8. **Blueprints** (M5): evaluate the PlanBuild format. This needs the user's go-ahead and an example file.

@@ -333,6 +333,16 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "feed_animals",
+        "description": "Feed the hungry tamed animals (boars, wolves, lox...) around you or a named place: you drop one thing "
+        "each eats from your pack in front of it (berries, carrots, meat...). task_done says who was fed and how many "
+        "you had nothing for.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"radius": {"type": "number"}, "around": {"type": "string"}, "queue": {"type": "boolean"}},
+        },
+    },
+    {
         "name": "label_chests",
         "description": "Put a sign in front of each chest around you or a named place saying what's in it (its two commonest "
         "things); chests already labelled are skipped. Each sign costs Wood 2, Coal 1. Good after deposit.",
@@ -1009,7 +1019,7 @@ class Brain:
             return await self._travel(block.id, args, actions)
         settlement = args.pop("name", None) if name == "build" else None
         torn_place = str(args["around"]) if name == "tear_down" and args.get("around") and args.get("confirm") else None
-        if name in ("build", "repair_nearby", "tear_down", "guard", "tend_fires", "deposit", "load_smelters", "collect_output", "farm", "label_chests") and args.get("around"):
+        if name in ("build", "repair_nearby", "tear_down", "guard", "tend_fires", "deposit", "load_smelters", "collect_output", "farm", "label_chests", "feed_animals") and args.get("around"):
             where = self.memory.place(str(args.pop("around")))
             if where is None:
                 known = ", ".join(p["name"] for p in self.memory.data["places"].values()) or "none yet"
@@ -1136,7 +1146,7 @@ def _worth_reporting(event: Event) -> bool:
     if event.name == "task_failed":
         return True
     return event.data.get("queue_remaining", 0) == 0 and event.data.get("task") in (
-        "gather", "give", "pick_up", "craft", "store", "fetch", "build", "go_to", "portal", "repair", "tear_down", "gravestone", "tend_fires", "deposit", "cook", "load_smelters", "collect_output", "farm"
+        "gather", "give", "pick_up", "craft", "store", "fetch", "build", "go_to", "portal", "repair", "tear_down", "gravestone", "tend_fires", "deposit", "cook", "load_smelters", "collect_output", "farm", "feed_animals"
     )
 
 

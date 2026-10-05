@@ -260,6 +260,33 @@ namespace ValheimCompanion.Bridge
                     data = new JObject { ["stations"] = report };
                     return null;
                 }
+                case "debug_tame":
+                {
+                    // Testing command (not an LLM tool): spawn a tamed creature (e.g. Boar) a few metres away; with "check",
+                    // report the tamed animals nearby and whether they're hungry instead.
+                    if (args["check"] != null && (bool)args["check"])
+                    {
+                        var animals = new JArray();
+                        foreach (Tameable t in UnityEngine.Object.FindObjectsByType<Tameable>(FindObjectsSortMode.None))
+                        {
+                            if (t && t.GetComponent<Character>().IsTamed() && Vector3.Distance(t.transform.position, companion.transform.position) < 100f)
+                            {
+                                animals.Add($"{t.name} hungry={t.IsHungry()} dist={Vector3.Distance(t.transform.position, companion.transform.position):F0}");
+                            }
+                        }
+                        data = new JObject { ["animals"] = animals };
+                        return null;
+                    }
+                    GameObject prefab = ZNetScene.instance.GetPrefab((string)args["creature"] ?? "Boar");
+                    if (!prefab)
+                    {
+                        return "unknown_creature";
+                    }
+                    Vector3 spawnAt = companion.transform.position + companion.transform.forward * 4f;
+                    GameObject made = UnityEngine.Object.Instantiate(prefab, spawnAt, Quaternion.identity);
+                    made.GetComponent<Character>().SetTamed(true);
+                    return null;
+                }
                 case "debug_raid":
                 {
                     // Testing command (not an LLM tool): start a random event at the companion (e.g. army_eikthyr), or stop it.
@@ -625,6 +652,25 @@ namespace ValheimCompanion.Bridge
                         data["unknown_prefabs"] = unknown;
                     }
                     return found.Count > 0 ? null : "none_found_in_explored_land";
+                }
+                case "feed_animals":
+                {
+                    Vector3 centre = companion.transform.position;
+                    if (args["x"] != null && args["z"] != null)
+                    {
+                        centre = new Vector3((float)args["x"], centre.y, (float)args["z"]);
+                    }
+                    float radius = Mathf.Clamp(args["radius"] != null ? (float)args["radius"] : 30f, 5f, 60f);
+                    var hungry = UnityEngine.Object.FindObjectsByType<Tameable>(FindObjectsSortMode.None)
+                        .Where(t => t && t.m_nview && t.m_nview.IsValid() && t.GetComponent<Character>() is Character c && c.IsTamed()
+                                    && !t.GetComponent<CompanionAI>() && t.IsHungry() && Vector3.Distance(t.transform.position, centre) <= radius)
+                        .OrderBy(t => Vector3.Distance(t.transform.position, centre)).ToList();
+                    if (hungry.Count == 0)
+                    {
+                        return "no_hungry_animals";
+                    }
+                    data = new JObject { ["hungry"] = hungry.Count };
+                    return Queue(companion, args, "feed_animals", () => companion.Tasks.CommandFeedAnimals(hungry, TaskId(args, cmdId)));
                 }
                 case "label_chests":
                 {

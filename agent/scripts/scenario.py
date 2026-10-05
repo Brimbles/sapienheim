@@ -680,9 +680,33 @@ async def scenario_labels(r: Runner) -> None:
         r.results.append(("standing after 20 s", str(sorted(p["piece"] for p in (near.data or {}).get("pieces", []) if p["creator"] != 0))))
 
 
+async def scenario_feed(r: Runner) -> None:
+    """Feeding: a tamed boar (hungry, never fed) and raspberries in the pack; feed it and check it isn't hungry after."""
+    await r.cmd("debug_tame", creature="Boar")
+    await r.cmd("debug_give", item="Raspberry", qty=3)
+    before = await r.conn.command("debug_tame", check=True)
+    r.results.append(("before", str((before.data or {}).get("animals"))))
+    res = await r.cmd("feed_animals", radius=20)
+    r.results.append(("hungry", f"{res.error or 'ok'} {res.data}"))
+    if res.ok:
+        await r.task_wait("feed", res)
+        for n in range(10):  # it walks over and eats it
+            await asyncio.sleep(2)
+            after = await r.conn.command("debug_tame", check=True)
+            r.results.append((f"after {2 * (n + 1)} s", str((after.data or {}).get("animals"))))
+            if "hungry=False" in str((after.data or {}).get("animals")):
+                break
+
+
+async def scenario_tamecheck(r: Runner) -> None:
+    """Tamed animals within 100 m and whether they are hungry."""
+    res = await r.conn.command("debug_tame", check=True)
+    r.results.append(("animals", str((res.data or {}).get("animals"))))
+
+
 SCENARIOS = {
     "m4": scenario_m4, "pieces": scenario_pieces, "build": scenario_build, "inspect": scenario_inspect,
-    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds, "buildportal": scenario_buildportal, "gravestone": scenario_gravestone, "guard": scenario_guard, "fires": scenario_fires, "items": scenario_items, "deposit": scenario_deposit, "tidy_chests": scenario_tidy_chests, "hold": scenario_hold, "sign": scenario_sign, "pieceinfo": scenario_pieceinfo, "stations": scenario_stations, "cookdebug": scenario_cookdebug, "collect": scenario_collect, "find": scenario_find, "farm": scenario_farm, "labels": scenario_labels,
+    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds, "buildportal": scenario_buildportal, "gravestone": scenario_gravestone, "guard": scenario_guard, "fires": scenario_fires, "items": scenario_items, "deposit": scenario_deposit, "tidy_chests": scenario_tidy_chests, "hold": scenario_hold, "sign": scenario_sign, "pieceinfo": scenario_pieceinfo, "stations": scenario_stations, "cookdebug": scenario_cookdebug, "collect": scenario_collect, "find": scenario_find, "farm": scenario_farm, "labels": scenario_labels, "feed": scenario_feed, "tamecheck": scenario_tamecheck,
 }
 
 
