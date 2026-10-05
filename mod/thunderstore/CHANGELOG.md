@@ -14,6 +14,17 @@ First test release.
 - Keeps its inventory through death, restarts and going off duty; levels with its master; map marker.
 - Permissions: who may command it, and whose chests it may use.
 - Chores: tend fires, cook on a spit, load and empty kilns and smelters, harvest and replant crops, feed tamed animals, put things away in chests (like with like) and label them.
-- Small settlements: an outpost (hut, chest, fire pit, fence, optional portal) or a farm (hut, fenced field, planted), on a site away from existing bases.
+- Small settlements, on a site away from existing bases:
+  - an outpost (hut, chest, fire pit, fence, optional portal);
+  - a farm (hut, fenced field, planted);
+  - a village (three huts round a fire);
+  - a fort (palisade; stone walls once Bonemass is beaten);
+  - a mining camp;
+  - a port (hut and dock).
+- Stone-paved roads between places, with wooden bridges over narrow water.
+- Blueprints: builds shared PlanBuild `.blueprint` files (vanilla pieces only) and saves buildings as new ones; ships with a `cabin`.
+- Rides along on boats as a passenger (swims to the ladder, stands by the mast, swims back if he falls in). Fishes with a rod and bait.
+- Long missions: if he dies far away on a job, he comes back at the job's site.
+- A much thicker Austrian accent on the voice clips.
 - Guard duty with raid alerts; corpse runs to fetch a gravestone; building tagged portals and signs; scouting for ores, berries and trees in explored land; boss prep.
 - Remembers each player and what they did together; a "while you were away" when someone returns; a tale of the day at dusk.

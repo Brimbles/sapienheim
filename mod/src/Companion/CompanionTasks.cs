@@ -55,6 +55,9 @@ namespace ValheimCompanion.Companion
         public const string CollectOutput = "collect_output";
         public const string Farm = "farm";
         public const string FeedAnimals = "feed_animals";
+        public const string Fish = "fish";
+        public const string Board = "board";
+        public const string Ride = "ride";
         public const string TearDown = "tear_down";
 
         private const float ArriveDistance = 3.5f;
@@ -137,6 +140,26 @@ namespace ValheimCompanion.Companion
         private Dictionary<string, int> _loaded;
         private HashSet<string> _smelterFuelMissing;
 
+        // boats
+        private Ship _ship;
+        private bool _masterWasAboard;
+        private bool _ashore; // following, but the master is out on a boat he can't swim to: wait on land
+        private float _nextBoardTry;
+        private GameObject _swimMark;
+        private readonly HashSet<Door> _exitDoorsTried = new HashSet<Door>();
+        private bool _ringChecked;
+        private float _ashoreSince = -1f;
+
+        // fish
+        private Vector3 _fishStand;
+        private Vector3 _fishWater;
+        private int _fishWanted;
+        private Dictionary<string, int> _fishCaught;
+        private int _baitUsed;
+        private int _fishBiggest;
+        private float _nextCast;
+        private float _fishUntil = -1f;
+
         // feed animals
         private Queue<Tameable> _hungry;
         private Dictionary<string, int> _fed;
@@ -201,7 +224,6 @@ namespace ValheimCompanion.Companion
 
         // go_to legs
         private bool _hasLeg;
-        private bool _triedExitDoor;
         private float _bestDist;
         private float _lastProgress;
         private int _detours;
@@ -269,6 +291,9 @@ namespace ValheimCompanion.Companion
                     case CollectOutput:
                     case Farm:
                     case FeedAnimals:
+                    case Fish:
+                    case Board:
+                    case Ride:
                         return task;
                     default:
                         return Follow;
@@ -418,6 +443,36 @@ namespace ValheimCompanion.Companion
             _smelterFuelMissing = new HashSet<string>();
             _stepDeadline = 0f;
             SetTask(LoadSmelters, taskId);
+        }
+
+        public void CommandBoard(Ship ship, string taskId)
+        {
+            _ship = ship;
+            _masterWasAboard = false;
+            _deadline = Time.time + 90f;
+            SetTask(Board, taskId);
+        }
+
+        /// <summary>Off the boat: follow the master again (he walks or swims ashore after them).</summary>
+        public void CommandLeaveBoat(string taskId)
+        {
+            _ship = null;
+            _taskId = taskId;
+            Complete(true, new JObject { ["task"] = "leave_boat" });
+        }
+
+        public void CommandFish(Vector3 stand, Vector3 water, int wanted, string taskId)
+        {
+            _fishStand = stand;
+            _fishWater = water;
+            _fishWanted = wanted;
+            _fishCaught = new Dictionary<string, int>();
+            _baitUsed = 0;
+            _fishBiggest = 0;
+            _nextCast = 0f;
+            _fishUntil = Time.time + 900f; // 15 minutes at most
+            _stepDeadline = 0f;
+            SetTask(Fish, taskId);
         }
 
         public void CommandFeedAnimals(List<Tameable> hungry, string taskId)
@@ -684,6 +739,15 @@ namespace ValheimCompanion.Companion
                 case FeedAnimals:
                     UpdateFeedAnimals();
                     break;
+                case Fish:
+                    UpdateFish();
+                    break;
+                case Board:
+                    UpdateBoard();
+                    break;
+                case Ride:
+                    UpdateRide();
+                    break;
             }
         }
 
@@ -714,7 +778,9 @@ namespace ValheimCompanion.Companion
                         || (task == LoadSmelters && _smelters == null)
                         || (task == CollectOutput && _outputs == null)
                         || (task == Farm && _crops == null)
-                        || (task == FeedAnimals && _hungry == null);
+                        || (task == FeedAnimals && _hungry == null)
+                        || (task == Fish && _fishUntil < 0f)
+                        || ((task == Board || task == Ride) && !_ship);
             if (lost)
             {
                 CompanionState.SetTask(Zdo, Follow);
@@ -736,7 +802,8 @@ namespace ValheimCompanion.Companion
                     // Generous for long trips (about 1 m/s with detours), but never less than the old fixed limit.
                     _deadline = Time.time + Mathf.Max(GoToTimeout, Flat(goal - _character.transform.position) + 60f);
                     _hasLeg = false;
-                    _triedExitDoor = false;
+                    _exitDoorsTried.Clear();
+                    _ringChecked = false;
                     _bestDist = float.MaxValue;
                     _lastProgress = Time.time;
                     _detours = 0;
@@ -753,6 +820,13 @@ namespace ValheimCompanion.Companion
                     break;
                 case UsePortal:
                     _deadline = Time.time + PortalWalkTimeout;
+                    break;
+                case Ride:
+                    // A spot by the mast, in the ship's own space so it sails with it.
+                    _waypoint = new GameObject("CompanionWaypoint");
+                    _waypoint.transform.SetParent(_ship.transform, false);
+                    _waypoint.transform.localPosition = CompanionBoat.MastSpotLocal(_ship);
+                    _ai.SetFollowTarget(_waypoint);
                     break;
             }
             Jotunn.Logger.LogInfo($"{_character.m_name}: task -> {task}" + (_queue.Count > 0 ? $" ({_queue.Count} queued)" : ""));
@@ -864,6 +938,10 @@ namespace ValheimCompanion.Companion
         private void UpdateFollow()
         {
             Player master = FindMaster();
+            if (master && FollowOntoBoat(master))
+            {
+                return;
+            }
             if (master)
             {
                 if (_holding)
@@ -878,13 +956,179 @@ namespace ValheimCompanion.Companion
                 }
                 return;
             }
+            if (_character.IsSwimming() && CompanionBoat.DistanceToShore(_character.transform.position, 80f, out Vector3 land) <= 80f)
+            {
+                // Never wait in the water (left behind by a boat, say): make for the nearest shore, then wait there.
+                if (!_waypoint)
+                {
+                    _waypoint = new GameObject("CompanionWaypoint");
+                }
+                _waypoint.transform.position = land;
+                _ai.SetFollowTarget(_waypoint);
+                _holding = false;
+                return;
+            }
             if (!_holding)
             {
                 // Without a follow target the creature AI roams; anchor it here like `stay` until the master is back.
                 _holding = true;
                 _ai.SetFollowTarget(null);
+                ClearWaypoint();
                 _ai.SetPatrolPoint(_character.transform.position);
                 Jotunn.Logger.LogInfo($"{_character.m_name}: master {CompanionState.GetMasterName(Zdo)} not nearby; waiting here");
+            }
+        }
+
+        /// <summary>
+        /// Following, and the master is on a boat: swim out and climb aboard if it's close to the shore, otherwise wait
+        /// on land (out of the water if he's in it). True while that's what he's doing.
+        /// </summary>
+        private bool FollowOntoBoat(Player master)
+        {
+            Ship ship = CompanionBoat.Under(master);
+            if (!ship)
+            {
+                if (_ashore)
+                {
+                    _ashore = false;
+                    _ai.ResetPatrolPoint();
+                    ClearWaypoint();
+                }
+                return false;
+            }
+            Vector3 climb = CompanionBoat.ClimbPoint(ship);
+            if (Time.time >= _nextBoardTry && Flat(climb - _character.transform.position) <= CompanionBoat.FindRadius
+                && CompanionBoat.DistanceToShore(climb, CompanionBoat.MaxSwim, out _) <= CompanionBoat.MaxSwim)
+            {
+                _ashore = false;
+                _nextBoardTry = Time.time + 20f; // if boarding fails, not straight away again
+                CommandBoard(ship, null);
+                return true;
+            }
+            if (!_ashore)
+            {
+                _ashore = true;
+                Jotunn.Logger.LogInfo($"{_character.m_name}: {master.GetPlayerName()} is out on a boat too far from shore; waiting on land");
+            }
+            if (_character.IsSwimming() && CompanionBoat.DistanceToShore(_character.transform.position, 80f, out Vector3 land) <= 80f)
+            {
+                if (!_waypoint)
+                {
+                    _waypoint = new GameObject("CompanionWaypoint");
+                }
+                _waypoint.transform.position = land;
+                _ai.SetFollowTarget(_waypoint);
+            }
+            else if (_ai.GetFollowTarget() != null)
+            {
+                _ai.SetFollowTarget(null);
+                _ai.SetPatrolPoint(_character.transform.position);
+            }
+            return true;
+        }
+
+        /// <summary>Swim (or walk) to the boat's ladder and climb it; then ride.</summary>
+        private void UpdateBoard()
+        {
+            if (!_ship)
+            {
+                Complete(false, new JObject { ["task"] = Board, ["reason"] = "boat_gone" });
+                return;
+            }
+            if (OnBoard())
+            {
+                Complete(true, new JObject { ["task"] = Board, ["boat"] = Utils.GetPrefabName(_ship.gameObject) }, afterwards: Ride);
+                return;
+            }
+            Vector3 climb = CompanionBoat.ClimbPoint(_ship);
+            if (CompanionBoat.DistanceToShore(climb, CompanionBoat.MaxSwim, out _) > CompanionBoat.MaxSwim)
+            {
+                Complete(false, new JObject { ["task"] = Board, ["reason"] = "boat_too_far_from_shore" });
+                return;
+            }
+            if (Time.time > _deadline)
+            {
+                Complete(false, new JObject { ["task"] = Board, ["reason"] = "cant_reach_the_boat" });
+                return;
+            }
+            SwimTo(climb);
+            CompanionBoat.TryClimb(_character, _ship);
+        }
+
+        /// <summary>
+        /// A passenger: stand by the mast (the ship carries him). Fallen in, swim back and climb aboard if the boat is
+        /// close, else make for land. Steps off once the master, who was aboard, has left a boat that's stopped.
+        /// </summary>
+        private void UpdateRide()
+        {
+            if (!_ship)
+            {
+                SetTask(Follow, null);
+                return;
+            }
+            Player master = FindMaster();
+            bool masterAboard = master && CompanionBoat.Aboard(_ship, master.transform.position);
+            _masterWasAboard |= masterAboard;
+            if (_masterWasAboard && master && !masterAboard && CompanionBoat.Speed(_ship) < 1.5f)
+            {
+                Jotunn.Logger.LogInfo($"{_character.m_name}: {master.GetPlayerName()} has left the boat; getting off too");
+                _ship = null;
+                SetTask(Follow, null);
+                return;
+            }
+            if (OnBoard())
+            {
+                _ashoreSince = -1f;
+                if (_waypoint && _ai.GetFollowTarget() != _waypoint)
+                {
+                    _ai.SetFollowTarget(_waypoint); // back to the mast (after a fight, or a swim)
+                }
+                return;
+            }
+            if (!_character.IsSwimming() && !_character.InWater())
+            {
+                if (_character.IsOnGround() && !CompanionBoat.Aboard(_ship, _character.transform.position))
+                {
+                    // On dry land for a couple of seconds (not a stumble on deck): he got off. Following again.
+                    if (_ashoreSince < 0f)
+                    {
+                        _ashoreSince = Time.time;
+                    }
+                    if (Time.time - _ashoreSince > 2f)
+                    {
+                        _ship = null;
+                        SetTask(Follow, null);
+                    }
+                    return;
+                }
+                _ashoreSince = -1f;
+                return; // in the air (climbing, jumping), or on deck but not yet grounded
+            }
+            Vector3 climb = CompanionBoat.ClimbPoint(_ship);
+            if (Flat(climb - _character.transform.position) > CompanionBoat.SwimBack)
+            {
+                _ship = null;
+                Complete(false, new JObject { ["task"] = Ride, ["reason"] = "fell_overboard_and_left_behind" });
+                return;
+            }
+            SwimTo(climb);
+            CompanionBoat.TryClimb(_character, _ship);
+        }
+
+        private bool OnBoard() =>
+            _ship && (_character.GetStandingOnShip() == _ship || (_character.IsOnGround() && CompanionBoat.Aboard(_ship, _character.transform.position)));
+
+        /// <summary>Head for a point in the water (a ladder), with a mark of its own so the mast spot stays put.</summary>
+        private void SwimTo(Vector3 at)
+        {
+            if (!_swimMark)
+            {
+                _swimMark = new GameObject("CompanionSwimMark");
+            }
+            _swimMark.transform.position = at;
+            if (_ai.GetFollowTarget() != _swimMark)
+            {
+                _ai.SetFollowTarget(_swimMark);
             }
         }
 
@@ -908,20 +1152,34 @@ namespace ValheimCompanion.Companion
                 return;
             }
 
+            // Starting inside a fence or wall ring with the goal well outside it: out through the gate first.
+            if (!_ringChecked)
+            {
+                _ringChecked = true;
+                if (remaining > 30f && CompanionDoors.InsideRing(here, out Vector3 gateExit))
+                {
+                    Jotunn.Logger.LogInfo($"{_character.m_name}: inside a ring; out through the gate first");
+                    _hasLeg = true;
+                    _waypoint.transform.position = gateExit;
+                    _lastProgress = Time.time;
+                    return;
+                }
+            }
+
             // Progress towards the goal itself; stalled for a while means stuck (cliff, river, dense forest).
             if (remaining < _bestDist - 2f)
             {
                 _bestDist = remaining;
                 _lastProgress = Time.time;
                 _detours = 0;
-                _triedExitDoor = false;
+                _exitDoorsTried.Clear();
             }
             bool stuck = Time.time - _lastProgress > ProgressWindow;
-            if (stuck && !_triedExitDoor)
+            if (stuck && _exitDoorsTried.Count < 4)
             {
-                // Boxed in (a fence ring, a walled yard)? Head for a gate or door with the goal beyond it first.
-                _triedExitDoor = true;
-                Vector3? exit = CompanionDoors.ExitTowards(here, goal, 30f, CompanionState.GetMaster(Zdo));
+                // Boxed in (a fence ring, a walled yard)? Head for a door with the goal beyond it, else a gate; each
+                // stall tries the next one.
+                Vector3? exit = CompanionDoors.ExitTowards(here, goal, 30f, CompanionState.GetMaster(Zdo), _exitDoorsTried);
                 if (exit.HasValue)
                 {
                     _lastProgress = Time.time;
@@ -1896,6 +2154,97 @@ namespace ValheimCompanion.Companion
             _stepDeadline = 0f;
         }
 
+        /// <summary>Stand at the shore and fish (see CompanionFishing) until enough are caught, the bait runs out, or 15 min.</summary>
+        private void UpdateFish()
+        {
+            int caught = _fishCaught.Values.Sum();
+            string bait = null;
+            var here = CompanionFishing.ForWater(_fishWater);
+            if (_inventory.Count(here.bait) > 0)
+            {
+                bait = here.bait; // the right bait first
+            }
+            else
+            {
+                bait = CompanionFishing.AllBaits.FirstOrDefault(b => _inventory.Count(b) > 0);
+            }
+            string stop = caught >= _fishWanted ? null : bait == null ? "out_of_bait" : Time.time > _fishUntil ? "time_up" : "";
+            if (stop != "")
+            {
+                var done = new JObject
+                {
+                    ["task"] = Fish, ["caught"] = JObject.FromObject(_fishCaught), ["bait_used"] = _baitUsed,
+                    ["biggest"] = _fishBiggest == 0 ? "none" : _fishBiggest == 1 ? "small" : _fishBiggest == 2 ? "decent" : "a big one",
+                };
+                if (stop != null)
+                {
+                    done["stopped"] = stop;
+                }
+                _fishUntil = -1f;
+                Complete(caught > 0, done);
+                return;
+            }
+            if (!_waypoint)
+            {
+                _waypoint = new GameObject("CompanionWaypoint");
+            }
+            _waypoint.transform.position = _fishStand;
+            if (_ai.GetFollowTarget() != _waypoint)
+            {
+                _ai.SetFollowTarget(_waypoint);
+            }
+            if (_stepDeadline <= 0f)
+            {
+                _stepDeadline = Time.time + BuildStepTimeout * 2f;
+            }
+            Vector3 delta = _fishStand - _character.transform.position;
+            delta.y = 0f;
+            if (delta.magnitude > ArriveDistance)
+            {
+                if (Time.time > _stepDeadline)
+                {
+                    _fishUntil = -1f;
+                    Complete(false, new JObject { ["task"] = Fish, ["reason"] = "cant_reach_the_shore" });
+                }
+                return;
+            }
+            if (Time.time < _nextCast)
+            {
+                return;
+            }
+            _nextCast = Time.time + UnityEngine.Random.Range(15f, 40f);
+            ItemDrop.ItemData rod = Builder.FindTool(_inventory, CompanionFishing.Rod);
+            if (rod != null && !_character.IsItemEquiped(rod))
+            {
+                _character.EquipItem(rod);
+            }
+            Vector3 look = _fishWater - _character.transform.position;
+            look.y = 0f;
+            if (look.sqrMagnitude > 0.01f)
+            {
+                _character.SetLookDir(look.normalized);
+            }
+            _character.GetComponent<CompanionAI>()?.PlaySwing(rod);
+            string fish = CompanionFishing.Attempt(bait, here, out bool baitGone);
+            if (baitGone)
+            {
+                _inventory.Inventory.RemoveItem(ObjectDB.instance.GetItemPrefab(bait).GetComponent<ItemDrop>().m_itemData.m_shared.m_name, 1);
+                _baitUsed++;
+            }
+            if (fish != null && ObjectDB.instance.GetItemPrefab(fish))
+            {
+                // Mostly small ones: a bigger (2-star) fish one time in four, a big one one time in twenty.
+                float size = UnityEngine.Random.value;
+                int level = size < 0.75f ? 1 : size < 0.95f ? 2 : 3;
+                if (_inventory.Inventory.AddItem(fish, 1, level, 0, 0L, "", false) != null)
+                {
+                    _fishCaught.TryGetValue(fish, out int n);
+                    _fishCaught[fish] = n + 1;
+                    _fishBiggest = Mathf.Max(_fishBiggest, level);
+                }
+            }
+        }
+
         private void Replant(string grownKind, Vector3 at)
         {
             if (grownKind == null || !_cropSaplings.TryGetValue(grownKind, out string sapling))
@@ -2546,6 +2895,10 @@ namespace ValheimCompanion.Companion
             {
                 StayHere();
             }
+            else if (afterwards == Ride)
+            {
+                SetTask(Ride, null);
+            }
             else
             {
                 SetTask(Follow, null);
@@ -2580,6 +2933,10 @@ namespace ValheimCompanion.Companion
                 s_carriedTotal = _buildTotal;
             }
             ClearWaypoint();
+            if (_swimMark)
+            {
+                UnityEngine.Object.Destroy(_swimMark);
+            }
             _gather.Stop();
         }
 

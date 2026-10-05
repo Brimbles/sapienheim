@@ -6,7 +6,7 @@ For a model (or person) picking up implementation. Read `CLAUDE.md` (hard rules,
 
 ### Build, deploy, run
 - **Mod:** `cd mod && dotnet build -c Release`. This builds the DLL, copies it and `mod/sounds/*` into the client's and the dedicated server's `BepInEx/plugins/ValheimCompanion/`, and writes the Thunderstore zip to `mod/bin/thunderstore/`. A running server keeps the old DLL until restarted.
-- **Agent tests:** `cd agent && uv run pytest -q`. There are 43 tests, and all must pass before a commit.
+- **Agent tests:** `cd agent && uv run pytest -q`. There are 45 tests, and all must pass before a commit.
 - **Dev server:** `scripts/start-dev-server.ps1` (run it with the PowerShell tool, in the background). Log: `C:\Program Files (x86)\Steam\steamapps\common\Valheim dedicated server\BepInEx\LogOutput.log`; grep it with `grep -a`.
   - **Before restarting**, check nobody is connected: the last `Connections N` line in the log must read 0.
   - **To restart:** stop the background task, confirm with `tasklist | grep -i valheim_server` that it's gone, then start it again.
@@ -54,6 +54,8 @@ For a model (or person) picking up implementation. Read `CLAUDE.md` (hard rules,
 - **Clock:** `Time.time` stops while the PC sleeps; that isn't a bug.
 - **World clock:** on a dedicated server `ZNet.GetTime()` (the world clock) only advances while at least one player is online (`ZNet.UpdateNetTime`). Cooking stations, smelters, kilns, fuel burning and crops all run on it, so they freeze headless. Scenarios that need them call `debug_advance_time` (see `advance_until_done` in `scenario.py`), which also lifts the companion's own wait (`CompanionStations.TestClock`).
 - **Prey animals** (`AnimalAI`) "target" whatever they flee from, so they're never treated as threats.
+- **Ships on a server:** `Ship.s_currentShips` only holds the local player's ship, so it's empty on a server; scan with `CompanionBoat.All()`. A character standing still on a deck is carried by the game whoever owns the ship. A follower stops about 3 m short of its target, so reach checks need slack.
+- **Scenario helper names:** `Runner.cmd(action, **args)` takes the command name as `action`, so a command can't have an argument called `action` (the boat debug command uses `op`).
 - **Item safety:** the user wants items never lost. When moving them, add to the destination first and remove from the source only on success (`CompanionWorkshop.Transfer`/`TransferAll`).
 
 ## 2. Current state (5 Oct 2026)
@@ -105,9 +107,12 @@ Each task is self-contained. Model choice: a mid-size model (Sonnet) for 1–7; 
 5. ~~Chores, part 2~~ done: `farm` (3 carrots harvested and replanted) and `feed_animals` (a tamed boar fed and no longer hungry).
 6. ~~Storehouse labels~~ done: `label_chests` (signs stand on the floor/ground in front of each chest; a sign on a chest lid falls).
 7. ~~Scouting, simple version~~ done: `find` (headless: all 18 kinds of thing resolve; copper, tin, berries, trees and nests found in the explored Meadows/Black Forest).
-8. **Blueprints** (M5): evaluate the PlanBuild format. This needs the user's go-ahead and an example file.
-9. **Settlements and roads** (M9): outpost and farm DONE (`SettlementTemplate`; `scenario.py settlement outpost|farm`). Next: roads (decisions recorded below: free stone paving, route round steep ground, bridge narrow water up to ~12 m, else stop and report), then more settlement types (village, fort, port, mining camp) and stone pieces after Bonemass. Lessons: give test materials with `debug_give` (now adds full stacks) after `debug_clear all=true`; distant build sites must be walked to first (build steps walk straight); a walk boxed in by a fence now heads for a gate (`CompanionDoors.ExitTowards`).
-10. **Boats, fishing, long missions** (M10, M11): each needs a spike first, since vanilla boat and fishing code is player-driven. Leave these until the user prioritises them.
+8. ~~Blueprints~~ done (`Blueprints.cs`; `scenario.py blueprint NAME bx bz cx cz` exports the building at bx,bz and builds a copy near cx,cz). Starter shipped: `cabin`. Still wanted: more starters (longhouse, watchtower, gate house, dock), e.g. export a width-5 hut as `longhouse` and a port's dock as `dock`.
+9. ~~Settlements and roads~~ done: outpost, farm, village, fort (stone after Bonemass), mining_camp, port (`scenario.py settlement <kind>`, `settlement stone_fort`), roads with bridges (`road`, `bridge`). Lessons: give test materials with `debug_give` (adds full stacks) after `debug_clear all=true`; distant build sites must be walked to first (build steps walk straight); a walk boxed in by a fence heads for a gate (`CompanionDoors.ExitTowards`).
+10. ~~Boats, fishing, long missions~~ done: `board`/`leave_boat` and the `ride` task (`scenario.py boat`: finds a coast, spawns a karve, boards, sails, overboard, left behind); `fish` (`scenario.py fish`); missions in the agent plus respawn at the mission site (`scenario.py mission`: debug_kill, debug_respawn_now).
+11. **Voice:** accent level 3 (thick Austrian) added to `tools/voice/make_clips.py` and made the default; regenerate the clips with `uv run python make_clips.py lines.txt` from `tools/voice`, then rebuild.
+
+New test-only commands: `debug_boat op=find_coast|spawn|clear|push|overboard|status`, `debug_kill`, `debug_respawn_now`, `debug_global_key key [remove]`.
 
 ### Decisions for tasks 8-10 (agreed with the user, 5 Oct 2026)
 - **Blueprints:** PlanBuild `.blueprint` files dropped in a server folder, built by name; pieces from other mods are never used (skipped and reported); ship 3-4 small starters (longhouse, watchtower, gate house, dock).

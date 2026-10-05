@@ -9,6 +9,7 @@ Useful for testing mod features headlessly, with no player online.
 """
 
 import asyncio
+import math
 import json
 import logging
 import sys
@@ -698,6 +699,116 @@ async def scenario_feed(r: Runner) -> None:
                 break
 
 
+async def scenario_fish(r: Runner) -> None:
+    """Fishing at the nearest water: scenario.py fish [x z] (walks there first). Rod and 10 meadows bait given; catch 2."""
+    if len(sys.argv) > 3:
+        await r.task("walk to the water", "go_to", x=float(sys.argv[2]), z=float(sys.argv[3]))
+    await r.cmd("debug_clear", all=True)
+    await r.cmd("debug_give", item="FishingRod", qty=1)
+    await r.cmd("debug_give", item="FishingBait", qty=10)
+    res = await r.cmd("fish", qty=2)
+    r.results.append(("fish", f"{res.error or 'ok'} {res.data}"))
+    if res.ok:
+        await r.task_wait("fishing", res)
+        await r.state()
+
+
+async def boat_status(r: Runner, label: str) -> dict:
+    st = await r.conn.command("debug_boat", op="status")
+    r.results.append((label, f"{st.error or ''} {st.data}"))
+    return st.data or {}
+
+
+async def scenario_coast(r: Runner) -> None:
+    """Walk to the nearest coast (land beside water 2 m+ deep): for the boat and fish scenarios."""
+    coast = await r.cmd("debug_boat", op="find_coast")
+    r.results.append(("coast", f"{coast.error or 'ok'} {coast.data}"))
+    if coast.ok:
+        x, z = coast.data["land"]
+        await r.task("walk to the coast", "go_to", x=x, z=z)
+
+
+async def scenario_boat(r: Runner) -> None:
+    """Boats: at the coast, spawn a Karve, board it, sail it, fall overboard and swim back, then get left behind."""
+    await scenario_coast(r)
+    await r.cmd("debug_boat", op="clear")
+    await asyncio.sleep(3)
+    sp = await r.cmd("debug_boat", op="spawn")
+    r.results.append(("spawn", f"{sp.error or 'ok'} {sp.data}"))
+    if not sp.ok:
+        return
+    await asyncio.sleep(3)
+    res = await r.cmd("board")
+    r.results.append(("board", f"{res.error or 'ok'} {res.data}"))
+    if not res.ok:
+        return
+    await r.task_wait("board the boat", res)
+    await asyncio.sleep(5)
+    await boat_status(r, "aboard, moored")
+    await r.cmd("debug_boat", op="push", speed=3, seconds=15, outward=True)
+    await asyncio.sleep(8)
+    await boat_status(r, "sailing at 3 m/s")
+    await asyncio.sleep(10)
+    await boat_status(r, "after sailing 45 m")
+    await r.cmd("debug_boat", op="overboard", out=6)
+    for n in range(12):
+        await asyncio.sleep(5)
+        st = await boat_status(r, f"overboard +{5 * (n + 1)} s")
+        if st.get("standing_on_ship"):
+            break
+    await r.cmd("debug_boat", op="overboard", out=6)
+    await r.cmd("debug_boat", op="push", speed=8, seconds=12, outward=True)
+    for n in range(8):
+        await asyncio.sleep(5)
+        st = await boat_status(r, f"left behind +{5 * (n + 1)} s")
+        if st.get("task") != "ride":
+            break
+    for n in range(24):
+        await asyncio.sleep(5)
+        st = await r.conn.command("debug_boat", op="status")
+        if not (st.data or {}).get("swimming"):
+            break
+    await boat_status(r, f"swimming ashore, {5 * (n + 1)} s later")
+
+
+async def scenario_mission(r: Runner) -> None:
+    """Missions: a mission site 60 m away; he dies; he must come back at the site (not where he died), still on it."""
+    st = await r.state()
+    here = st["self"]["pos"]
+    site = (here[0] + 60.0, here[2])
+    res = await r.cmd("set_mission", x=site[0], z=site[1])
+    r.results.append(("set_mission", f"{res.error or 'ok'} at {site}"))
+    while not r.events.empty():
+        r.events.get_nowait()
+    await r.cmd("debug_kill")
+    await asyncio.sleep(3)
+    due = await r.cmd("debug_respawn_now")
+    r.results.append(("respawn now", f"{due.error or 'ok'}"))
+    deadline = time.monotonic() + 90
+    back = None
+    while time.monotonic() < deadline:
+        try:
+            ev = await asyncio.wait_for(r.events.get(), 1.0)
+        except asyncio.TimeoutError:
+            continue
+        if ev.name in ("respawned", "died"):
+            r.results.append((f"event {ev.name}", str(ev.data)))
+        if ev.name == "respawned":
+            back = ev.data
+            break
+    if back is None:
+        r.results.append(("respawned", "no respawned event within 90 s"))
+        return
+    await asyncio.sleep(5)
+    st = await r.state()
+    pos = st["self"]["pos"]
+    r.results.append(("back at", f"{pos}: {math.hypot(pos[0] - site[0], pos[2] - site[1]):.1f} m from the mission site, "
+                                 f"{math.hypot(pos[0] - here[0], pos[2] - here[2]):.1f} m from where he died"))
+    again = await r.cmd("set_mission")
+    r.results.append(("mission cleared", again.error or "ok"))
+    await r.cmd("save_world")
+
+
 async def scenario_tamecheck(r: Runner) -> None:
     """Tamed animals within 100 m and whether they are hungry."""
     res = await r.conn.command("debug_tame", check=True)
@@ -705,17 +816,26 @@ async def scenario_tamecheck(r: Runner) -> None:
 
 
 async def scenario_settlement(r: Runner) -> None:
-    """Build a settlement: scenario.py settlement outpost|farm. Materials given; counts what stands 20 s after."""
+    """Build a settlement: scenario.py settlement outpost|farm|village|fort|mining_camp|port|stone_fort [x z]. Materials given; counts what stands 20 s after."""
     kind = sys.argv[2] if len(sys.argv) > 2 else "outpost"
+    stone = kind == "stone_fort"  # a fort after Bonemass: stone walls and a stonecutter
+    if stone:
+        kind = "fort"
+        await r.cmd("debug_global_key", key="defeated_bonemass")
     await r.cmd("debug_clear", all=True)  # room in the pack (earlier tests leave tools and loot behind)
-    gifts = [("Wood", 500), ("Stone", 10), ("Hoe", 1), ("Hammer", 1), ("FineWood", 20), ("GreydwarfEye", 10), ("SurtlingCore", 2)]
+    wood = 400 if stone else {"village": 900, "fort": 800}.get(kind, 500)
+    gifts = [("Wood", wood), ("Stone", 10), ("Hoe", 1), ("Hammer", 1), ("FineWood", 20), ("GreydwarfEye", 10), ("SurtlingCore", 2)]
     if kind == "farm":
         gifts += [("Cultivator", 1), ("CarrotSeeds", 20), ("TurnipSeeds", 10)]
+    if stone:
+        gifts = [(i, q) for i, q in gifts if i != "Stone"] + [("Stone", 700), ("Iron", 6)]
     for item, qty in gifts:
         await r.cmd("debug_give", item=item, qty=qty)
     st = await r.state()
     r.results.append(("pack before", f"{ {i['item']: i['qty'] for i in st['self'].get('inventory', [])} } free_slots={st['self'].get('free_slots')}"))
     args = {"template": kind}
+    if len(sys.argv) > 4:
+        args["x"], args["z"] = float(sys.argv[3]), float(sys.argv[4])  # search round there instead of round him
     if kind == "outpost":
         args["tag"] = f"outpost-{int(time.time()) % 10000}"
     res = await r.cmd("build", **args)
@@ -724,12 +844,14 @@ async def scenario_settlement(r: Runner) -> None:
         return
     await advance_until_done(r, f"build {kind}", res, max_real_s=1500, step_s=1)
     await asyncio.sleep(20)
-    near = await r.conn.command("pieces_near", pos=res.data["site"], radius=16)
+    near = await r.conn.command("pieces_near", pos=res.data["site"], radius=22)
     kinds = {}
     for p in (near.data or {}).get("pieces", []):
         if p["creator"] != 0:
             kinds[p["piece"]] = kinds.get(p["piece"], 0) + 1
     r.results.append(("standing after 20 s", f"{sum(kinds.values())}: {kinds}"))
+    if stone:
+        await r.cmd("debug_global_key", key="defeated_bonemass", remove=True)
     await r.cmd("save_world")
 
 
@@ -788,9 +910,36 @@ async def scenario_bridge(r: Runner) -> None:
     await r.cmd("save_world")
 
 
+async def scenario_blueprint(r: Runner) -> None:
+    """Blueprints: export the building at (bx bz) as NAME, then build a copy near (cx cz): scenario.py blueprint NAME bx bz cx cz."""
+    name = sys.argv[2]
+    bx, bz, cx, cz = (float(v) for v in sys.argv[3:7])
+    await r.task("walk to the building", "go_to", x=bx, z=bz)
+    exp = await r.cmd("blueprints", export=name)
+    r.results.append(("export", f"{exp.error or 'ok'} {exp.data}"))
+    lst = await r.cmd("blueprints")
+    r.results.append(("blueprints", str((lst.data or {}).get("blueprints"))))
+    await r.task("walk to the new site", "go_to", x=cx, z=cz)
+    await r.cmd("debug_clear", all=True)
+    for item, qty in (("Hammer", 1), ("Hoe", 1), ("Wood", 300), ("Stone", 20)):
+        await r.cmd("debug_give", item=item, qty=qty)
+    res = await r.cmd("build", template="blueprint", blueprint=name)
+    r.results.append(("build", f"{res.error or 'ok'} {res.data}"))
+    if res.ok:
+        await advance_until_done(r, "build the copy", res, max_real_s=1200, step_s=1)
+        await asyncio.sleep(20)
+        near = await r.conn.command("pieces_near", pos=res.data["site"], radius=12)
+        kinds = {}
+        for p in (near.data or {}).get("pieces", []):
+            if p["creator"] != 0:
+                kinds[p["piece"]] = kinds.get(p["piece"], 0) + 1
+        r.results.append(("standing after 20 s", f"{sum(kinds.values())}: {kinds}"))
+    await r.cmd("save_world")
+
+
 SCENARIOS = {
     "m4": scenario_m4, "pieces": scenario_pieces, "build": scenario_build, "inspect": scenario_inspect,
-    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds, "buildportal": scenario_buildportal, "gravestone": scenario_gravestone, "guard": scenario_guard, "fires": scenario_fires, "items": scenario_items, "deposit": scenario_deposit, "tidy_chests": scenario_tidy_chests, "hold": scenario_hold, "sign": scenario_sign, "pieceinfo": scenario_pieceinfo, "stations": scenario_stations, "cookdebug": scenario_cookdebug, "collect": scenario_collect, "find": scenario_find, "farm": scenario_farm, "labels": scenario_labels, "feed": scenario_feed, "settlement": scenario_settlement, "prefabs": scenario_prefabs, "road": scenario_road, "bridge": scenario_bridge, "tamecheck": scenario_tamecheck,
+    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds, "buildportal": scenario_buildportal, "gravestone": scenario_gravestone, "guard": scenario_guard, "fires": scenario_fires, "items": scenario_items, "deposit": scenario_deposit, "tidy_chests": scenario_tidy_chests, "hold": scenario_hold, "sign": scenario_sign, "pieceinfo": scenario_pieceinfo, "stations": scenario_stations, "cookdebug": scenario_cookdebug, "collect": scenario_collect, "find": scenario_find, "farm": scenario_farm, "labels": scenario_labels, "feed": scenario_feed, "settlement": scenario_settlement, "prefabs": scenario_prefabs, "road": scenario_road, "bridge": scenario_bridge, "blueprint": scenario_blueprint, "fish": scenario_fish, "boat": scenario_boat, "mission": scenario_mission, "coast": scenario_coast, "tamecheck": scenario_tamecheck,
 }
 
 

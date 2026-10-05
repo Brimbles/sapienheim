@@ -38,6 +38,10 @@
       <_SoundFiles Include="$(MSBuildProjectDirectory)\sounds\*.ogg;$(MSBuildProjectDirectory)\sounds\*.wav;$(MSBuildProjectDirectory)\sounds\captions.json" />
     </ItemGroup>
     <RemoveDir Directories="%(_DeployRoot.Identity)\BepInEx\plugins\$(AssemblyName)\sounds" Condition="'@(_DeployRoot)' != ''" />
+    <ItemGroup>
+      <_BlueprintFiles Include="$(MSBuildProjectDirectory)\blueprints\*.blueprint" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_BlueprintFiles)" DestinationFolder="%(_DeployRoot.Identity)\BepInEx\plugins\$(AssemblyName)\blueprints" Condition="'@(_DeployRoot)' != '' And '@(_BlueprintFiles)' != ''" />
     <Copy SourceFiles="@(_SoundFiles)" DestinationFolder="%(_DeployRoot.Identity)\BepInEx\plugins\$(AssemblyName)\sounds" Condition="'@(_DeployRoot)' != '' And '@(_SoundFiles)' != ''" />
     <Message Importance="high" Text="Deployed $(AssemblyName) to %(_DeployRoot.Identity)\BepInEx\plugins" Condition="'@(_DeployRoot)' != ''" />
     <Warning Text="No BepInEx install found to deploy to; check mod/Environment.props" Condition="'@(_DeployRoot)' == ''" />
@@ -60,6 +64,10 @@
       <_PackageSounds Include="$(MSBuildProjectDirectory)\sounds\*.ogg;$(MSBuildProjectDirectory)\sounds\*.wav;$(MSBuildProjectDirectory)\sounds\captions.json" />
     </ItemGroup>
     <Copy SourceFiles="@(_PackageSounds)" DestinationFolder="$(_StageDir)sounds" Condition="'@(_PackageSounds)' != ''" />
+    <ItemGroup>
+      <_PackageBlueprints Include="$(MSBuildProjectDirectory)\blueprints\*.blueprint" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_PackageBlueprints)" DestinationFolder="$(_StageDir)blueprints" Condition="'@(_PackageBlueprints)' != ''" />
     <!-- ASCII: no UTF-8 byte-order mark, which JSON parsers can reject; Escape keeps any ; in the text intact. -->
     <WriteLinesToFile File="$(_StageDir)manifest.json" Lines="$([MSBuild]::Escape($(_Manifest)))" Overwrite="true" Encoding="us-ascii" />
     <MakeDir Directories="$(MSBuildProjectDirectory)\bin\thunderstore" />

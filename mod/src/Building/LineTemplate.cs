@@ -28,6 +28,8 @@ namespace ValheimCompanion.Building
             public float Height;
             public Vector2 PieceOffset; // pivot relative to the section's base centre (x along, y up)
             public Vector2 GateOffset;
+            public int Courses = 1;        // pieces stacked per section (a stone wall: two 1 m courses)
+            public float CourseHeight;     // the height of one course
         }
 
         // Offsets from the pieces' snap points (see PieceCatalog.Describe).
@@ -35,9 +37,13 @@ namespace ValheimCompanion.Building
         {
             ["wall"] = new Kind { Piece = "stake_wall", Gate = "wood_gate", Height = 2f, PieceOffset = new Vector2(0f, 0f), GateOffset = new Vector2(0f, 1f) },
             ["fence"] = new Kind { Piece = "wood_fence", Gate = "wood_fence_gate", Height = 1f, PieceOffset = new Vector2(0.1f, 0f), GateOffset = new Vector2(0.2f, 1f) },
+            // Stone (after Bonemass, for forts): 2 m of stone_wall_2x1 in two courses, a wooden gate; needs a stonecutter.
+            ["stonewall"] = new Kind { Piece = "stone_wall_2x1", Gate = "wood_gate", Height = 2f, PieceOffset = new Vector2(0f, StoneWallPivot), GateOffset = new Vector2(0f, 1f), Courses = 2, CourseHeight = 1f },
         };
 
-        public static bool IsKind(string template) => Kinds.ContainsKey(template);
+        public static bool IsKind(string template) => Kinds.ContainsKey(template) && template != "stonewall";
+
+        private const float StoneWallPivot = 0.5f; // stone_wall_2x1's pivot above its base (see PieceCatalog.Describe)
 
         public const int MinSize = 4;
         public const int MaxSize = 40;
@@ -61,6 +67,7 @@ namespace ValheimCompanion.Building
             skipped = new Dictionary<string, int>();
             var clear = new List<Destructible>();
             var pieces = new List<BuildStep>();
+            var courseOf = new List<int>();
 
             // Sections in walking order: front left to right, right side front to back, back right to left, left side
             // back to front. Each is (local x, local z, yaw); a line is just the front.
@@ -106,6 +113,13 @@ namespace ValheimCompanion.Building
                 Vector2 off = isGate ? kind.GateOffset : kind.PieceOffset;
                 Vector3 pos = new Vector3(c.x, baseY, c.z) + rot * new Vector3(off.x, off.y, 0f);
                 pieces.Add(new BuildStep { Piece = isGate ? kind.Gate : kind.Piece, Pos = pos, Rot = rot, Optional = true });
+                courseOf.Add(0);
+                for (int k = 1; k < kind.Courses && !isGate; k++)
+                {
+                    // The courses above, each resting on the one below.
+                    pieces.Add(new BuildStep { Piece = kind.Piece, Pos = pos + Vector3.up * (k * kind.CourseHeight), Rot = rot, Optional = true });
+                    courseOf.Add(k);
+                }
                 placed.Add(c);
                 // Inside the ring (towards the centre), or in front of a line (the side facing the builder).
                 Vector3 toInside = ring ? (centre - c) : facing * Vector3.back;
@@ -119,7 +133,11 @@ namespace ValheimCompanion.Building
                 steps.Add(new BuildStep { Piece = "(clear)", Pos = d.transform.position, Rot = Quaternion.identity, Clear = d });
             }
             steps.AddRange(Benches(kind, placed, inward, plannedBenches));
-            steps.AddRange(pieces);
+            // Course by course all round, so no upper course goes up before the one it sits on.
+            for (int k = 0; k < kind.Courses; k++)
+            {
+                steps.AddRange(pieces.Where((p, i) => courseOf[i] == k));
+            }
             return steps;
         }
 
@@ -308,7 +326,9 @@ namespace ValheimCompanion.Building
             {
                 return benches;
             }
-            var planned = new List<Vector3>(alreadyPlanned ?? new List<Vector3>());
+            // Stone needs a stonecutter (which itself needs a workbench beside it); planned workbenches don't cover it.
+            string stationPiece = station == "$piece_stonecutter" ? "piece_stonecutter" : "piece_workbench";
+            var planned = new List<Vector3>(stationPiece == "piece_workbench" ? alreadyPlanned ?? new List<Vector3>() : new List<Vector3>());
             for (int i = 0; i < sections.Count; i++)
             {
                 Vector3 s = sections[i];
@@ -330,7 +350,22 @@ namespace ValheimCompanion.Building
                     pos.y = h;
                 }
                 planned.Add(pos);
-                benches.Add(new BuildStep { Piece = "piece_workbench", Pos = pos, Rot = Quaternion.LookRotation(-dir) });
+                if (stationPiece != "piece_workbench")
+                {
+                    // Its workbench first, a couple of metres further in, unless one is already in range.
+                    Vector3 wb = pos + dir * 2f;
+                    if (ZoneSystem.instance.GetGroundHeight(wb, out float wh))
+                    {
+                        wb.y = wh;
+                    }
+                    bool benchNear = CraftingStation.HaveBuildStationInRange("$piece_workbench", wb)
+                                     || (alreadyPlanned ?? new List<Vector3>()).Any(b => Vector3.Distance(b, wb) < BenchReach);
+                    if (!benchNear)
+                    {
+                        benches.Add(new BuildStep { Piece = "piece_workbench", Pos = wb, Rot = Quaternion.LookRotation(-dir) });
+                    }
+                }
+                benches.Add(new BuildStep { Piece = stationPiece, Pos = pos, Rot = Quaternion.LookRotation(-dir) });
             }
             return benches;
         }

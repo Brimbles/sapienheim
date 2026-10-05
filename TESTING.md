@@ -60,7 +60,7 @@ Things that can't be tested headlessly because they need a player in the world. 
   - **fights**: a battle cry at the start, picked for the enemy he's facing ("Let off some steam, Troll!", "Greyling! You son of a bitch!", "I eat Draugr for breakfast"), general ones ("If it bleeds, we can kill it") otherwise; a victory line at the end ("Hasta la vista, baby", "Consider that a divorce"...)
   - "Timber!", "Knock, knock" when he opens a door, "I'll be back" / "I have failed you" when he dies, "Death? Not today" when he's back, a greeting when he arrives, a line on levelling up
   - the AI can add the others to what he says ("Talk to the hand!", "Get to the longship!"...), sparingly
-- [ ] Compare accents: `tools/voice/auditions/bm_george_accent0/1/2.wav`. To change: edit `tools/voice/lines.txt`, then from `tools/voice` run `uv run python make_clips.py lines.txt` (options `--accent 0/1/2`, `--voice`, `--pitch`, `--grit`, `--speed`), rebuild the mod and restart server and client.
+- [ ] Compare accents: `tools/voice/auditions/bm_george_accent0/1/2/3.wav` (3, thick Austrian, is now the default: German r, "-a" for "-er", pure vowels, "dis" for "this", clipped glottal stops). To change: edit `tools/voice/lines.txt`, then from `tools/voice` run `uv run python make_clips.py lines.txt` (options `--accent 0/1/2/3`, `--voice`, `--pitch`, `--grit`, `--speed`), rebuild the mod and restart server and client.
 - Note: some lines are film quotes and swear words. Fine on your server; take them out of `mod/sounds` before publishing a public Thunderstore version.
 
 ## 4c. Levelling (M4.5)
@@ -108,6 +108,23 @@ Each line in the server log starts with `Proactive:`. Turn it off with `Companio
 - [ ] `@Alvar build a farm` with a cultivator and seeds in his pack: a hut, a fenced field, cultivated and planted with what seeds he has.
 - [ ] Check the layouts look sensible (fire by the door, portal beside the hut, field beside the farmhouse, everything inside the fence) and that he can get out through the gate afterwards.
 - Note: headless tests built an outpost near (272, -254) and farms near (337, -220) and (302, -325).
+- [ ] `@Alvar build a village` / `a fort` / `a mining camp` / `a port` (lots of wood; a hoe and a hammer): three huts round a fire in a fence; a hut inside a palisade with a gate; a hut with three chests out front; a hut on the shore with a dock running out into the water. Check the dock reaches water deep enough to moor a karve beside it.
+- [ ] After beating Bonemass, `@Alvar build a fort` again: the ring is a 2 m stone wall, with a stonecutter (he needs iron for it, and a lot of stone).
+
+## 4d9. Roads and blueprints
+- [ ] `@Alvar pave a road from here to <named place>`: a stone-paved road that winds round steep ground, a wooden bridge over a narrow stream, and if a lake or wide river is in the way he stops there and tells you.
+- [ ] `@Alvar save this house as a blueprint called mine`, then `@Alvar build the mine blueprint over there`: a copy goes up nearby. `@Alvar what blueprints do you know?` lists `cabin` (shipped) too.
+- [ ] Drop someone's PlanBuild `.blueprint` file into the server's `BepInEx/config/sapienheim/blueprints/` and ask him to build it: vanilla pieces go up; pieces from other mods are skipped and he says so.
+
+## 4d10. Boats and fishing
+- [ ] Moor a karve or longship close to the shore and climb aboard with him following: he swims to the ladder, climbs up and stands by the mast. Sail off: he stays aboard. Step off at the other end: he follows you off.
+- [ ] Anchor further out (15 m+ from shore) and get aboard: he waits on the beach instead of swimming out.
+- [ ] Knock him overboard (or let a wave do it) near the boat: he swims back and climbs aboard. Sail away fast instead: he gives up and swims ashore.
+- [ ] Give him a fishing rod and bait, `@Alvar catch some fish`: he goes to the nearest shore and casts every 15-40 s. Mostly small fish, plenty of misses, some bait lost; the right bait for the water's biome catches far more.
+
+## 4d11. Missions
+- [ ] `@Alvar go build an outpost 500 m north and come back`: he only reports at milestones (arrived, built, coming home). Kill him there (or let something do it): he comes back at the mission site, not beside you, and carries on.
+- [ ] Log out mid-mission for over an hour: he goes off duty as usual and picks the mission up when you're back.
 
 ## 4e. People and the day's tale
 - [ ] Log out for 30+ minutes after he's done a few jobs, then log back in: one greeting with a short "while you were away" of the highlights (not two greetings).

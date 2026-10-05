@@ -192,6 +192,14 @@ namespace ValheimCompanion.Bridge
                 return;
             }
 
+            if (action == "debug_respawn_now")
+            {
+                // Testing command (not an LLM tool): a dead companion comes back now rather than after the delay.
+                bool due = CompanionRespawn.DebugDueNow();
+                Result(cmdId, due, due ? null : "not_dead");
+                return;
+            }
+
             CompanionAI companion = CompanionAI.FindOwned();
             if (!companion)
             {
@@ -305,6 +313,152 @@ namespace ValheimCompanion.Bridge
                     Vector3 spawnAt = companion.transform.position + companion.transform.forward * 4f;
                     GameObject made = UnityEngine.Object.Instantiate(prefab, spawnAt, Quaternion.identity);
                     made.GetComponent<Character>().SetTamed(true);
+                    return null;
+                }
+                case "debug_global_key":
+                {
+                    // Testing command (not an LLM tool): set (or with remove, clear) a world key such as defeated_bonemass.
+                    string key = (string)args["key"] ?? "";
+                    if (args["remove"] != null && (bool)args["remove"])
+                    {
+                        ZoneSystem.instance.RemoveGlobalKey(key);
+                    }
+                    else
+                    {
+                        ZoneSystem.instance.SetGlobalKey(key);
+                    }
+                    data = new JObject { ["set"] = ZoneSystem.instance.GetGlobalKey(key) };
+                    return null;
+                }
+                case "debug_kill":
+                {
+                    // Testing command (not an LLM tool): he dies where he stands.
+                    var hit = new HitData();
+                    hit.m_damage.m_damage = 1e6f;
+                    hit.m_point = companion.transform.position;
+                    companion.GetComponent<Character>().Damage(hit);
+                    return null;
+                }
+                case "debug_boat":
+                {
+                    // Testing command (not an LLM tool). op find_coast: the nearest land beside water at least 2 m deep;
+                    // spawn: a Karve (or `boat`) in that water off the shore nearest him; push: sail the nearest boat
+                    // forward at `speed` m/s for `seconds`; status: where it is, and whether he's on it.
+                    string boatAction = (string)args["op"] ?? "status";
+                    float sea = ZoneSystem.instance.m_waterLevel;
+                    Vector3 me = companion.transform.position;
+                    if (boatAction == "find_coast")
+                    {
+                        for (float r = 8f; r <= 2000f; r += 8f)
+                        {
+                            int steps = Mathf.CeilToInt(2f * Mathf.PI * r / 8f);
+                            for (int s = 0; s < steps; s++)
+                            {
+                                float a = s * Mathf.PI * 2f / steps;
+                                Vector3 p = me + new Vector3(Mathf.Cos(a) * r, 0f, Mathf.Sin(a) * r);
+                                if (WorldGenerator.instance.GetHeight(p.x, p.z) < sea - 2f
+                                    && CompanionBoat.DistanceToShore(p, 20f, out Vector3 land) <= 20f)
+                                {
+                                    data = new JObject { ["land"] = new JArray(Mathf.Round(land.x), Mathf.Round(land.z)), ["water"] = new JArray(Mathf.Round(p.x), Mathf.Round(p.z)) };
+                                    return null;
+                                }
+                            }
+                        }
+                        return "no_coast_found";
+                    }
+                    if (boatAction == "clear")
+                    {
+                        int removed = 0;
+                        foreach (Ship old in CompanionBoat.All())
+                        {
+                            if (old && Vector3.Distance(old.transform.position, me) < 100f)
+                            {
+                                ZNetScene.instance.Destroy(old.gameObject);
+                                removed++;
+                            }
+                        }
+                        data = new JObject { ["removed"] = removed };
+                        return null;
+                    }
+                    if (boatAction == "spawn")
+                    {
+                        if (!CompanionFishing.FindShore(me, 40f, out Vector3 stand, out Vector3 water))
+                        {
+                            return "no_water_nearby";
+                        }
+                        Vector3 outward = water - stand;
+                        outward.y = 0f;
+                        outward.Normalize();
+                        Vector3 at = water;
+                        for (int i = 0; i < 20 && WorldGenerator.instance.GetHeight(at.x, at.z) > sea - 1.2f; i++)
+                        {
+                            at += outward;
+                        }
+                        at += outward * (args["out"] != null ? (float)args["out"] : 1f);
+                        at.y = sea + 0.3f;
+                        GameObject prefab = ZNetScene.instance.GetPrefab((string)args["boat"] ?? "Karve");
+                        if (!prefab)
+                        {
+                            return "unknown_boat";
+                        }
+                        // Broadside to the shore, so the ladder (on a side) faces one way or the other.
+                        GameObject boat = UnityEngine.Object.Instantiate(prefab, at, Quaternion.LookRotation(Vector3.Cross(Vector3.up, outward)));
+                        Vector3 climb = CompanionBoat.ClimbPoint(boat.GetComponent<Ship>());
+                        data = new JObject
+                        {
+                            ["at"] = new JArray(Mathf.Round(at.x), Mathf.Round(at.z)), ["shore"] = new JArray(Mathf.Round(stand.x), Mathf.Round(stand.z)),
+                            ["ladder_from_shore"] = Mathf.Round(CompanionBoat.DistanceToShore(climb, 40f, out _)),
+                        };
+                        return null;
+                    }
+                    Ship ship = CompanionBoat.Nearest(me, 300f);
+                    if (!ship)
+                    {
+                        return "no_boat_nearby";
+                    }
+                    if (boatAction == "push")
+                    {
+                        var push = ship.gameObject.GetComponent<DebugBoatPush>() ?? ship.gameObject.AddComponent<DebugBoatPush>();
+                        push.Dir = Vector3.zero;
+                        if (args["outward"] != null && (bool)args["outward"])
+                        {
+                            // Straight out to sea: away from the land near the boat, averaged all round.
+                            Vector3 away = Vector3.zero, at = ship.transform.position;
+                            for (int i = 0; i < 16; i++)
+                            {
+                                Vector3 d = Quaternion.Euler(0f, i * 22.5f, 0f) * Vector3.forward;
+                                for (float r = 4f; r <= 60f; r += 4f)
+                                {
+                                    if (WorldGenerator.instance.GetHeight(at.x + d.x * r, at.z + d.z * r) > ZoneSystem.instance.m_waterLevel)
+                                    {
+                                        away -= d / r;
+                                        break;
+                                    }
+                                }
+                            }
+                            away.y = 0f;
+                            push.Dir = away.sqrMagnitude > 0f ? away.normalized : Vector3.zero;
+                        }
+                        push.Speed = args["speed"] != null ? (float)args["speed"] : 3f;
+                        push.Until = Time.time + (args["seconds"] != null ? (float)args["seconds"] : 10f);
+                        push.Turn = args["turn"] != null ? (float)args["turn"] : 0f;
+                    }
+                    if (boatAction == "overboard")
+                    {
+                        // Drop him in the water beside the boat, `out` metres off its side.
+                        Vector3 side = ship.transform.right * (args["out"] != null ? (float)args["out"] : 6f);
+                        companion.transform.position = new Vector3(ship.transform.position.x + side.x, sea - 0.5f, ship.transform.position.z + side.z);
+                        Physics.SyncTransforms();
+                    }
+                    data = new JObject
+                    {
+                        ["boat"] = new JArray(Mathf.Round(ship.transform.position.x), Mathf.Round(ship.transform.position.z)),
+                        ["speed"] = Mathf.Round(CompanionBoat.Speed(ship) * 10f) / 10f,
+                        ["aboard"] = CompanionBoat.Aboard(ship, me), ["standing_on_ship"] = companion.GetComponent<Character>().GetStandingOnShip() == ship,
+                        ["swimming"] = companion.GetComponent<Character>().IsSwimming(), ["dist"] = Mathf.Round(Vector3.Distance(ship.transform.position, me)),
+                        ["ladder_dist"] = Mathf.Round(Vector3.Distance(CompanionBoat.ClimbPoint(ship), me) * 10f) / 10f,
+                        ["task"] = companion.Tasks.Current,
+                    };
                     return null;
                 }
                 case "debug_raid":
@@ -680,6 +834,48 @@ namespace ValheimCompanion.Bridge
                         data["unknown_prefabs"] = unknown;
                     }
                     return found.Count > 0 ? null : "none_found_in_explored_land";
+                }
+                case "board":
+                {
+                    // The nearest boat, as a passenger.
+                    Ship ship = CompanionBoat.Nearest(companion.transform.position, CompanionBoat.FindRadius);
+                    if (!ship)
+                    {
+                        return "no_boat_nearby";
+                    }
+                    float fromShore = CompanionBoat.DistanceToShore(CompanionBoat.ClimbPoint(ship), CompanionBoat.MaxSwim, out _);
+                    data = new JObject { ["boat"] = Utils.GetPrefabName(ship.gameObject), ["metres_from_shore"] = Mathf.Round(fromShore) };
+                    if (fromShore > CompanionBoat.MaxSwim)
+                    {
+                        return "boat_too_far_from_shore";
+                    }
+                    return Queue(companion, args, "board", () => companion.Tasks.CommandBoard(ship, TaskId(args, cmdId)));
+                }
+                case "leave_boat":
+                    companion.Tasks.CommandLeaveBoat(TaskId(args, cmdId));
+                    return null;
+                case "fish":
+                {
+                    if (Building.Builder.FindTool(companion.Inventory, CompanionFishing.Rod) == null)
+                    {
+                        return "need_fishing_rod";
+                    }
+                    if (!CompanionFishing.AllBaits.Any(b => companion.Inventory.Count(b) > 0))
+                    {
+                        return "need_bait";
+                    }
+                    if (!CompanionFishing.FindShore(companion.transform.position, 60f, out Vector3 stand, out Vector3 water))
+                    {
+                        return "no_water_nearby";
+                    }
+                    var here = CompanionFishing.ForWater(water);
+                    int wanted = Mathf.Clamp(args["qty"] != null ? (int)args["qty"] : 5, 1, 30);
+                    data = new JObject
+                    {
+                        ["shore"] = new JArray(Mathf.Round(stand.x), Mathf.Round(stand.z)), ["fish_here"] = here.fish,
+                        ["best_bait"] = here.bait, ["has_best_bait"] = companion.Inventory.Count(here.bait) > 0,
+                    };
+                    return Queue(companion, args, "fish", () => companion.Tasks.CommandFish(stand, water, wanted, TaskId(args, cmdId)));
                 }
                 case "feed_animals":
                 {
@@ -1445,7 +1641,7 @@ namespace ValheimCompanion.Bridge
             }
             int seed = args["seed"] != null ? (int)args["seed"] : UnityEngine.Random.Range(0, 100000);
             float facing = args["facing"] != null ? (float)args["facing"] : UnityEngine.Random.Range(0, 4) * 90f + UnityEngine.Random.Range(-20f, 20f);
-            if (!Building.SettlementTemplate.FindSite(kind, near, facing, seed, out Vector3 centre, out float floorY, out var clear, out string why))
+            if (!Building.SettlementTemplate.FindSite(kind, near, ref facing, seed, out Vector3 centre, out float floorY, out var clear, out string why))
             {
                 return why;
             }

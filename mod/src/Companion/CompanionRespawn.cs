@@ -170,6 +170,17 @@ namespace ValheimCompanion.Companion
             ZoneKeeper.Instance?.Forget();
         }
 
+        /// <summary>Testing only (debug_respawn_now): a dead companion's respawn is due now.</summary>
+        public static bool DebugDueNow()
+        {
+            if (s_record == null || s_record.WaitForPlayer)
+            {
+                return false;
+            }
+            s_record.DueUnixSeconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds() - 1;
+            return true;
+        }
+
         /// <summary>Called every frame by CompanionSpawner on the server once the world is loaded.</summary>
         public static void Update()
         {

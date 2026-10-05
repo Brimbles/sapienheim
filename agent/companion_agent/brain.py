@@ -75,10 +75,11 @@ RULES = """
 - `fetch_gravestone` does a corpse run when a player has died: their gear comes back to them.
 - `repair_nearby` fixes damaged buildings around you (or a player or named place) with your hammer.
 - `tear_down` (only for your master) takes buildings down with your hammer. Never confirm without asking: the first call tells you what would come down; describe it ("that's 53 pieces: walls, roof, two beds...") and only call again with confirm=true once your master says yes. If the player doesn't say which building, use the one nearest them (`near`). The materials drop on the ground; offer to pick them up afterwards.
-- Travel: to go to a named place, use `travel` (it picks the best route, through portals when that's shorter). `use_portal` steps through a specific portal. You can walk up to 5 km, but not across open water (no boats yet).
+- Travel: to go to a named place, use `travel` (it picks the best route, through portals when that's shorter). `use_portal` steps through a specific portal. You can walk up to 5 km, but not across open water. You can't sail or steer a boat, but you ride as a passenger: `board` the nearest boat (you swim to its ladder; never to one more than 15 m out), and when following you climb aboard on your own when your master does and step off when they do. If you fall in you swim back to the boat if it's close, else to shore.
 - Name the settlements you build (the `name` on `build`) so you can travel back to them later. Named places show as pins on everyone's map.
 - Memory: you keep a long-term memory between sessions (shown as "What you remember"). Use `remember` for things worth keeping: what players like, promises, plans, notable events. Use `name_place` when asked to remember a location, and `go_to` with `place` to go back there.
-- You can't build other kinds of structure yet (forts, villages, roads, portals). Say so in character.
+- Settlements (`build` templates outpost, farm, village, fort, mining_camp, port) go at least 50 m from any base and outside wards; you gather every material honestly. Wood only until Bonemass is beaten. `build_road` lays a free stone-paved road between places, routing round steep ground and bridging narrow water (it stops and tells you where wider water blocks it). `blueprints` lists shared building plans you can build (template blueprint) or saves a building you're near as a new one.
+- `fish` at the nearest shore with your rod and bait. It's chancy: the right bait for the water's biome helps a lot, misses sometimes lose bait, and a few fish can take a while.
 - Example plan for "get 20 wood and make me a club": recipe(Club) -> gather(Wood, enough for the club plus 20, queue) -> craft(Club, queue) -> give(Club to the player, queue) -> give(Wood, 20, queue). Say what you're about to do first.
 - Never attack players or tamed animals. Use the `id` values from the `nearby` list for `attack`.
 - Positions are [x, y, z] in metres; `go_to` takes x and z.
@@ -296,13 +297,13 @@ TOOLS: list[dict[str, Any]] = [
         "whatever size you ask; elsewhere it's a square of `size`. Spots blocked by trees, buildings, water or wards "
         "are left as gaps (reported as gaps). portal: a wooden portal with a `tag` (GreydwarfEye 10, FineWood 20, "
         "SurtlingCore 2, plus a workbench, Wood 10, if none is near); tell your master the tag so they can build the "
-        "matching one. outpost: a small settlement (hut with beds, chest, fire pit, fence ring, and a portal if you give a `tag`); farm: a hut, a cultivated field planted with the seeds you carry, and a fence. Both are placed at least 50 m from any existing building and outside wards, so they may be well away from you; they need a hoe (farm: and a cultivator) and lots of wood: ask build first and it tells you what's missing. Name them with `name`. sign: a sign with your `text` (Wood 2, Coal 1), e.g. to mark a place or commemorate a deed. Needs a hammer. Rejected straight away with "
+        "matching one. outpost: a small settlement (hut with beds, chest, fire pit, fence ring, and a portal if you give a `tag`); farm: a hut, a cultivated field planted with the seeds you carry, and a fence; village: three huts round a fire pit in a fence; fort: a hut, fire pit and chests inside a palisade with a gate; mining_camp: a hut with three chests and a fire pit, no ring; port: a hut on the shore facing the water with a wooden dock to moor a boat (needs a shore nearby). All are placed at least 50 m from any existing building and outside wards, so they may be well away from you; they need a hoe (farm: and a cultivator) and lots of wood: ask build first and it tells you what's missing. Name them with `name`. sign: a sign with your `text` (Wood 2, Coal 1), e.g. to mark a place or commemorate a deed. Needs a hammer. Rejected straight away with "
         "missing_materials (and what's missing) or need_hammer unless queued. task_done/task_failed reports the result; "
         "a failed build can be continued with resume_build.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "template": {"type": "string", "enum": ["hut", "wall", "fence", "portal", "sign", "outpost", "farm", "blueprint"]},
+                "template": {"type": "string", "enum": ["hut", "wall", "fence", "portal", "sign", "outpost", "farm", "village", "fort", "mining_camp", "port", "blueprint"]},
                 "blueprint": {"type": "string", "description": "blueprint: its name (see the blueprints tool)."},
                 "text": {"type": "string", "description": "sign: the inscription, up to 50 characters."},
                 "tag": {"type": "string", "description": "portal: its tag; a portal pairs with the one other portal with the same tag."},
@@ -333,6 +334,25 @@ TOOLS: list[dict[str, Any]] = [
             "type": "object",
             "properties": {"radius": {"type": "number"}, "around": {"type": "string"}, "queue": {"type": "boolean"}},
         },
+    },
+    {
+        "name": "board",
+        "description": "Climb aboard the nearest boat (within 40 m) as a passenger: you swim to its ladder, climb up and "
+        "stand by the mast. You can't steer. You won't swim to a boat more than 15 m from shore. When following, you board "
+        "on your own when your master does, and step off when they do.",
+        "input_schema": {"type": "object", "properties": {"queue": {"type": "boolean"}}},
+    },
+    {
+        "name": "leave_boat",
+        "description": "Get off the boat you're on and follow your master again.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "fish",
+        "description": "Go to the nearest shore (within 60 m) and fish with your rod and bait until you've caught `qty` "
+        "(default 5), run out of bait, or 15 minutes pass. It isn't easy: the right bait for the water's biome helps a lot "
+        "(replies say which bait suits here), and misses sometimes cost bait. task_done lists the catch.",
+        "input_schema": {"type": "object", "properties": {"qty": {"type": "integer"}, "queue": {"type": "boolean"}}},
     },
     {
         "name": "feed_animals",
@@ -1331,7 +1351,7 @@ def _worth_reporting(event: Event) -> bool:
     if event.name == "task_failed":
         return True
     return event.data.get("queue_remaining", 0) == 0 and event.data.get("task") in (
-        "gather", "give", "pick_up", "craft", "store", "fetch", "build", "go_to", "portal", "repair", "tear_down", "gravestone", "tend_fires", "deposit", "cook", "load_smelters", "collect_output", "farm", "feed_animals"
+        "gather", "give", "pick_up", "craft", "store", "fetch", "build", "go_to", "portal", "repair", "tear_down", "gravestone", "tend_fires", "deposit", "cook", "load_smelters", "collect_output", "farm", "feed_animals", "fish", "board"
     )
 
 

@@ -140,7 +140,9 @@ namespace ValheimCompanion.Building
         /// </summary>
         public static int Export(string name, Vector3 near, out string path)
         {
-            List<Piece> pieces = LineTemplate.FindBuilding(near, 15f).Where(p => PieceCatalog.Get(Utils.GetPrefabName(p.gameObject))).ToList();
+            // The building itself: not the fence or palisade ring round it, nor another mod's pieces.
+            List<Piece> pieces = LineTemplate.FindBuilding(near, 15f, p => !IsRing(Utils.GetPrefabName(p.gameObject)))
+                .Where(p => PieceCatalog.Get(Utils.GetPrefabName(p.gameObject))).ToList();
             path = null;
             if (pieces.Count == 0)
             {
@@ -171,6 +173,27 @@ namespace ValheimCompanion.Building
             path = Path.Combine(Folder, Safe(name) + ".blueprint");
             File.WriteAllText(path, sb.ToString());
             return pieces.Count;
+        }
+
+        private static bool IsRing(string prefab) => prefab.Contains("fence") || prefab.Contains("stake_wall") || prefab == "wood_gate";
+
+        /// <summary>Server start: copy the starter blueprints shipped with the mod into the folder, if not there yet.</summary>
+        public static void InstallStarters()
+        {
+            string shipped = Path.Combine(Path.GetDirectoryName(typeof(Plugin).Assembly.Location) ?? ".", "blueprints");
+            if (!Directory.Exists(shipped))
+            {
+                return;
+            }
+            Directory.CreateDirectory(Folder);
+            foreach (string file in Directory.GetFiles(shipped, "*.blueprint"))
+            {
+                string target = Path.Combine(Folder, Path.GetFileName(file));
+                if (!File.Exists(target))
+                {
+                    File.Copy(file, target);
+                }
+            }
         }
 
         private static string F(float v) => v.ToString("0.###", CultureInfo.InvariantCulture);

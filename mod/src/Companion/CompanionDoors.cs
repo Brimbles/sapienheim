@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using ValheimCompanion.Building;
 
@@ -53,13 +54,16 @@ namespace ValheimCompanion.Companion
         /// side, for a walk that's boxed in (e.g. inside a fence ring): head there, and the stuck handling above opens it.
         /// Returns a point just in front of it on our side, or null.
         /// </summary>
-        public static Vector3? ExitTowards(Vector3 pos, Vector3 goal, float radius, long master)
+        public static Vector3? ExitTowards(Vector3 pos, Vector3 goal, float radius, long master, HashSet<Door> tried = null)
         {
-            Door best = null;
-            float bestDist = radius;
+            // Best: a door or gate with the goal beyond it. Failing that, any gate not tried yet (a ring's gate leads out
+            // even when the goal is off to one side of it): aim for its far side.
+            Door best = null, gate = null;
+            float bestDist = radius, gateDist = radius;
             foreach (Door door in Object.FindObjectsByType<Door>(FindObjectsSortMode.None))
             {
-                if (!door || !door.m_nview || !door.m_nview.IsValid() || door.m_keyItem != null || !Builder.WardAllows(door.transform.position, master))
+                if (!door || !door.m_nview || !door.m_nview.IsValid() || door.m_keyItem != null || !Builder.WardAllows(door.transform.position, master)
+                    || (tried != null && tried.Contains(door)))
                 {
                     continue;
                 }
@@ -69,17 +73,72 @@ namespace ValheimCompanion.Companion
                     best = door;
                     bestDist = d;
                 }
+                else if (d < gateDist && Utils.GetPrefabName(door.gameObject).Contains("gate"))
+                {
+                    gate = door;
+                    gateDist = d;
+                }
             }
-            if (!best)
+            Door chosen = best ? best : gate;
+            if (!chosen)
             {
                 return null;
             }
-            Vector3 normal = best.transform.forward;
+            tried?.Add(chosen);
+            Vector3 normal = chosen.transform.forward;
             normal.y = 0f;
             normal.Normalize();
-            float side = Mathf.Sign(Vector3.Dot(normal, pos - best.transform.position));
-            return best.transform.position + normal * side * 1.5f;
+            float side = Mathf.Sign(Vector3.Dot(normal, pos - chosen.transform.position));
+            return best ? chosen.transform.position + normal * side * 1.5f : chosen.transform.position - normal * side * 2.5f;
         }
+
+        /// <summary>
+        /// Inside a fence, palisade or wall ring: rays in 8 directions at waist height that hit ring pieces (or their
+        /// gate) within 30 m, in at least 6 of them. Then the way out is the nearest gate, whatever side the goal is on.
+        /// </summary>
+        public static bool InsideRing(Vector3 pos, out Vector3 gateExit)
+        {
+            gateExit = pos;
+            int mask = LayerMask.GetMask("piece", "piece_nonsolid", "Default");
+            int hits = 0;
+            for (int i = 0; i < 8; i++)
+            {
+                Vector3 dir = Quaternion.Euler(0f, i * 45f, 0f) * Vector3.forward;
+                if (Physics.Raycast(pos + Vector3.up * 0.7f, dir, out RaycastHit hit, 30f, mask, QueryTriggerInteraction.Ignore)
+                    && hit.collider.GetComponentInParent<Piece>() is Piece piece && IsRingPiece(Utils.GetPrefabName(piece.gameObject)))
+                {
+                    hits++;
+                }
+            }
+            if (hits < 6)
+            {
+                return false;
+            }
+            Door gate = null;
+            float best = 35f;
+            foreach (Door door in Object.FindObjectsByType<Door>(FindObjectsSortMode.None))
+            {
+                float d = door ? Vector3.Distance(door.transform.position, pos) : float.MaxValue;
+                if (d < best && door.m_keyItem == null && Utils.GetPrefabName(door.gameObject).Contains("gate"))
+                {
+                    gate = door;
+                    best = d;
+                }
+            }
+            if (!gate)
+            {
+                return false;
+            }
+            Vector3 normal = gate.transform.forward;
+            normal.y = 0f;
+            normal.Normalize();
+            float side = Mathf.Sign(Vector3.Dot(normal, pos - gate.transform.position));
+            gateExit = gate.transform.position - normal * side * 2.5f;
+            return true;
+        }
+
+        private static bool IsRingPiece(string prefab) =>
+            prefab.Contains("fence") || prefab.Contains("stake_wall") || prefab.Contains("stone_wall") || prefab.Contains("gate");
 
         /// <summary>Is the goal on the other side of this doorway from us? Only then is stepping through useful.</summary>
         private static bool GoalBeyond(Door door, Vector3 pos, Vector3 goal)

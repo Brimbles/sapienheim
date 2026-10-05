@@ -12,6 +12,12 @@ namespace ValheimCompanion.Building
     /// optional tagged portal beside it, and a fence ring with a gate round the lot.</item>
     /// <item><b>farm</b>: a hut, a cultivated field beside it planted with the seeds in the pack (as many as it has),
     /// and a fence ring round both.</item>
+    /// <item><b>village</b>: three huts round a fire pit (the middle one set back), each with a chest, in a fence ring.</item>
+    /// <item><b>fort</b>: a hut, a fire pit and two chests inside a palisade (stake wall) ring with a gate; once Bonemass
+    /// is beaten, a 2 m stone wall instead (with a stonecutter, so it needs iron).</item>
+    /// <item><b>mining_camp</b>: a hut with three chests in a row out front and a fire pit; no ring, quick to put up.</item>
+    /// <item><b>port</b>: a hut on the shore facing the water, a fire pit, and a wooden dock on posts running out from
+    /// the water's edge (to 2.5 m deep, 8-14 m long) for mooring a boat. Its site faces the nearest water.</item>
     /// </list>
     /// Sites follow the agreed rules: outside every ward and at least 50 m from any existing player building, so a new
     /// settlement never crowds a base. All wood pieces (stone comes later in the game). The hut needs a hoe to level;
@@ -26,14 +32,20 @@ namespace ValheimCompanion.Building
         private const int FieldSize = 8; // metres square
         private const string CultivatePiece = "cultivate_v2";
 
-        public static bool IsKind(string template) => template == "outpost" || template == "farm";
+        public static readonly string[] Kinds = { "outpost", "farm", "village", "fort", "mining_camp", "port" };
+
+        public static bool IsKind(string template) => System.Array.IndexOf(Kinds, template) >= 0;
+
+        /// <summary>Stone only once Bonemass is beaten (agreed with the user); before that, everything is wood.</summary>
+        public static bool StoneAllowed => ZoneSystem.instance && ZoneSystem.instance.GetGlobalKey("defeated_bonemass");
 
         private class Layout
         {
             public int HutWidth;
             public bool Mirror;      // things on the left instead of the right
             public Vector2 Half;     // the whole settlement's half-extents (local x, z), fence included
-            public Vector3 HutLocal; // hut centre, local
+            public Vector3 HutLocal; // the main hut's centre, local
+            public List<(Vector3 local, int width)> Huts = new List<(Vector3, int)>();
         }
 
         private static Layout Plan(string kind, System.Random rng)
@@ -47,11 +59,37 @@ namespace ValheimCompanion.Building
                 l.HutLocal = new Vector3((l.Mirror ? 1f : -1f) * (span / 2f - hw), 0f, 0f);
                 l.Half = new Vector2(span / 2f + 4f, Mathf.Max(hd, FieldSize / 2f) + 4f);
             }
+            else if (kind == "village")
+            {
+                // Middle hut set back, one each side; 3 m between them.
+                l.HutWidth = 3;
+                float x = 2f * 3f + 3f;
+                l.HutLocal = new Vector3(0f, 0f, 3f);
+                l.Huts.Add((new Vector3(-x, 0f, -1f), 3));
+                l.Huts.Add((new Vector3(x, 0f, -1f), 3));
+                l.Half = new Vector2(x + 3f + 4f, hd + 3f + 7f);
+            }
+            else if (kind == "fort")
+            {
+                l.HutLocal = new Vector3(0f, 0f, 2f);
+                l.Half = new Vector2(hw + 8f, hd + 2f + 7f);
+            }
+            else if (kind == "mining_camp")
+            {
+                l.HutLocal = new Vector3(0f, 0f, 1f);
+                l.Half = new Vector2(hw + 3f, hd + 1f + 5f);
+            }
+            else if (kind == "port")
+            {
+                l.HutLocal = Vector3.zero;
+                l.Half = new Vector2(hw + 3f, hd + 2f); // dry land only: the dock is beyond it
+            }
             else
             {
                 l.HutLocal = Vector3.zero;
                 l.Half = new Vector2(hw + 7f, hd + 5f);
             }
+            l.Huts.Insert(0, (l.HutLocal, l.HutWidth));
             return l;
         }
 
@@ -59,11 +97,12 @@ namespace ValheimCompanion.Building
         /// Somewhere for it near <paramref name="near"/>: the hut's own site rules (via HutTemplate), the whole footprint
         /// dry and clear of anything bigger than a bush, outside wards and far enough from other buildings.
         /// </summary>
-        public static bool FindSite(string kind, Vector3 near, float facingYaw, int seed, out Vector3 centre, out float floorY,
+        public static bool FindSite(string kind, Vector3 near, ref float facingYaw, int seed, out Vector3 centre, out float floorY,
                                     out List<Destructible> clear, out string reason)
         {
             Layout l = Plan(kind, new System.Random(seed));
             Quaternion facing = Quaternion.Euler(0f, facingYaw, 0f);
+            float hd = HutTemplate.Depth;
             reason = "no_site_far_enough_from_bases";
             var reasons = new Dictionary<string, int>();
             for (float r = 0f; r <= SearchRadius; r += 4f)
@@ -73,10 +112,22 @@ namespace ValheimCompanion.Building
                 {
                     float a = s * Mathf.PI * 2f / steps;
                     Vector3 c = near + new Vector3(Mathf.Cos(a) * r, 0f, Mathf.Sin(a) * r);
+                    if (kind == "port")
+                    {
+                        // Face the water: it must start just beyond the hut's dry margin.
+                        if (!WaterAhead(c, hd + 3f, hd + 8f, out Vector3 dir))
+                        {
+                            reasons.TryGetValue("no_shore_nearby", out int m);
+                            reasons["no_shore_nearby"] = m + 1;
+                            continue;
+                        }
+                        facing = Quaternion.LookRotation(-dir);
+                    }
                     string why = Check(kind, l, c, facing, out floorY, out clear);
                     if (why == null)
                     {
                         centre = c;
+                        facingYaw = facing.eulerAngles.y;
                         return true;
                     }
                     reasons.TryGetValue(why, out int n);
@@ -91,6 +142,75 @@ namespace ValheimCompanion.Building
             floorY = 0f;
             clear = null;
             return false;
+        }
+
+        private static float Ground(Vector3 p) =>
+            ZoneSystem.instance.GetGroundHeight(p, out float h) ? h : WorldGenerator.instance.GetHeight(p.x, p.z);
+
+        /// <summary>The direction (of 16) in which water (0.3 m+ deep) starts between min and max metres away.</summary>
+        private static bool WaterAhead(Vector3 c, float min, float max, out Vector3 dir)
+        {
+            float sea = ZoneSystem.instance.m_waterLevel;
+            for (int i = 0; i < 16; i++)
+            {
+                dir = Quaternion.Euler(0f, i * 22.5f, 0f) * Vector3.forward;
+                for (float d = 1f; d <= max; d += 1f)
+                {
+                    if (WorldGenerator.instance.GetHeight(c.x + dir.x * d, c.z + dir.z * d) < sea - 0.3f)
+                    {
+                        if (d >= min)
+                        {
+                            return true;
+                        }
+                        break;
+                    }
+                }
+            }
+            dir = Vector3.zero;
+            return false;
+        }
+
+        /// <summary>
+        /// A dock from the water's edge in front of the hut: 2 m sections of floor, each on posts down to the bed, out to
+        /// 2.5 m deep (8 to 14 m).
+        /// </summary>
+        private static List<BuildStep> Dock(Vector3 centre, Quaternion facing)
+        {
+            var steps = new List<BuildStep>();
+            float sea = ZoneSystem.instance.m_waterLevel;
+            Vector3 dir = facing * Vector3.back;
+            Vector3 edge = centre;
+            for (float d = 1f; d <= 16f; d += 0.5f)
+            {
+                edge = centre + dir * d;
+                if (Ground(edge) < sea)
+                {
+                    break;
+                }
+            }
+            Vector3 start = edge - dir * 1.5f;
+            float deck = Mathf.Max(Ground(start) + 0.1f, sea + 0.6f);
+            Quaternion rot = Quaternion.LookRotation(dir);
+            var posts = new List<BuildStep>();
+            for (int i = 0; i < 7; i++)
+            {
+                Vector3 c = start + dir * (1f + 2f * i);
+                float bed = Ground(c);
+                if (i >= 4 && bed < sea - 2.5f)
+                {
+                    break;
+                }
+                // Posts bottom up (a 2 m post is centred on its pivot), then the floor on top.
+                posts.Clear();
+                for (float top = deck; top - 2f > bed - 1f; top -= 2f)
+                {
+                    posts.Add(new BuildStep { Piece = "wood_pole2", Pos = new Vector3(c.x, top - 1f, c.z), Rot = rot });
+                }
+                posts.Reverse();
+                steps.AddRange(posts);
+                steps.Add(new BuildStep { Piece = "wood_floor", Pos = new Vector3(c.x, deck, c.z), Rot = rot });
+            }
+            return steps;
         }
 
         private static string Check(string kind, Layout l, Vector3 c, Quaternion facing, out float floorY, out List<Destructible> clear)
@@ -112,11 +232,21 @@ namespace ValheimCompanion.Building
             {
                 return "too_close_to_a_base";
             }
-            // The hut's own rules (levelled site, clear, dry).
-            Vector3 hutCentre = c + facing * l.HutLocal;
-            if (!HutTemplate.CheckSitePublic(hutCentre, HutTemplate.HalfExtents(l.HutWidth), facing, true, out floorY, out string hutWhy, out clear))
+            // The huts' own rules (levelled site, clear, dry).
+            for (int i = l.Huts.Count - 1; i >= 0; i--)
             {
-                return hutWhy.Split(':')[0];
+                Vector3 hutCentre = c + facing * l.Huts[i].local;
+                if (!HutTemplate.CheckSitePublic(hutCentre, HutTemplate.HalfExtents(l.Huts[i].width), facing, true, out floorY, out string hutWhy, out var hutClear))
+                {
+                    return hutWhy.Split(':')[0];
+                }
+                foreach (Destructible d in hutClear)
+                {
+                    if (!clear.Contains(d))
+                    {
+                        clear.Add(d);
+                    }
+                }
             }
             // The rest of the footprint: dry, and nothing big in the way (bushes and small rocks get cleared).
             for (float x = -l.Half.x; x <= l.Half.x + 0.01f; x += 2f)
@@ -172,18 +302,73 @@ namespace ValheimCompanion.Building
 
             var steps = HutTemplate.Generate(l.HutWidth, hutOrigin, facingYaw, clear, level: true);
             Vector3 bench = Local(new Vector3(hw - 0.9f, 0f, -hd + 1.5f)); // where the hut puts its bench when levelled
+            var benches = new List<Vector3> { bench };
+            var floors = new List<(Vector3 centre, int width, float y)> { (hutCentre, l.HutWidth, floorY) };
+            // The other huts (a village's): each levelled on its own floor, with its bench and a chest.
+            for (int i = 1; i < l.Huts.Count; i++)
+            {
+                Vector3 hc = centre + facing * l.Huts[i].local;
+                int w = l.Huts[i].width;
+                if (!HutTemplate.CheckSitePublic(hc, HutTemplate.HalfExtents(w), facing, true, out float fy, out _, out var more))
+                {
+                    continue; // checked when the site was chosen; nothing has changed since unless something moved in
+                }
+                Vector3 origin = new Vector3(hc.x, fy, hc.z);
+                floors.Add((hc, w, fy));
+                steps.AddRange(HutTemplate.Generate(w, origin, facingYaw, more.Where(d => !clear.Contains(d)).ToList(), level: true));
+                benches.Add(origin + facing * new Vector3(w - 0.9f, 0f, -hd + 1.5f));
+                steps.Add(new BuildStep { Piece = "piece_chest_wood", Pos = origin + facing * new Vector3(-w + 0.8f, 0f, -hd + 1.4f), Rot = facing * Quaternion.Euler(0f, 90f, 0f) });
+            }
 
             // A chest inside, in the front corner opposite the bench, its back to the side wall.
             steps.Add(new BuildStep { Piece = "piece_chest_wood", Pos = Local(new Vector3(-hw + 0.8f, 0f, -hd + 1.4f)), Rot = facing * Quaternion.Euler(0f, 90f, 0f) });
 
+            // On the ground as it will be: inside a hut's levelled area that's the hut's floor height (the ground there
+            // is only levelled during the build, so reading it now would leave the piece floating or buried).
+            Vector3 Settle(Vector3 p)
+            {
+                foreach (var f in floors)
+                {
+                    Vector3 rel = Quaternion.Inverse(facing) * (p - f.centre);
+                    Vector2 half = HutTemplate.HalfExtents(f.width);
+                    if (Mathf.Abs(rel.x) <= half.x + 0.5f && Mathf.Abs(rel.z) <= half.y + 0.5f)
+                    {
+                        p.y = f.y;
+                        return p;
+                    }
+                }
+                p.y = Ground(p);
+                return p;
+            }
+            Vector3 OnGround(Vector3 local) => Settle(centre + facing * local);
+            if (kind == "village")
+            {
+                steps.Add(new BuildStep { Piece = "fire_pit", Pos = OnGround(new Vector3(0f, 0f, -hd - 3.5f)), Rot = facing });
+            }
+            else if (kind == "fort")
+            {
+                steps.Add(new BuildStep { Piece = "fire_pit", Pos = OnGround(new Vector3(side * 3f, 0f, -hd - 1.5f)), Rot = facing });
+                steps.Add(new BuildStep { Piece = "piece_chest_wood", Pos = OnGround(new Vector3(-side * (hw + 2f), 0f, 2f)), Rot = facing * Quaternion.Euler(0f, side * 90f, 0f) });
+            }
+            else if (kind == "mining_camp")
+            {
+                for (int i = -1; i <= 1; i++)
+                {
+                    steps.Add(new BuildStep { Piece = "piece_chest_wood", Pos = OnGround(new Vector3(i * 2f, 0f, -hd - 2.5f + 1f)), Rot = facing * Quaternion.Euler(0f, 180f, 0f) });
+                }
+                steps.Add(new BuildStep { Piece = "fire_pit", Pos = OnGround(new Vector3(side * (hw + 2f), 0f, -hd - 2f)), Rot = facing });
+            }
+            if (kind == "port")
+            {
+                Vector3 fire = Local(new Vector3(side * (hw + 1.5f), 0f, -hd + 1f));
+                fire = Settle(fire);
+                steps.Add(new BuildStep { Piece = "fire_pit", Pos = fire, Rot = facing });
+                steps.AddRange(Dock(hutCentre, facing));
+            }
             if (kind == "outpost")
             {
                 // A fire pit outside, beside the door.
-                Vector3 fire = Local(new Vector3(side * 2.5f, 0f, -hd - 2.5f));
-                if (ZoneSystem.instance.GetGroundHeight(fire, out float fh))
-                {
-                    fire.y = fh;
-                }
+                Vector3 fire = Settle(Local(new Vector3(side * 2.5f, 0f, -hd - 2.5f)));
                 steps.Add(new BuildStep { Piece = "fire_pit", Pos = fire, Rot = facing });
                 if (!string.IsNullOrEmpty(portalTag))
                 {
@@ -195,15 +380,18 @@ namespace ValheimCompanion.Building
                     steps.AddRange(PortalTemplate.Generate(portal, facingYaw, portalTag, null, needBench: false));
                 }
             }
-            else
+            else if (kind == "farm")
             {
                 steps.AddRange(Field(centre, facing, side, hw, inv, out planted));
             }
 
-            // A fence ring round everything, gate at the front; the hut's bench covers it, so no extra benches.
-            Vector2 ringHalf = l.Half - new Vector2(1.5f, 1.5f);
-            steps.AddRange(LineTemplate.Generate("fence", true, Mathf.RoundToInt(ringHalf.x * 2f), Mathf.RoundToInt(ringHalf.y * 2f),
-                new Vector3(centre.x, floorY, centre.z), facingYaw, true, masterId, out _, new List<Vector3> { bench }));
+            // A ring round everything, gate at the front: a fence, or a fort's palisade. The huts' benches cover it.
+            if (kind != "mining_camp" && kind != "port")
+            {
+                Vector2 ringHalf = l.Half - new Vector2(1.5f, 1.5f);
+                steps.AddRange(LineTemplate.Generate(kind == "fort" ? (StoneAllowed ? "stonewall" : "wall") : "fence", true, Mathf.RoundToInt(ringHalf.x * 2f), Mathf.RoundToInt(ringHalf.y * 2f),
+                    new Vector3(centre.x, floorY, centre.z), facingYaw, true, masterId, out _, benches));
+            }
             return steps;
         }
 
