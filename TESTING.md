@@ -83,7 +83,9 @@ Each line in the server log starts with `Proactive:`. Turn it off with `Companio
 
 ## 4d4. Tending fires
 - [ ] Let the base fires burn low, give him wood (and resin for torches), then `@Alvar keep the fires going`. He walks round topping each up and tells you if he ran short.
-- Note: a test torch was left standing (it needs a workbench in range to remove) near (180, -225).
+- Note: a test torch and two empty test chests were left near (183, -224): they need a workbench in range to remove. Knock them down whenever.
+- [ ] After a gathering trip, `@Alvar put your stuff away`: he stores everything but his tools and weapons in the base chests, each kind with its own kind where possible.
+- [ ] Log out and come back later: he should be where you left him (waiting, not wandered off).
 
 ## 4e. People and the day's tale
 - [ ] Log out for 30+ minutes after he's done a few jobs, then log back in: one greeting with a short "while you were away" of the highlights (not two greetings).

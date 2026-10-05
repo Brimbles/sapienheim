@@ -477,9 +477,66 @@ async def scenario_items(r: Runner) -> None:
         r.results.append((f"items: {f}", ", ".join((res.data or {}).get("items", []))))
 
 
+async def scenario_deposit(r: Runner) -> None:
+    """Deposit: two chests (built as the master), stone pre-stored in the far one; like goes with like. Then tidy up."""
+    s = await r.state()
+    here = s["self"]["pos"]
+    for dx in (5, 9):
+        await r.cmd("debug_place", piece="piece_chest_wood", pos=[here[0] + dx, here[2] - 4], as_master=True)
+    for item, qty in (("Wood", 6), ("Stone", 4), ("Resin", 3)):
+        await r.cmd("debug_give", item=item, qty=qty)
+    s = await r.state()
+    chests = sorted(s.get("chests", []), key=lambda c: c["dist"])
+    far = max((c for c in chests if c["dist"] < 15), key=lambda c: c["dist"])
+    await r.task("put 2 stone in the far chest first", "store_items", chest_id=far["id"], item="Stone", qty=2)
+    await r.task("deposit", "deposit", radius=15)
+    s = await r.state()
+    for c in s.get("chests", []):
+        if c["dist"] < 15:
+            r.results.append((f"chest {c['id'][-6:]} ({c['dist']} m)", str(c["contents"])))
+    await _empty_and_remove_test_chests(r, 15)
+    await r.cmd("save_world")
+
+
+async def _empty_and_remove_test_chests(r: Runner, within: float) -> None:
+    s = await r.state()
+    test = [c for c in s.get("chests", []) if c["dist"] < within]
+    for c in test:
+        for item in c["contents"]:
+            await r.task(f"take back {item['item']}", "fetch_items", chest_id=c["id"], item=item["item"], qty=item["qty"])
+    for c in test:
+        found = await r.conn.command("pieces_near", pos=(await r.state())["self"]["pos"], radius=within)
+        for p in (found.data or {}).get("pieces", []):
+            if p["piece"] == "piece_chest_wood" and p["creator"] != 0:
+                res = await r.cmd("tear_down", x=p["pos"][0], z=p["pos"][2], scope="radius", radius=1, confirm=True)
+                if res.ok:
+                    await r.task_wait("remove a test chest", res)
+                break
+
+
+async def scenario_tidy_chests(r: Runner) -> None:
+    """Empty and remove test chests within 15 m."""
+    s = await r.state()
+    r.results.append(('chests seen', str([(c['dist'], c['contents']) for c in s.get('chests', [])])))
+    await _empty_and_remove_test_chests(r, 15)
+    await r.cmd("save_world")
+
+
+async def scenario_hold(r: Runner) -> None:
+    """With no master online, following means waiting in place (not roaming). Then walk back to x z if given."""
+    await r.cmd("follow")
+    start = (await r.state())["self"]["pos"]
+    await asyncio.sleep(60)
+    end = (await r.state())["self"]["pos"]
+    moved = ((end[0] - start[0]) ** 2 + (end[2] - start[2]) ** 2) ** 0.5
+    r.results.append(("moved in 60 s while 'following' an absent master", f"{moved:.1f} m"))
+    if len(sys.argv) >= 4:
+        await r.task("walk back", "go_to", x=float(sys.argv[2]), z=float(sys.argv[3]))
+
+
 SCENARIOS = {
     "m4": scenario_m4, "pieces": scenario_pieces, "build": scenario_build, "inspect": scenario_inspect,
-    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds, "buildportal": scenario_buildportal, "gravestone": scenario_gravestone, "guard": scenario_guard, "fires": scenario_fires, "items": scenario_items,
+    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds, "buildportal": scenario_buildportal, "gravestone": scenario_gravestone, "guard": scenario_guard, "fires": scenario_fires, "items": scenario_items, "deposit": scenario_deposit, "tidy_chests": scenario_tidy_chests, "hold": scenario_hold,
 }
 
 

@@ -522,6 +522,27 @@ namespace ValheimCompanion.Bridge
                     return Queue(companion, args, $"build({name})",
                         () => companion.Tasks.CommandBuild(name, plan, TaskId(args, cmdId)));
                 }
+                case "deposit":
+                {
+                    Vector3 centre = companion.transform.position;
+                    if (args["x"] != null && args["z"] != null)
+                    {
+                        centre = new Vector3((float)args["x"], centre.y, (float)args["z"]);
+                    }
+                    float radius = Mathf.Clamp(args["radius"] != null ? (float)args["radius"] : 30f, 5f, 60f);
+                    var chests = CompanionWorkshop.UsableChests(centre, radius, companion.ZDO);
+                    var stuff = CompanionWorkshop.Depositable(companion.Inventory.Inventory);
+                    data = new JObject { ["chests"] = chests.Count, ["to_store"] = new JArray(stuff) };
+                    if (stuff.Count == 0)
+                    {
+                        return "nothing_to_store";
+                    }
+                    if (chests.Count == 0)
+                    {
+                        return "no_chests_nearby";
+                    }
+                    return Queue(companion, args, "deposit", () => companion.Tasks.CommandDeposit(chests, TaskId(args, cmdId)));
+                }
                 case "tend_fires":
                 {
                     Vector3 centre = companion.transform.position;

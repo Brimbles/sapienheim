@@ -55,6 +55,72 @@ namespace ValheimCompanion.Companion
             return list;
         }
 
+        /// <summary>The chests it may put things in near a point, nearest first.</summary>
+        public static List<Container> UsableChests(Vector3 origin, float range, ZDO companion)
+        {
+            long masterId = CompanionState.GetMaster(companion);
+            var list = new List<Container>();
+            foreach (Container c in AllContainers())
+            {
+                if (Vector3.Distance(c.transform.position, origin) <= range && CanUse(c, masterId) && CompanionPermissions.ChestAllowed(c, companion))
+                {
+                    list.Add(c);
+                }
+            }
+            list.Sort((a, b) => Vector3.Distance(a.transform.position, origin).CompareTo(Vector3.Distance(b.transform.position, origin)));
+            return list;
+        }
+
+        /// <summary>Gear it keeps when putting things away: tools, weapons, shields, armour, ammo, torches.</summary>
+        public static bool IsGear(ItemDrop.ItemData item)
+        {
+            switch (item.m_shared.m_itemType)
+            {
+                case ItemDrop.ItemData.ItemType.OneHandedWeapon:
+                case ItemDrop.ItemData.ItemType.TwoHandedWeapon:
+                case ItemDrop.ItemData.ItemType.TwoHandedWeaponLeft:
+                case ItemDrop.ItemData.ItemType.Bow:
+                case ItemDrop.ItemData.ItemType.Shield:
+                case ItemDrop.ItemData.ItemType.Tool:
+                case ItemDrop.ItemData.ItemType.Helmet:
+                case ItemDrop.ItemData.ItemType.Chest:
+                case ItemDrop.ItemData.ItemType.Legs:
+                case ItemDrop.ItemData.ItemType.Shoulder:
+                case ItemDrop.ItemData.ItemType.Utility:
+                case ItemDrop.ItemData.ItemType.Ammo:
+                case ItemDrop.ItemData.ItemType.Torch:
+                    return true;
+                default:
+                    return item.m_equipped;
+            }
+        }
+
+        /// <summary>The kinds of things it would put away (not its gear), by prefab.</summary>
+        public static HashSet<string> Depositable(Inventory inv)
+        {
+            var set = new HashSet<string>();
+            foreach (ItemDrop.ItemData item in inv.GetAllItems())
+            {
+                if (!IsGear(item))
+                {
+                    set.Add(CompanionInventory.PrefabName(item));
+                }
+            }
+            return set;
+        }
+
+        public static bool Holds(Container c, string prefab)
+        {
+            foreach (ItemDrop.ItemData item in c.GetInventory().GetAllItems())
+            {
+                if (CompanionInventory.PrefabName(item) == prefab)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         public static Container FindContainer(string id)
         {
             foreach (Container c in AllContainers())

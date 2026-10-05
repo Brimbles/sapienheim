@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Newtonsoft.Json.Linq;
 using UnityEngine;
 using ValheimCompanion.Bridge;
@@ -48,6 +49,7 @@ namespace ValheimCompanion.Companion
         public const string Gravestone = "gravestone";
         public const string Guard = "guard";
         public const string TendFires = "tend_fires";
+        public const string Deposit = "deposit";
         public const string TearDown = "tear_down";
 
         private const float ArriveDistance = 3.5f;
@@ -115,6 +117,10 @@ namespace ValheimCompanion.Companion
         private string _giveItem;
         private int _giveQty;
         private Dictionary<string, int> _giveList; // several items at once (a gravestone's contents)
+
+        // deposit: each chest visited twice, first only for what it already holds (like with like), then for anything
+        private Queue<(Container chest, bool matchOnly)> _depositPlan;
+        private Dictionary<string, int> _deposited;
 
         // tend fires
         private Queue<Fireplace> _fires;
@@ -209,6 +215,7 @@ namespace ValheimCompanion.Companion
                     case Gravestone:
                     case Guard:
                     case TendFires:
+                    case Deposit:
                         return task;
                     default:
                         return Follow;
@@ -325,6 +332,22 @@ namespace ValheimCompanion.Companion
         {
             CommandGive(playerId, "(several)", 1, taskId);
             _giveList = new Dictionary<string, int>(items);
+        }
+
+        public void CommandDeposit(List<Container> chests, string taskId)
+        {
+            _depositPlan = new Queue<(Container, bool)>();
+            foreach (Container c in chests)
+            {
+                _depositPlan.Enqueue((c, true));
+            }
+            foreach (Container c in chests)
+            {
+                _depositPlan.Enqueue((c, false));
+            }
+            _deposited = new Dictionary<string, int>();
+            _deadline = Time.time + StationTimeout;
+            SetTask(Deposit, taskId);
         }
 
         public void CommandTendFires(List<Fireplace> fires, string taskId)
@@ -543,6 +566,9 @@ namespace ValheimCompanion.Companion
                 case TendFires:
                     UpdateTendFires();
                     break;
+                case Deposit:
+                    UpdateDeposit();
+                    break;
             }
         }
 
@@ -551,6 +577,7 @@ namespace ValheimCompanion.Companion
             ClearWaypoint();
             _ai.ResetPatrolPoint();
             _ai.SetFollowTarget(null);
+            _holding = false;
             _applied = task;
 
             // Tasks whose runtime state doesn't survive a restart fall back to following.
@@ -566,7 +593,8 @@ namespace ValheimCompanion.Companion
                         || (task == TearDown && _teardownPlan == null)
                         || (task == Gravestone && _grave.IsNone())
                         || (task == Guard && _guardRadius <= 0f)
-                        || (task == TendFires && _fires == null);
+                        || (task == TendFires && _fires == null)
+                        || (task == Deposit && _depositPlan == null);
             if (lost)
             {
                 CompanionState.SetTask(Zdo, Follow);
@@ -710,16 +738,32 @@ namespace ValheimCompanion.Companion
             }
         }
 
+        private bool _holding; // following, but the master isn't here: wait where they were lost, don't roam
+
         private void UpdateFollow()
         {
             Player master = FindMaster();
-            GameObject target = master ? master.gameObject : null;
-            if (_ai.GetFollowTarget() != target)
+            if (master)
             {
-                _ai.SetFollowTarget(target);
-                Jotunn.Logger.LogInfo(target
-                    ? $"{_character.m_name} now following {master.GetPlayerName()}"
-                    : $"{_character.m_name}: master {CompanionState.GetMasterName(Zdo)} not nearby");
+                if (_holding)
+                {
+                    _holding = false;
+                    _ai.ResetPatrolPoint();
+                }
+                if (_ai.GetFollowTarget() != master.gameObject)
+                {
+                    _ai.SetFollowTarget(master.gameObject);
+                    Jotunn.Logger.LogInfo($"{_character.m_name} now following {master.GetPlayerName()}");
+                }
+                return;
+            }
+            if (!_holding)
+            {
+                // Without a follow target the creature AI roams; anchor it here like `stay` until the master is back.
+                _holding = true;
+                _ai.SetFollowTarget(null);
+                _ai.SetPatrolPoint(_character.transform.position);
+                Jotunn.Logger.LogInfo($"{_character.m_name}: master {CompanionState.GetMasterName(Zdo)} not nearby; waiting here");
             }
         }
 
@@ -1437,6 +1481,68 @@ namespace ValheimCompanion.Companion
             _teardownSkipped.TryGetValue(reason, out int n);
             _teardownSkipped[reason] = n + 1;
             _stepDeadline = 0f;
+        }
+
+        /// <summary>
+        /// Put everything but its gear away: first into chests that already hold that kind of thing, then into any chest
+        /// with room. A chest with nothing to do is skipped without walking to it.
+        /// </summary>
+        private void UpdateDeposit()
+        {
+            HashSet<string> left = CompanionWorkshop.Depositable(_inventory.Inventory);
+            while (_depositPlan.Count > 0)
+            {
+                var (chest, matchOnly) = _depositPlan.Peek();
+                bool useful = chest && chest.m_nview && chest.m_nview.IsValid() && left.Count > 0
+                              && (!matchOnly || left.Any(p => CompanionWorkshop.Holds(chest, p)))
+                              && (matchOnly || chest.GetInventory().GetEmptySlots() > 0);
+                if (useful)
+                {
+                    break;
+                }
+                _depositPlan.Dequeue();
+            }
+            if (_depositPlan.Count == 0 || left.Count == 0)
+            {
+                var done = new JObject { ["task"] = Deposit, ["stored"] = JObject.FromObject(_deposited) };
+                if (left.Count > 0)
+                {
+                    done["no_room_for"] = new JArray(left);
+                }
+                _depositPlan = null;
+                Complete(_deposited.Count > 0, done);
+                return;
+            }
+            var (target, onlyMatching) = _depositPlan.Peek();
+            if (!WalkTo(target))
+            {
+                if (Time.time > _deadline)
+                {
+                    _depositPlan.Dequeue(); // can't get to this one; try the next
+                    _deadline = Time.time + StationTimeout;
+                }
+                return;
+            }
+            if (CompanionWorkshop.PrepareContainer(target, CompanionState.GetMaster(Zdo)) != null)
+            {
+                _depositPlan.Dequeue(); // in use or private: next
+                return;
+            }
+            foreach (string prefab in left)
+            {
+                if (onlyMatching && !CompanionWorkshop.Holds(target, prefab))
+                {
+                    continue;
+                }
+                int n = CompanionWorkshop.Transfer(_inventory.Inventory, target.GetInventory(), prefab, int.MaxValue);
+                if (n > 0)
+                {
+                    _deposited.TryGetValue(prefab, out int had);
+                    _deposited[prefab] = had + n;
+                }
+            }
+            _depositPlan.Dequeue();
+            _deadline = Time.time + StationTimeout;
         }
 
         /// <summary>Walk to each fire and top it up with its own fuel from the pack, as a player would.</summary>

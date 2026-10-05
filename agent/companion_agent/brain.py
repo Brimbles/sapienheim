@@ -292,6 +292,20 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "deposit",
+        "description": "Put everything you carry except your gear (tools, weapons, armour, ammo) into the chests around you "
+        "or a named place: each kind of thing goes into a chest that already has some, the rest into any chest with room. "
+        "Good after a gathering trip or a corpse run. task_done lists what was stored and anything with no room.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "radius": {"type": "number", "description": "Metres, 5-60 (default 30)."},
+                "around": {"type": "string", "description": "A named place, e.g. the base."},
+                "queue": {"type": "boolean"},
+            },
+        },
+    },
+    {
         "name": "boss_prep",
         "description": "What it takes to summon a boss, and how much of it you and the nearby chests already have. "
         "Use it when asked about a boss fight; then gather or fetch what's missing.",
@@ -889,7 +903,7 @@ class Brain:
             return await self._travel(block.id, args, actions)
         settlement = args.pop("name", None) if name == "build" else None
         torn_place = str(args["around"]) if name == "tear_down" and args.get("around") and args.get("confirm") else None
-        if name in ("build", "repair_nearby", "tear_down", "guard", "tend_fires") and args.get("around"):
+        if name in ("build", "repair_nearby", "tear_down", "guard", "tend_fires", "deposit") and args.get("around"):
             where = self.memory.place(str(args.pop("around")))
             if where is None:
                 known = ", ".join(p["name"] for p in self.memory.data["places"].values()) or "none yet"
@@ -1016,7 +1030,7 @@ def _worth_reporting(event: Event) -> bool:
     if event.name == "task_failed":
         return True
     return event.data.get("queue_remaining", 0) == 0 and event.data.get("task") in (
-        "gather", "give", "pick_up", "craft", "store", "fetch", "build", "go_to", "portal", "repair", "tear_down", "gravestone", "tend_fires"
+        "gather", "give", "pick_up", "craft", "store", "fetch", "build", "go_to", "portal", "repair", "tear_down", "gravestone", "tend_fires", "deposit"
     )
 
 
