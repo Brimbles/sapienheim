@@ -51,7 +51,7 @@ namespace ValheimCompanion.Companion
                 {
                     float a = s * Mathf.PI * 2f / steps;
                     Vector3 p = from + new Vector3(Mathf.Cos(a) * r, 0f, Mathf.Sin(a) * r);
-                    float h = WorldGenerator.instance.GetHeight(p.x, p.z);
+                    float h = CompanionBoat.Height(p.x, p.z);
                     if (h >= sea - 0.5f)
                     {
                         continue; // not water deep enough to fish
@@ -63,7 +63,7 @@ namespace ValheimCompanion.Companion
                     for (float back = 1f; back <= 8f; back += 1f)
                     {
                         Vector3 q = p + dir * back;
-                        float qh = WorldGenerator.instance.GetHeight(q.x, q.z);
+                        float qh = CompanionBoat.Height(q.x, q.z);
                         if (qh > sea + 0.3f)
                         {
                             float d = Vector3.Distance(q, from);

@@ -809,6 +809,34 @@ async def scenario_mission(r: Runner) -> None:
     await r.cmd("save_world")
 
 
+async def scenario_teleport(r: Runner) -> None:
+    """Move him (test only): scenario.py teleport x z."""
+    res = await r.cmd("debug_teleport", x=float(sys.argv[2]), z=float(sys.argv[3]))
+    r.results.append(("teleport", res.error or "ok"))
+    await asyncio.sleep(3)
+    r.results.append(("now at", str((await r.state())["self"]["pos"])))
+
+
+async def scenario_near(r: Runner) -> None:
+    """Pieces round a point, with positions (doors, walls, chests): scenario.py near x z [radius]."""
+    x, z = float(sys.argv[2]), float(sys.argv[3])
+    radius = float(sys.argv[4]) if len(sys.argv) > 4 else 10.0
+    st = await r.state()
+    res = await r.conn.command("pieces_near", pos=[x, st["self"]["pos"][1], z], radius=radius)
+    for p in sorted((res.data or {}).get("pieces", []), key=lambda p: p["piece"]):
+        if p["piece"] not in ("wood_roof", "wood_wall_roof_a", "wood_floor"):
+            r.results.append((p["piece"], f"{p['pos']} yaw {p['yaw']}"))
+    r.results.append(("he is at", str(st["self"]["pos"])))
+
+
+async def scenario_shore(r: Runner) -> None:
+    """Walk to x z (optional) and report the distance to water in 16 directions: scenario.py shore [x z]."""
+    if len(sys.argv) > 3:
+        await r.task("walk", "go_to", x=float(sys.argv[2]), z=float(sys.argv[3]))
+    res = await r.cmd("debug_boat", op="shore_scan")
+    r.results.append(("shore scan", f"{res.error or 'ok'} {res.data} at {(await r.state())['self']['pos']}"))
+
+
 async def scenario_tamecheck(r: Runner) -> None:
     """Tamed animals within 100 m and whether they are hungry."""
     res = await r.conn.command("debug_tame", check=True)
@@ -844,7 +872,8 @@ async def scenario_settlement(r: Runner) -> None:
         return
     await advance_until_done(r, f"build {kind}", res, max_real_s=1500, step_s=1)
     await asyncio.sleep(20)
-    near = await r.conn.command("pieces_near", pos=res.data["site"], radius=22)
+    site = res.data.get("site") or (await r.state())["self"]["pos"]  # walked to a far area first: round where he is
+    near = await r.conn.command("pieces_near", pos=site, radius=22)
     kinds = {}
     for p in (near.data or {}).get("pieces", []):
         if p["creator"] != 0:
@@ -939,7 +968,7 @@ async def scenario_blueprint(r: Runner) -> None:
 
 SCENARIOS = {
     "m4": scenario_m4, "pieces": scenario_pieces, "build": scenario_build, "inspect": scenario_inspect,
-    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds, "buildportal": scenario_buildportal, "gravestone": scenario_gravestone, "guard": scenario_guard, "fires": scenario_fires, "items": scenario_items, "deposit": scenario_deposit, "tidy_chests": scenario_tidy_chests, "hold": scenario_hold, "sign": scenario_sign, "pieceinfo": scenario_pieceinfo, "stations": scenario_stations, "cookdebug": scenario_cookdebug, "collect": scenario_collect, "find": scenario_find, "farm": scenario_farm, "labels": scenario_labels, "feed": scenario_feed, "settlement": scenario_settlement, "prefabs": scenario_prefabs, "road": scenario_road, "bridge": scenario_bridge, "blueprint": scenario_blueprint, "fish": scenario_fish, "boat": scenario_boat, "mission": scenario_mission, "coast": scenario_coast, "tamecheck": scenario_tamecheck,
+    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds, "buildportal": scenario_buildportal, "gravestone": scenario_gravestone, "guard": scenario_guard, "fires": scenario_fires, "items": scenario_items, "deposit": scenario_deposit, "tidy_chests": scenario_tidy_chests, "hold": scenario_hold, "sign": scenario_sign, "pieceinfo": scenario_pieceinfo, "stations": scenario_stations, "cookdebug": scenario_cookdebug, "collect": scenario_collect, "find": scenario_find, "farm": scenario_farm, "labels": scenario_labels, "feed": scenario_feed, "settlement": scenario_settlement, "prefabs": scenario_prefabs, "road": scenario_road, "bridge": scenario_bridge, "blueprint": scenario_blueprint, "fish": scenario_fish, "boat": scenario_boat, "teleport": scenario_teleport, "near": scenario_near, "shore": scenario_shore, "mission": scenario_mission, "coast": scenario_coast, "tamecheck": scenario_tamecheck,
 }
 
 

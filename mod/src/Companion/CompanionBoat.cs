@@ -114,12 +114,19 @@ namespace ValheimCompanion.Companion
             return v.magnitude;
         }
 
+        /// <summary>
+        /// The ground height as it is now where the area is loaded (levelled or raised ground included), else as the
+        /// world was generated.
+        /// </summary>
+        public static float Height(float x, float z) =>
+            ZoneSystem.instance.GetGroundHeight(new Vector3(x, 0f, z), out float h) ? h : WorldGenerator.instance.GetHeight(x, z);
+
         /// <summary>How far a point is from dry land (searching out to <paramref name="max"/> m); max+1 if none.</summary>
         public static float DistanceToShore(Vector3 pos, float max, out Vector3 land)
         {
             float sea = ZoneSystem.instance.m_waterLevel;
             land = pos;
-            if (WorldGenerator.instance.GetHeight(pos.x, pos.z) > sea + 0.2f)
+            if (Height(pos.x, pos.z) > sea + 0.2f)
             {
                 return 0f;
             }
@@ -130,7 +137,7 @@ namespace ValheimCompanion.Companion
                 {
                     float a = s * Mathf.PI * 2f / steps;
                     Vector3 p = pos + new Vector3(Mathf.Cos(a) * r, 0f, Mathf.Sin(a) * r);
-                    float h = WorldGenerator.instance.GetHeight(p.x, p.z);
+                    float h = Height(p.x, p.z);
                     if (h > sea + 0.5f)
                     {
                         land = new Vector3(p.x, h, p.z);

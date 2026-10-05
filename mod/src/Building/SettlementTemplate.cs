@@ -15,7 +15,8 @@ namespace ValheimCompanion.Building
     /// <item><b>village</b>: three huts round a fire pit (the middle one set back), each with a chest, in a fence ring.</item>
     /// <item><b>fort</b>: a hut, a fire pit and two chests inside a palisade (stake wall) ring with a gate; once Bonemass
     /// is beaten, a 2 m stone wall instead (with a stonecutter, so it needs iron).</item>
-    /// <item><b>mining_camp</b>: a hut with three chests in a row out front and a fire pit; no ring, quick to put up.</item>
+    /// <item><b>mining_camp</b>: a hut with three chests in a row along one side and a fire pit on the other; no ring,
+    /// quick to put up. (Nothing goes in front of a door: chests there boxed him in.)</item>
     /// <item><b>port</b>: a hut on the shore facing the water, a fire pit, and a wooden dock on posts running out from
     /// the water's edge (to 2.5 m deep, 8-14 m long) for mooring a boat. Its site faces the nearest water.</item>
     /// </list>
@@ -134,6 +135,12 @@ namespace ValheimCompanion.Building
                     reasons[why] = n + 1;
                 }
             }
+            // The commonest reason, but for a port only among spots by the water if there were any (most of a search
+            // circle is inland, which hides why the shore itself wouldn't do).
+            if (reasons.Count > 1)
+            {
+                reasons.Remove("no_shore_nearby");
+            }
             if (reasons.Count > 0)
             {
                 reason = reasons.OrderByDescending(kv => kv.Value).First().Key;
@@ -156,7 +163,7 @@ namespace ValheimCompanion.Building
                 dir = Quaternion.Euler(0f, i * 22.5f, 0f) * Vector3.forward;
                 for (float d = 1f; d <= max; d += 1f)
                 {
-                    if (WorldGenerator.instance.GetHeight(c.x + dir.x * d, c.z + dir.z * d) < sea - 0.3f)
+                    if (Companion.CompanionBoat.Height(c.x + dir.x * d, c.z + dir.z * d) < sea - 0.3f)
                     {
                         if (d >= min)
                         {
@@ -352,11 +359,12 @@ namespace ValheimCompanion.Building
             }
             else if (kind == "mining_camp")
             {
+                // Three chests in a row along one side of the hut (never in front of the door), the fire on the other.
                 for (int i = -1; i <= 1; i++)
                 {
-                    steps.Add(new BuildStep { Piece = "piece_chest_wood", Pos = OnGround(new Vector3(i * 2f, 0f, -hd - 2.5f + 1f)), Rot = facing * Quaternion.Euler(0f, 180f, 0f) });
+                    steps.Add(new BuildStep { Piece = "piece_chest_wood", Pos = OnGround(new Vector3(side * (hw + 1.6f), 0f, 1f + i * 1.8f)), Rot = facing * Quaternion.Euler(0f, side * 90f, 0f) });
                 }
-                steps.Add(new BuildStep { Piece = "fire_pit", Pos = OnGround(new Vector3(side * (hw + 2f), 0f, -hd - 2f)), Rot = facing });
+                steps.Add(new BuildStep { Piece = "fire_pit", Pos = OnGround(new Vector3(-side * (hw + 2.5f), 0f, -hd + 1f)), Rot = facing });
             }
             if (kind == "port")
             {

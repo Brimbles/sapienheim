@@ -330,6 +330,17 @@ namespace ValheimCompanion.Bridge
                     data = new JObject { ["set"] = ZoneSystem.instance.GetGlobalKey(key) };
                     return null;
                 }
+                case "debug_teleport":
+                {
+                    // Testing command (not an LLM tool): move him to x/z (on the ground), e.g. out of a spot he's stuck in.
+                    var to = new Vector3((float)args["x"], 0f, (float)args["z"]);
+                    to.y = (ZoneSystem.instance.GetGroundHeight(to, out float th) ? th : WorldGenerator.instance.GetHeight(to.x, to.z)) + 0.5f;
+                    companion.GetComponent<Character>().m_body.linearVelocity = Vector3.zero;
+                    companion.transform.position = to;
+                    Physics.SyncTransforms();
+                    companion.Tasks.CommandStay();
+                    return null;
+                }
                 case "debug_kill":
                 {
                     // Testing command (not an LLM tool): he dies where he stands.
@@ -365,6 +376,27 @@ namespace ValheimCompanion.Bridge
                             }
                         }
                         return "no_coast_found";
+                    }
+                    if (boatAction == "shore_scan")
+                    {
+                        // Distance to the first water 0.3 m+ deep in 16 directions (what a port's site search looks for).
+                        var dists = new JArray();
+                        for (int i = 0; i < 16; i++)
+                        {
+                            Vector3 d = Quaternion.Euler(0f, i * 22.5f, 0f) * Vector3.forward;
+                            float found = -1f;
+                            for (float r = 1f; r <= 40f; r += 1f)
+                            {
+                                if (CompanionBoat.Height(me.x + d.x * r, me.z + d.z * r) < sea - 0.3f)
+                                {
+                                    found = r;
+                                    break;
+                                }
+                            }
+                            dists.Add(found);
+                        }
+                        data = new JObject { ["here"] = CompanionBoat.Height(me.x, me.z), ["sea"] = sea, ["water_at"] = dists };
+                        return null;
                     }
                     if (boatAction == "clear")
                     {
@@ -1638,6 +1670,37 @@ namespace ValheimCompanion.Bridge
             if (args["x"] != null && args["z"] != null)
             {
                 near = new Vector3((float)args["x"], near.y, (float)args["z"]);
+            }
+            if (Vector3.Distance(new Vector3(near.x, 0f, near.z), new Vector3(companion.transform.position.x, 0f, companion.transform.position.z)) > 60f)
+            {
+                // A far-off area isn't loaded, so its ground can't be checked yet: walk there first, then choose the
+                // site on arrival (the same order again, from there).
+                var later = (JObject)args.DeepClone();
+                later.Remove("x");
+                later.Remove("z");
+                later.Remove("near");
+                later["queue"] = false;
+                string id = TaskId(args, cmdId);
+                later["task_id"] = id;
+                Vector3 area = near;
+                string walk = Queue(companion, args, $"go_to({kind} area)", () => companion.Tasks.CommandGoTo(area, null));
+                if (walk != null)
+                {
+                    return walk;
+                }
+                companion.Tasks.RunOrQueue(true, $"build({kind})", () =>
+                {
+                    string err = BuildSettlement(companion, kind, later, cmdId, out JObject details);
+                    if (err != null)
+                    {
+                        AgentClient.SendEvent("task_failed", new JObject
+                        {
+                            ["task"] = "build", ["build"] = kind, ["reason"] = err, ["details"] = details, ["task_id"] = id, ["queue_remaining"] = 0,
+                        });
+                    }
+                });
+                data = new JObject { ["template"] = kind, ["walking_to_the_area_first"] = new JArray(Mathf.Round(near.x), Mathf.Round(near.z)) };
+                return null;
             }
             int seed = args["seed"] != null ? (int)args["seed"] : UnityEngine.Random.Range(0, 100000);
             float facing = args["facing"] != null ? (float)args["facing"] : UnityEngine.Random.Range(0, 4) * 90f + UnityEngine.Random.Range(-20f, 20f);

@@ -112,7 +112,16 @@ Each task is self-contained. Model choice: a mid-size model (Sonnet) for 1–7; 
 10. ~~Boats, fishing, long missions~~ done: `board`/`leave_boat` and the `ride` task (`scenario.py boat`: finds a coast, spawns a karve, boards, sails, overboard, left behind); `fish` (`scenario.py fish`); missions in the agent plus respawn at the mission site (`scenario.py mission`: debug_kill, debug_respawn_now).
 11. **Voice:** accent level 3 (thick Austrian) added to `tools/voice/make_clips.py` and made the default; regenerate the clips with `uv run python make_clips.py lines.txt` from `tools/voice`, then rebuild.
 
-New test-only commands: `debug_boat op=find_coast|spawn|clear|push|overboard|status`, `debug_kill`, `debug_respawn_now`, `debug_global_key key [remove]`.
+New test-only commands: `debug_boat op=find_coast|spawn|clear|push|overboard|status|shore_scan`, `debug_kill`, `debug_respawn_now`, `debug_global_key key [remove]`, `debug_teleport x z`. New scenarios: `teleport x z`, `near x z [r]` (pieces with positions), `shore [x z]` (distance to water in 16 directions).
+
+### Open problems (5 Oct 2026, end of session)
+Verified headlessly: outpost, farm, fort (wooden), port (once, at (353, -532)), mining camp (58/58 at (168, -372)), boats end to end, fishing, missions, blueprints, roads. Not yet verified, each for a reason that looks like walking or site finding rather than the template:
+- **Village:** walked to the area (260, -160), built the first hut (53 pieces), then `cant_reach_build_site` for the next hut. Check whether the first hut's levelling bank or the hut itself blocks the way to the others.
+- **Port:** at (446, -332) the site search returned `no_shore_nearby` (no candidate saw water 7-12 m off) although `find_coast` reports water there. Run `scenario.py shore 440 -330` once he's actually there (the last walk timed out on a hill at (376, -67)) and compare with `WaterAhead` in `SettlementTemplate`.
+- **Stone fort** (after Bonemass): no clean run yet; the test area round (150, -450) is crowded with test buildings, and the walk to (420, -200) timed out. The stone wall (`stone_wall_2x1`, two courses, pivot 0.5 m up, Stone 4 each) and stonecutter placement are written but unproven.
+- **Long walks** on hilly ground sometimes time out; he can end up far off course.
+- Fixed along the way (verified): leaving a fence/wall ring goes through its gate; stepping out of a hut he closes the door, routes round the building and doesn't step back in; a levelled path is cut in front of every hut door; settlement extras beside a hut sit at its floor height; nothing goes in front of a door.
+- Alvar showed 100/100 HP (not 350) after some restarts with nobody online; check `CompanionLevelling` if it matters.
 
 ### Decisions for tasks 8-10 (agreed with the user, 5 Oct 2026)
 - **Blueprints:** PlanBuild `.blueprint` files dropped in a server folder, built by name; pieces from other mods are never used (skipped and reported); ship 3-4 small starters (longhouse, watchtower, gate house, dock).

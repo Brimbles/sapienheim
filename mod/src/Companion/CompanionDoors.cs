@@ -148,13 +148,51 @@ namespace ValheimCompanion.Companion
             return Mathf.Sign(Vector3.Dot(normal, pos - door.transform.position)) != Mathf.Sign(Vector3.Dot(normal, goal - door.transform.position));
         }
 
-        private void StepThrough(Door door, Vector3 pos)
+        // Doorways stepped through lately: back and forth through the same one (something blocks the far side) means
+        // leave it alone for a while and let the walk's own detours find another way.
+        private readonly List<(Door door, float at)> _steps = new List<(Door, float)>();
+
+        private bool PingPong(Door door)
+        {
+            _steps.RemoveAll(s => Time.time - s.at > 90f);
+            int recent = 0;
+            foreach (var s in _steps)
+            {
+                if (s.door == door && Time.time - s.at < 60f)
+                {
+                    recent++;
+                }
+            }
+            return recent >= 3;
+        }
+
+        /// <summary>The spot just through the doorway from where we stand.</summary>
+        private static Vector3 Beyond(Door door, Vector3 pos)
         {
             Vector3 normal = door.transform.forward;
             normal.y = 0f;
             normal.Normalize();
             float side = Mathf.Sign(Vector3.Dot(normal, pos - door.transform.position));
-            Vector3 beyond = door.transform.position - normal * side * 1.6f;
+            return door.transform.position - normal * side * 1.6f;
+        }
+
+        /// <summary>
+        /// Indoors and this door leads out into the open. (Standing under the eaves outside counts as indoors too, and
+        /// stepping "through" from there would put him back inside.)
+        /// </summary>
+        private static bool LeadsOut(Door door, Vector3 pos, bool indoors) => indoors && !Indoors(Beyond(door, pos));
+
+        /// <summary>
+        /// From outside, into a building whose inside isn't where he's going: the goal is merely past it, and the way
+        /// there is round the building (through it, he ends up against the back wall).
+        /// </summary>
+        private static bool EntersNeedlessly(Door door, Vector3 pos, bool indoors, Vector3 goal) =>
+            !indoors && Indoors(Beyond(door, pos)) && Vector3.Distance(goal, door.transform.position) > 8f;
+
+        private void StepThrough(Door door, Vector3 pos)
+        {
+            _steps.Add((door, Time.time));
+            Vector3 beyond = Beyond(door, pos);
             if (ZoneSystem.instance.GetSolidHeight(beyond, out float h))
             {
                 beyond.y = h + 0.1f;
@@ -163,12 +201,57 @@ namespace ValheimCompanion.Companion
             _character.transform.position = beyond;
             _lastPos = beyond;
             _stillSince = Time.time;
+            _closeBehind = door;
+            _closeAt = Time.time + 1.5f;
             Jotunn.Logger.LogInfo($"{_character.m_name}: stepped through the doorway to {beyond:F0}");
+        }
+
+        // The building he last stepped out of, for a walk to route round it rather than back through it.
+        private Door _leftBuilding;
+
+        private void NoteLeft(Door door, bool leaving)
+        {
+            if (leaving)
+            {
+                _leftBuilding = door;
+            }
+        }
+
+        /// <summary>Just stepped out of a building through this door (once; then forgotten).</summary>
+        public bool TakeLeftBuilding(out Door door)
+        {
+            door = _leftBuilding;
+            _leftBuilding = null;
+            return door;
+        }
+
+        // Shut the door behind him (as a player would): left open, a walk whose goal lies past the building heads
+        // straight back in through it instead of going round.
+        private Door _closeBehind;
+        private float _closeAt;
+
+        private void CloseBehind(Vector3 pos)
+        {
+            if (!_closeBehind || Time.time < _closeAt)
+            {
+                return;
+            }
+            Door door = _closeBehind;
+            if (Vector3.Distance(door.transform.position, pos) < 1.5f)
+            {
+                return; // still in the doorway
+            }
+            _closeBehind = null;
+            if (door.m_nview && door.m_nview.IsValid() && door.m_nview.GetZDO().GetInt(ZDOVars.s_state) != 0)
+            {
+                door.m_nview.InvokeRPC("UseDoor", true);
+            }
         }
 
         public void Update()
         {
             Vector3 pos = _character.transform.position;
+            CloseBehind(pos);
             if (Vector3.Distance(pos, _lastPos) > StuckDistance)
             {
                 _lastPos = pos;
@@ -185,10 +268,13 @@ namespace ValheimCompanion.Companion
             bool indoors = Indoors(pos);
 
             // Opened a door already and still stuck: step through it.
-            if (_opened && _opened.m_nview && _opened.m_nview.IsValid() && Time.time - _openedAt >= StepThroughAfter
-                && Vector3.Distance(_opened.transform.position, pos) <= DoorRange && (indoors || GoalBeyond(_opened, pos, goal.transform.position)))
+            if (_opened && _opened.m_nview && _opened.m_nview.IsValid() && !PingPong(_opened) && Time.time - _openedAt >= StepThroughAfter
+                && Vector3.Distance(_opened.transform.position, pos) <= DoorRange
+                && (LeadsOut(_opened, pos, indoors) || (GoalBeyond(_opened, pos, goal.transform.position) && !EntersNeedlessly(_opened, pos, indoors, goal.transform.position))))
             {
+                bool leaving = LeadsOut(_opened, pos, indoors);
                 StepThrough(_opened, pos);
+                NoteLeft(_opened, leaving);
                 _opened = null;
                 return;
             }
@@ -197,7 +283,7 @@ namespace ValheimCompanion.Companion
             foreach (Collider col in Physics.OverlapSphere(pos, DoorRange))
             {
                 Door door = col.GetComponentInParent<Door>();
-                if (!door || !door.m_nview || !door.m_nview.IsValid() || door.m_keyItem != null)
+                if (!door || !door.m_nview || !door.m_nview.IsValid() || door.m_keyItem != null || PingPong(door))
                 {
                     continue;
                 }
@@ -205,13 +291,15 @@ namespace ValheimCompanion.Companion
                 {
                     continue; // not ours to open
                 }
-                if (!indoors && !GoalBeyond(door, pos, goal.transform.position))
+                if (!LeadsOut(door, pos, indoors) && (!GoalBeyond(door, pos, goal.transform.position) || EntersNeedlessly(door, pos, indoors, goal.transform.position)))
                 {
-                    continue; // the goal is on our side of this door; it's not what's in the way
+                    continue; // neither out of a building nor towards the goal (round a building, not through it)
                 }
                 if (door.m_nview.GetZDO().GetInt(ZDOVars.s_state) != 0)
                 {
+                    bool leaving = LeadsOut(door, pos, indoors);
                     StepThrough(door, pos); // already open and still stuck: the navmesh won't route through it
+                    NoteLeft(door, leaving);
                     return;
                 }
                 bool forward = Vector3.Dot(door.transform.forward, (pos - door.transform.position).normalized) < 0f;

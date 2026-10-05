@@ -80,6 +80,11 @@ namespace ValheimCompanion.Building
                         Add(Builder.LevelStep, x, -LevelBelowFloor, z, 0f);
                     }
                 }
+                // And a path straight out from the door: on a hillside the levelled site is a cut with a bank of earth
+                // just beyond its margin, and without a way out the door is no use (he slid back in).
+                float doorX = -halfW + 1f + 2f * (width / 2);
+                Add(Builder.LevelStep, doorX, -LevelBelowFloor, -half.y - 1.5f, 0f);
+                Add(Builder.LevelStep, doorX, -LevelBelowFloor, -half.y - 4.5f, 0f);
             }
 
             // Workbench first: every other piece needs it within range. Levelled: inside, in the front corner beside

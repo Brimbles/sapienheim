@@ -79,6 +79,7 @@ namespace ValheimCompanion.Companion
         }
 
         public CompanionTasks Tasks => _tasks;
+        public CompanionDoors Doors => _doors;
         public CompanionInventory Inventory => _inventory;
         public CompanionLevelling Levelling => _levelling;
 

@@ -148,6 +148,10 @@ namespace ValheimCompanion.Companion
         private GameObject _swimMark;
         private readonly HashSet<Door> _exitDoorsTried = new HashSet<Door>();
         private bool _ringChecked;
+        private readonly Queue<Vector3> _escape = new Queue<Vector3>();
+        private float _escapeUntil;
+        private Vector3? _ringExit;
+        private float _ringExitUntil;
         private float _ashoreSince = -1f;
 
         // fish
@@ -804,6 +808,8 @@ namespace ValheimCompanion.Companion
                     _hasLeg = false;
                     _exitDoorsTried.Clear();
                     _ringChecked = false;
+                    _escape.Clear();
+                    _ringExit = null;
                     _bestDist = float.MaxValue;
                     _lastProgress = Time.time;
                     _detours = 0;
@@ -1115,6 +1121,50 @@ namespace ValheimCompanion.Companion
             CompanionBoat.TryClimb(_character, _ship);
         }
 
+        /// <summary>
+        /// From a door just stepped out of: 3 m straight out, then the building's corner (2 m clear of its footprint)
+        /// that makes the shortest way on to the goal.
+        /// </summary>
+        private static List<Vector3> RoundBuilding(Door door, Vector3 here, Vector3 goal)
+        {
+            var points = new List<Vector3>();
+            Vector3 outward = here - door.transform.position;
+            outward.y = 0f;
+            Vector3 first = door.transform.position + outward.normalized * 3f;
+            points.Add(first);
+            List<Piece> pieces = Building.LineTemplate.FindBuilding(door.transform.position, 6f);
+            if (pieces.Count == 0)
+            {
+                return points;
+            }
+            float minX = float.MaxValue, maxX = float.MinValue, minZ = float.MaxValue, maxZ = float.MinValue;
+            foreach (Piece p in pieces)
+            {
+                Vector3 at = p.transform.position;
+                minX = Mathf.Min(minX, at.x);
+                maxX = Mathf.Max(maxX, at.x);
+                minZ = Mathf.Min(minZ, at.z);
+                maxZ = Mathf.Max(maxZ, at.z);
+            }
+            Vector3 best = first;
+            float bestCost = float.MaxValue;
+            foreach (Vector3 c in new[]
+                     {
+                         new Vector3(minX - 2f, here.y, minZ - 2f), new Vector3(minX - 2f, here.y, maxZ + 2f),
+                         new Vector3(maxX + 2f, here.y, minZ - 2f), new Vector3(maxX + 2f, here.y, maxZ + 2f),
+                     })
+            {
+                float cost = Flat(c - first) + Flat(goal - c);
+                if (cost < bestCost)
+                {
+                    best = c;
+                    bestCost = cost;
+                }
+            }
+            points.Add(best);
+            return points;
+        }
+
         private bool OnBoard() =>
             _ship && (_character.GetStandingOnShip() == _ship || (_character.IsOnGround() && CompanionBoat.Aboard(_ship, _character.transform.position)));
 
@@ -1152,6 +1202,38 @@ namespace ValheimCompanion.Companion
                 return;
             }
 
+            // Just stepped out of a building: round it (out from the door, then its corner nearest the goal), not back
+            // in through the doorway because the goal lies past the far wall.
+            CompanionDoors doors = _character.GetComponent<CompanionAI>()?.Doors;
+            if (doors != null && doors.TakeLeftBuilding(out Door leftBy) && remaining > 8f)
+            {
+                _escape.Clear();
+                foreach (Vector3 p in RoundBuilding(leftBy, here, goal))
+                {
+                    _escape.Enqueue(p);
+                }
+                _escapeUntil = Time.time + 30f;
+            }
+            if (_escape.Count > 0)
+            {
+                if (Flat(_escape.Peek() - here) <= 1.5f || Time.time > _escapeUntil)
+                {
+                    _escape.Dequeue();
+                    _escapeUntil = Time.time + 20f;
+                    if (_escape.Count == 0)
+                    {
+                        _hasLeg = false;
+                        _lastProgress = Time.time;
+                        _bestDist = remaining;
+                    }
+                }
+                if (_escape.Count > 0)
+                {
+                    _waypoint.transform.position = _escape.Peek();
+                    return;
+                }
+            }
+
             // Starting inside a fence or wall ring with the goal well outside it: out through the gate first.
             if (!_ringChecked)
             {
@@ -1159,11 +1241,23 @@ namespace ValheimCompanion.Companion
                 if (remaining > 30f && CompanionDoors.InsideRing(here, out Vector3 gateExit))
                 {
                     Jotunn.Logger.LogInfo($"{_character.m_name}: inside a ring; out through the gate first");
-                    _hasLeg = true;
+                    _ringExit = gateExit;
+                    _ringExitUntil = Time.time + 40f;
                     _waypoint.transform.position = gateExit;
-                    _lastProgress = Time.time;
                     return;
                 }
+            }
+            if (_ringExit.HasValue)
+            {
+                // On the way out through the gate (away from the goal, maybe): no stall checks until through it.
+                if (Flat(_ringExit.Value - here) > 1.5f && Time.time < _ringExitUntil)
+                {
+                    return;
+                }
+                _ringExit = null;
+                _hasLeg = false;
+                _lastProgress = Time.time;
+                _bestDist = remaining;
             }
 
             // Progress towards the goal itself; stalled for a while means stuck (cliff, river, dense forest).
