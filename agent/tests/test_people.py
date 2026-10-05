@@ -124,3 +124,14 @@ def test_reports_wait_in_the_journal_when_nobody_is_online():
     b = Brain(Empty(), client)
     asyncio.run(b.on_event(event("task_done", task="gather", item="Wood", collected=20, queue_remaining=0)))
     assert client.calls == [] and b.memory.data["journal"][-1]["text"] == "gathered 20 Wood"
+
+
+def test_boss_prep_counts_what_you_have():
+    class Stocked(Conn):
+        async def request_state(self):
+            return {"self": {"inventory": [{"item": "TrophyDeer", "qty": 1}]},
+                    "chests": [{"id": "c", "contents": [{"item": "TrophyDeer", "qty": 0}]}]}
+
+    b = Brain(Stocked(), FakeClient())
+    info = asyncio.run(b._boss_prep("eikthyr"))
+    assert info["item"] == "TrophyDeer" and info["qty"] == 2 and info["missing"] == 1

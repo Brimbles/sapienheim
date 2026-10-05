@@ -84,6 +84,16 @@ RULES = """
 
 SYSTEM = f"{PERSONA}\n\n{RULES}"
 
+# What each boss's altar wants (item id, how many) and where it comes from.
+BOSSES: dict[str, dict[str, Any]] = {
+    "eikthyr": {"item": "TrophyDeer", "qty": 2, "where": "Deer trophies: hunt deer in the Meadows. Altar in the Meadows."},
+    "the elder": {"item": "AncientSeed", "qty": 3, "where": "Ancient seeds: break greydwarf nests in the Black Forest. Altar in the Black Forest."},
+    "bonemass": {"item": "WitheredBone", "qty": 10, "where": "Withered bones: Sunken Crypts in the Swamp (needs a Swamp key). Altar in the Swamp."},
+    "moder": {"item": "DragonEgg", "qty": 3, "where": "Dragon eggs: nests on Mountain peaks (heavy, can't go through portals). Altar in the Mountains."},
+    "yagluth": {"item": "GoblinTotem", "qty": 5, "where": "Fuling totems: from fuling shamans and villages in the Plains. Altar in the Plains."},
+    "fader": {"item": "Bell", "qty": 3, "where": "Bells: made from bell fragments found in the Ashlands fortresses. Altar in the Ashlands."},
+}
+
 TOOLS: list[dict[str, Any]] = [
     {
         "name": "say",
@@ -279,6 +289,16 @@ TOOLS: list[dict[str, Any]] = [
                 "queue": {"type": "boolean", "description": "true = run after your current work instead of right away."},
             },
             "required": ["template"],
+        },
+    },
+    {
+        "name": "boss_prep",
+        "description": "What it takes to summon a boss, and how much of it you and the nearby chests already have. "
+        "Use it when asked about a boss fight; then gather or fetch what's missing.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"boss": {"type": "string", "enum": list(BOSSES)}},
+            "required": ["boss"],
         },
     },
     {
@@ -643,6 +663,23 @@ class Brain:
     GREETING_WINDOW = 60.0   # one welcome per arrival, however many events announce it
     AWAY_FOR_SUMMARY = 1800  # seconds away before a returning player gets a "while you were away"
 
+    async def _boss_prep(self, boss: str) -> dict[str, Any]:
+        info = BOSSES.get(boss.lower())
+        if not info:
+            return {"error": f"unknown boss; known: {', '.join(BOSSES)}"}
+        state = await self.conn.request_state() or {}
+        have = {i["item"]: i["qty"] for i in (state.get("self") or {}).get("inventory", [])}
+        in_chests = 0
+        for chest in state.get("chests", []):
+            for i in chest.get("contents", []):
+                if i.get("item") == info["item"]:
+                    in_chests += i.get("qty", 0)
+        carried = have.get(info["item"], 0)
+        return {
+            **info, "boss": boss, "you_carry": carried, "in_nearby_chests": in_chests,
+            "missing": max(0, info["qty"] - carried - in_chests),
+        }
+
     async def on_raid(self, data: dict[str, Any]) -> None:
         """A raid starting or ending near the companion: raise the alarm, then report how it went."""
         name = str(data.get("name") or "a raid")
@@ -836,6 +873,8 @@ class Brain:
 
     async def _execute(self, block: Any, spoken: list[str], actions: list[str]) -> dict[str, Any]:
         name, args = block.name, dict(block.input or {})
+        if name == "boss_prep":
+            return _tool_result(block.id, json.dumps(await self._boss_prep(str(args.get("boss", "")))))
         if name == "opinion":
             self.memory.set_opinion(str(args.get("player", "")), str(args.get("opinion", "")))
             actions.append(f"opinion({args.get('player')}: {args.get('opinion')})")

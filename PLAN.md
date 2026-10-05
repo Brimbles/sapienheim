@@ -361,7 +361,7 @@ Make the offline simulation (M7) earn its keep.
 ### M13 — Adventuring helper
 - [ ] **Scouting:** "find me copper" / "look for a crypt": explore and drop map pins for points of interest (pairs with M10 missions).
 - [ ] **Pack mule:** follow on trips carrying the overflow, then deposit it in base chests when home.
-- [ ] **Boss prep:** knows each boss's summoning requirements, gathers the items and reminds the master what's missing.
+- [x] **Boss prep:** `boss_prep(boss)` (agent): each altar's item and count (verified item ids), where it comes from, and how many it and the nearby chests already have; the agent then gathers or fetches what's missing.
 - [ ] **Cooking:** cook meat on a fire or at the cauldron, hand over food before fights.
 - [ ] **Archery:** with a bow and arrows it fights at range: keeps 10-20 m away, shoots at full draw (creatures normally fire undrawn, and the AI treats every player weapon as 2 m melee), switches to melee when something closes in or the arrows run out. For now it's close combat only.
 - [ ] **Equip tool:** wear armour and use weapons it's given ("use the bow", "stick to your axe", "wear this"); worn gear shows on the viking body.

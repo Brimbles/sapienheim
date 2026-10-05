@@ -470,9 +470,16 @@ async def scenario_fires(r: Runner) -> None:
     await r.cmd("save_world")
 
 
+async def scenario_items(r: Runner) -> None:
+    """Item prefab names containing each filter: scenario.py items Bell Trophy..."""
+    for f in sys.argv[2:]:
+        res = await r.conn.command("item_names", filter=f)
+        r.results.append((f"items: {f}", ", ".join((res.data or {}).get("items", []))))
+
+
 SCENARIOS = {
     "m4": scenario_m4, "pieces": scenario_pieces, "build": scenario_build, "inspect": scenario_inspect,
-    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds, "buildportal": scenario_buildportal, "gravestone": scenario_gravestone, "guard": scenario_guard, "fires": scenario_fires,
+    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds, "buildportal": scenario_buildportal, "gravestone": scenario_gravestone, "guard": scenario_guard, "fires": scenario_fires, "items": scenario_items,
 }
 
 
