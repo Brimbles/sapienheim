@@ -47,6 +47,7 @@ namespace ValheimCompanion.Companion
         public const string Repair = "repair";
         public const string Gravestone = "gravestone";
         public const string Guard = "guard";
+        public const string TendFires = "tend_fires";
         public const string TearDown = "tear_down";
 
         private const float ArriveDistance = 3.5f;
@@ -114,6 +115,12 @@ namespace ValheimCompanion.Companion
         private string _giveItem;
         private int _giveQty;
         private Dictionary<string, int> _giveList; // several items at once (a gravestone's contents)
+
+        // tend fires
+        private Queue<Fireplace> _fires;
+        private int _firesFed;
+        private Dictionary<string, int> _fuelUsed;
+        private HashSet<string> _fuelMissing;
 
         // guard
         private Vector3 _guardCentre;
@@ -201,6 +208,7 @@ namespace ValheimCompanion.Companion
                     case TearDown:
                     case Gravestone:
                     case Guard:
+                    case TendFires:
                         return task;
                     default:
                         return Follow;
@@ -317,6 +325,16 @@ namespace ValheimCompanion.Companion
         {
             CommandGive(playerId, "(several)", 1, taskId);
             _giveList = new Dictionary<string, int>(items);
+        }
+
+        public void CommandTendFires(List<Fireplace> fires, string taskId)
+        {
+            _fires = new Queue<Fireplace>(fires);
+            _firesFed = 0;
+            _fuelUsed = new Dictionary<string, int>();
+            _fuelMissing = new HashSet<string>();
+            _stepDeadline = 0f;
+            SetTask(TendFires, taskId);
         }
 
         /// <summary>Patrol a loop around a spot until told otherwise; the combat reflex deals with anything hostile.</summary>
@@ -522,6 +540,9 @@ namespace ValheimCompanion.Companion
                 case Guard:
                     UpdateGuard();
                     break;
+                case TendFires:
+                    UpdateTendFires();
+                    break;
             }
         }
 
@@ -544,7 +565,8 @@ namespace ValheimCompanion.Companion
                         || (task == Repair && _repairPlan == null)
                         || (task == TearDown && _teardownPlan == null)
                         || (task == Gravestone && _grave.IsNone())
-                        || (task == Guard && _guardRadius <= 0f);
+                        || (task == Guard && _guardRadius <= 0f)
+                        || (task == TendFires && _fires == null);
             if (lost)
             {
                 CompanionState.SetTask(Zdo, Follow);
@@ -1414,6 +1436,85 @@ namespace ValheimCompanion.Companion
             _teardownPlan.Dequeue();
             _teardownSkipped.TryGetValue(reason, out int n);
             _teardownSkipped[reason] = n + 1;
+            _stepDeadline = 0f;
+        }
+
+        /// <summary>Walk to each fire and top it up with its own fuel from the pack, as a player would.</summary>
+        private void UpdateTendFires()
+        {
+            Fireplace fire = null;
+            while (_fires.Count > 0 && !fire)
+            {
+                fire = _fires.Peek();
+                if (!fire || !fire.m_nview || !fire.m_nview.IsValid())
+                {
+                    _fires.Dequeue();
+                    fire = null;
+                }
+            }
+            if (!fire)
+            {
+                var done = new JObject { ["task"] = TendFires, ["fires_fed"] = _firesFed, ["fuel_used"] = JObject.FromObject(_fuelUsed) };
+                if (_fuelMissing.Count > 0)
+                {
+                    done["need_fuel"] = new JArray(_fuelMissing); // fires that wanted fuel it didn't have
+                }
+                _fires = null;
+                Complete(true, done);
+                return;
+            }
+            if (!_waypoint)
+            {
+                _waypoint = new GameObject("CompanionWaypoint");
+            }
+            _waypoint.transform.position = fire.transform.position;
+            if (_ai.GetFollowTarget() != _waypoint)
+            {
+                _ai.SetFollowTarget(_waypoint);
+            }
+            if (_stepDeadline <= 0f)
+            {
+                _stepDeadline = Time.time + BuildStepTimeout / 2f;
+            }
+            Vector3 delta = fire.transform.position - _character.transform.position;
+            delta.y = 0f;
+            if (delta.magnitude > PickupReach)
+            {
+                if (Time.time > _stepDeadline)
+                {
+                    _fires.Dequeue(); // can't get to this one
+                    _stepDeadline = 0f;
+                }
+                return;
+            }
+            if (Time.time < _nextPlace)
+            {
+                return;
+            }
+            string fuel = fire.m_fuelItem.gameObject.name;
+            int want = Mathf.FloorToInt(fire.m_maxFuel - CompanionWorkshop.FuelOf(fire));
+            int n = Mathf.Min(want, _inventory.Count(fuel));
+            if (n <= 0)
+            {
+                if (want > 0)
+                {
+                    _fuelMissing.Add(fuel);
+                }
+            }
+            else
+            {
+                _character.SetLookDir(delta.normalized);
+                _inventory.Inventory.RemoveItem(fire.m_fuelItem.m_itemData.m_shared.m_name, n);
+                for (int i = 0; i < n; i++)
+                {
+                    fire.m_nview.InvokeRPC("RPC_AddFuel"); // one unit each, to the fire's owner
+                }
+                _fuelUsed.TryGetValue(fuel, out int used);
+                _fuelUsed[fuel] = used + n;
+                _firesFed++;
+            }
+            _fires.Dequeue();
+            _nextPlace = Time.time + PlaceInterval;
             _stepDeadline = 0f;
         }
 

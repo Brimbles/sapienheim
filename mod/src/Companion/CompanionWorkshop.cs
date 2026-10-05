@@ -104,6 +104,30 @@ namespace ValheimCompanion.Companion
             return null;
         }
 
+        /// <summary>Player-built fires (campfires, hearths, torches, braziers) within range that could take more fuel, nearest first.</summary>
+        public static List<Fireplace> FiresToTend(Vector3 centre, float radius, long masterId)
+        {
+            var fires = new List<Fireplace>();
+            foreach (Fireplace f in UnityEngine.Object.FindObjectsByType<Fireplace>(FindObjectsSortMode.None))
+            {
+                Piece piece = f ? f.GetComponent<Piece>() : null;
+                if (!piece || !piece.IsPlacedByPlayer() || f.m_infiniteFuel || !f.m_canRefill || !f.m_fuelItem
+                    || !f.m_nview || !f.m_nview.IsValid() || Vector3.Distance(f.transform.position, centre) > radius
+                    || !Building.Builder.WardAllows(f.transform.position, masterId))
+                {
+                    continue;
+                }
+                if (Mathf.CeilToInt(FuelOf(f)) < f.m_maxFuel)
+                {
+                    fires.Add(f);
+                }
+            }
+            fires.Sort((a, b) => Vector3.Distance(a.transform.position, centre).CompareTo(Vector3.Distance(b.transform.position, centre)));
+            return fires;
+        }
+
+        public static float FuelOf(Fireplace f) => f.m_nview.GetZDO().GetFloat(ZDOVars.s_fuel);
+
         /// <summary>A player's gravestones (anywhere in the world, loaded or not), nearest <paramref name="from"/> first.</summary>
         public static List<ZDO> FindGravestones(long playerId, Vector3 from)
         {

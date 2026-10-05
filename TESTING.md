@@ -81,6 +81,10 @@ Each line in the server log starts with `Proactive:`. Turn it off with `Companio
 ## 4d3. Guard duty
 - [ ] `@Alvar guard the base` (or `guard <named place>`): he walks a loop round it and fights whatever turns up, until you tell him to follow. When a raid starts nearby he raises the alarm; when you come back later, the raid is in his "while you were away".
 
+## 4d4. Tending fires
+- [ ] Let the base fires burn low, give him wood (and resin for torches), then `@Alvar keep the fires going`. He walks round topping each up and tells you if he ran short.
+- Note: a test torch was left standing (it needs a workbench in range to remove) near (180, -225).
+
 ## 4e. People and the day's tale
 - [ ] Log out for 30+ minutes after he's done a few jobs, then log back in: one greeting with a short "while you were away" of the highlights (not two greetings).
 - [ ] A friend joining for the first time gets a welcome and an introduction.

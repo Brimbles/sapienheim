@@ -129,7 +129,10 @@ namespace ValheimCompanion.Bridge
                 var p = new Vector3((float)at[0], 0f, (float)at[at.Count - 1]);
                 p.y = at.Count == 3 ? (float)at[1] : (ZoneSystem.instance.GetGroundHeight(p, out float gy) ? gy : 0f);
                 Quaternion rot = Quaternion.Euler(0f, args["yaw"] != null ? (float)args["yaw"] : 0f, 0f);
-                GameObject go = Building.Builder.Place(dp, p, rot, 0L, null);
+                // "as_master": built in the companion's master's name, so it counts as theirs (fires to tend, teardown...).
+                CompanionAI owned = CompanionAI.FindOwned();
+                long creator = args["as_master"] != null && (bool)args["as_master"] && owned ? CompanionState.GetMaster(owned.ZDO) : 0L;
+                GameObject go = Building.Builder.Place(dp, p, rot, creator, null);
                 string tag = (string)args["tag"];
                 ZNetView nv = go.GetComponent<ZNetView>();
                 if (!string.IsNullOrEmpty(tag) && nv)
@@ -518,6 +521,33 @@ namespace ValheimCompanion.Bridge
                     string name = $"hut {width}x{Building.HutTemplate.Depth}";
                     return Queue(companion, args, $"build({name})",
                         () => companion.Tasks.CommandBuild(name, plan, TaskId(args, cmdId)));
+                }
+                case "tend_fires":
+                {
+                    Vector3 centre = companion.transform.position;
+                    string nearWho = (string)args["near"];
+                    if (!string.IsNullOrEmpty(nearWho) && !TryFindPlayer(nearWho, out _, out _, out centre))
+                    {
+                        return "player_not_found";
+                    }
+                    if (args["x"] != null && args["z"] != null)
+                    {
+                        centre = new Vector3((float)args["x"], centre.y, (float)args["z"]);
+                    }
+                    float radius = Mathf.Clamp(args["radius"] != null ? (float)args["radius"] : 30f, 5f, 60f);
+                    var fires = CompanionWorkshop.FiresToTend(centre, radius, CompanionState.GetMaster(companion.ZDO));
+                    var fuels = new JObject();
+                    foreach (Fireplace f in fires)
+                    {
+                        string fuel = f.m_fuelItem.gameObject.name;
+                        fuels[fuel] = (fuels[fuel] != null ? (int)fuels[fuel] : 0) + Mathf.FloorToInt(f.m_maxFuel - CompanionWorkshop.FuelOf(f));
+                    }
+                    data = new JObject { ["fires"] = fires.Count, ["fuel_wanted"] = fuels };
+                    if (fires.Count == 0)
+                    {
+                        return "no_fires_need_fuel";
+                    }
+                    return Queue(companion, args, $"tend_fires({fires.Count})", () => companion.Tasks.CommandTendFires(fires, TaskId(args, cmdId)));
                 }
                 case "guard":
                 {

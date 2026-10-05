@@ -451,9 +451,28 @@ async def _next_event(r: Runner, name: str, timeout: float):
     return None
 
 
+async def scenario_fires(r: Runner) -> None:
+    """Tend fires: a campfire and a torch (built as the master), wood and resin given; then tidy them away."""
+    s = await r.state()
+    here = s["self"]["pos"]
+    for piece, dx in (("fire_pit", 6), ("piece_groundtorch_wood", 9)):
+        res = await r.cmd("debug_place", piece=piece, pos=[here[0] + dx, here[2] + 3], as_master=True)
+        r.results.append((f"place {piece}", "ok" if res.ok else str(res.error)))
+    await r.cmd("debug_give", item="Wood", qty=10)
+    await r.cmd("debug_give", item="Resin", qty=5)
+    ask = await r.cmd("tend_fires", radius=15)
+    r.results.append(("fires needing fuel", f"{ask.error or 'ok'} {ask.data}"))
+    if ask.ok:
+        await r.task_wait("tend the fires", ask)
+    down = await r.cmd("tear_down", x=here[0] + 7.5, z=here[2] + 3, scope="radius", radius=3, confirm=True)
+    if down.ok:
+        await r.task_wait("tidy the test fires away", down)
+    await r.cmd("save_world")
+
+
 SCENARIOS = {
     "m4": scenario_m4, "pieces": scenario_pieces, "build": scenario_build, "inspect": scenario_inspect,
-    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds, "buildportal": scenario_buildportal, "gravestone": scenario_gravestone, "guard": scenario_guard,
+    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds, "buildportal": scenario_buildportal, "gravestone": scenario_gravestone, "guard": scenario_guard, "fires": scenario_fires,
 }
 
 
