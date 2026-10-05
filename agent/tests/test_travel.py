@@ -141,3 +141,48 @@ def test_settlement_names_dont_repeat():
     from companion_agent.brain import settlement_name
     seq = iter(["Ulf", "hold", "Ulf", "hold", "Grim", "hold"])
     assert settlement_name("fort", {"Ulfhold"}, pick=lambda options: next(seq)) == "Grimhold"
+
+
+class MovingConn(Conn):
+    """Moves him to each go_to target (as if the walk worked)."""
+
+    async def request_state(self):
+        return {"self": {"pos": [self.here[0], 30.0, self.here[1]]}, "players": [], "players_online": 0}
+
+    async def command(self, action, **args):
+        if action == "go_to":
+            self.here = (args["x"], args["z"])
+        return await super().command(action, **args)
+
+
+def explore_event(name, **data):
+    from companion_agent.protocol import Event
+    return Event(type="event", name=name, data={"task": "go_to", "queue_remaining": 0, **data})
+
+
+def test_explore_walks_in_legs_and_reports_finds():
+    conn = MovingConn((0, 0), [])
+    b = Brain(conn, client=None)
+    block = SimpleNamespace(type="tool_use", id="t1", name="explore", input={"direction": "east", "distance": 1000})
+    asyncio.run(b._execute(block, [], []))
+    assert conn.sent[-1] == ("go_to", {"x": 400.0, "z": 0.0})
+    asyncio.run(b.on_event(SimpleNamespace(name="discovered", data={"kind": "place", "name": "Troll cave", "pos": [380, 5]})))
+    asyncio.run(b.on_event(explore_event("task_done")))
+    assert conn.sent[-1] == ("go_to", {"x": 800.0, "z": 0.0})
+    asyncio.run(b.on_event(explore_event("task_done")))
+    assert conn.sent[-1][0] == "go_to" and round(conn.sent[-1][1]["x"]) == 1000
+    asyncio.run(b.on_event(explore_event("task_done")))
+    assert b.mission is None
+    assert any("Troll cave" in str(entry) for entry in b.memory.data.get("journal", []))
+
+
+def test_explore_turns_aside_when_blocked():
+    conn = MovingConn((0, 0), [])
+    b = Brain(conn, client=None)
+    block = SimpleNamespace(type="tool_use", id="t1", name="explore", input={"direction": "north", "distance": 2000})
+    asyncio.run(b._execute(block, [], []))
+    conn.here = (0, 100)  # got 100 m, then water
+    asyncio.run(b.on_event(explore_event("task_failed", reason="water_in_the_way")))
+    x, z = conn.sent[-1][1]["x"], conn.sent[-1][1]["z"]
+    assert x > 0 and z > 100  # now heading northeast
+    assert b.mission["walked"] == 100

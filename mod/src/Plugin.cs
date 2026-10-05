@@ -144,6 +144,7 @@ namespace ValheimCompanion
             gameObject.AddComponent<Bridge.AgentClient>();
             gameObject.AddComponent<Net.CompanionMapMarker>();
             gameObject.AddComponent<Net.PlacePins>();
+            gameObject.AddComponent<Net.CompanionExplorer>();
 
             WatchConfig();
             Jotunn.Logger.LogInfo($"{PluginName} {PluginVersion} loaded (headless={Jotunn.Managers.GUIManager.IsHeadless()})");

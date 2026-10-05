@@ -71,6 +71,7 @@ RULES = """
 - `tend_fires` keeps the base's fires and torches burning (bring wood and resin).
 - `guard` patrols around the base (or wherever you're told) until given another order; good at night or while players are away.
 - `mission` sends you far away to do something (e.g. build an outpost) and optionally come back; you only report at milestones.
+- `explore` sends you off into the unknown in a direction: your master's map fills in as you go and notable places get pinned on it; you report what you found at the end.
 - `find` tells you where the nearest known ore, berries, trees or nests are (pin=true to mark the spot for `travel`).
 - `fetch_gravestone` does a corpse run when a player has died: their gear comes back to them.
 - `repair_nearby` fixes damaged buildings around you (or a player or named place) with your hammer.
@@ -453,6 +454,23 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "explore",
+        "description": "Go exploring: walk off in a direction (or towards a named place) for a distance, uncovering the "
+        "map for your master as you go (their map only) and pinning notable places on it (boss altars, traders, crypts, "
+        "caves, Fuling villages, runestones). You walk in long legs, turn aside when water or cliffs block the way, and "
+        "report what you found at the end (no chatter on the way). Optionally come back afterwards. Dangerous: you can "
+        "die out there (you'd come back to life at home). Use the mission tool's action=cancel to stop.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "direction": {"type": "string", "enum": ["north", "northeast", "east", "southeast", "south", "southwest", "west", "northwest"]},
+                "towards": {"type": "string", "description": "A named place to head for instead of a direction."},
+                "distance": {"type": "number", "description": "Metres to cover (default 1000, at most 3000)."},
+                "come_back": {"type": "boolean"},
+            },
+        },
+    },
+    {
         "name": "find",
         "description": "Scout your memory of the land: the nearest places with something (ores, berries, kinds of tree, "
         "greydwarf nests), only in parts of the world someone has already been to. With pin=true the nearest is "
@@ -761,6 +779,8 @@ class Brain:
         elif event.name == "player_left":
             # Last seen as they leave, so a return measures the time they were really away.
             self.memory.note_player_seen(str(event.data.get("player") or "someone"))
+        elif event.name == "discovered":
+            self._discovered(event.data)
         elif event.name in ("task_done", "task_failed") and self.mission and await self._mission_event(event):
             pass  # the mission handled it (a milestone, or a step nobody needs to hear about)
         elif event.name in ("task_done", "task_failed") and _worth_reporting(event):
@@ -896,11 +916,97 @@ class Brain:
         named = f"; the settlement will be called {build['name']}" if isinstance(build, dict) and build.get("name") else ""
         return _tool_result(tool_id, f"on the way to {label}; you'll report when you get there{named}")
 
+    async def _explore_tool(self, tool_id: str, args: dict[str, Any], actions: list[str]) -> dict[str, Any]:
+        state = await self.conn.request_state() or {}
+        here = (state.get("self") or {}).get("pos")
+        if not here:
+            return _tool_result(tool_id, "failed: can't tell where you are", error=True)
+        distance = max(100.0, min(EXPLORE_MAX, float(args.get("distance") or 1000.0)))
+        if args.get("towards"):
+            where = self.memory.place(str(args["towards"]))
+            if where is None:
+                known = ", ".join(p["name"] for p in self.memory.data["places"].values()) or "none yet"
+                return _tool_result(tool_id, f"failed: unknown_place (known: {known})", error=True)
+            heading = math.degrees(math.atan2(where[0] - here[0], where[1] - here[2])) % 360
+            distance = min(EXPLORE_MAX, math.hypot(where[0] - here[0], where[1] - here[2]))
+            label = f"towards {args['towards']}"
+        else:
+            direction = str(args.get("direction") or "north")
+            if direction not in HEADINGS:
+                return _tool_result(tool_id, f"failed: direction is one of {', '.join(HEADINGS)}", error=True)
+            heading = HEADINGS[direction]
+            label = direction
+        mission = {"kind": "explore", "label": f"exploring {label}", "base": heading, "heading": heading,
+                   "distance": distance, "walked": 0.0, "tries": 0, "finds": [], "from": [here[0], here[2]],
+                   "come_back": bool(args.get("come_back")), "stage": "exploring", "build": None}
+        self._set_mission(mission)
+        await self._explore_leg([here[0], here[2]])
+        self.memory.log(f"set off exploring {label}")
+        actions.append(f"explore({label}, {round(distance)} m)")
+        return _tool_result(tool_id, f"off exploring {label} for about {round(distance)} m; you'll report what you find at the end")
+
+    async def _explore_leg(self, here: list[float]) -> None:
+        """The next leg of an expedition, up to EXPLORE_LEG metres along the current heading."""
+        m = self.mission
+        m["from"] = here
+        left = max(0.0, m["distance"] - m["walked"])
+        step = min(EXPLORE_LEG, left)
+        rad = math.radians(m["heading"])
+        x, z = round(here[0] + math.sin(rad) * step, 1), round(here[1] + math.cos(rad) * step, 1)
+        m["x"], m["z"] = x, z
+        self._set_mission(m)
+        await self.conn.command("go_to", x=x, z=z)
+
+    async def _explore_event(self, event: Event) -> bool:
+        """An expedition's leg finished or failed: on (turning aside when blocked), or done."""
+        m = self.mission
+        state = await self.conn.request_state() or {}
+        pos = (state.get("self") or {}).get("pos")
+        here = [pos[0], pos[2]] if pos else [m["x"], m["z"]]
+        m["walked"] += math.hypot(here[0] - m["from"][0], here[1] - m["from"][1])
+        if event.name == "task_failed":
+            m["tries"] += 1
+            if m["tries"] > len(EXPLORE_TURNS):
+                self._set_mission(m)
+                await self._finish_mission(self._explore_summary(f"stopped: the way {m['label'].split(' ', 1)[1]} is blocked "
+                                                                 f"({event.data.get('reason')})"))
+                return True
+            m["heading"] = (m["base"] + EXPLORE_TURNS[m["tries"] - 1]) % 360
+        else:
+            m["tries"], m["heading"] = 0, m["base"]
+        if m["walked"] >= m["distance"] - 30:
+            self._set_mission(m)
+            await self._finish_mission(self._explore_summary("done"))
+            return True
+        await self._explore_leg(here)
+        return True
+
+    def _explore_summary(self, how: str) -> str:
+        m = self.mission
+        finds = ", ".join(f"{f['name']} ({f['where']})" for f in m["finds"]) or "nothing of note"
+        return f"{m['label']}: {how} after {round(m['walked'])} m; found {finds}"
+
+    def _discovered(self, data: dict[str, Any]) -> None:
+        """Something new on the way (a place or a biome): kept for the expedition's report, and in the journal."""
+        if data.get("kind") == "biome":
+            name = f"the {data.get('name')} (new biome)"
+        else:
+            name = str(data.get("name") or "something")
+        where = data.get("pos") or [0, 0]
+        if self.mission and self.mission.get("kind") == "explore":
+            self.mission["finds"].append({"name": name, "where": f"{round(where[0])}, {round(where[1])}"})
+            self._set_mission(self.mission)
+        self.memory.log(f"found {name} at {round(where[0])}, {round(where[1])}")
+
     async def _mission_resume(self, why: str) -> None:
         """Pick the mission up again after a death or going off duty, at whatever step it had reached."""
         m = self.mission
         log.info("mission resumes (%s) at stage %s", why, m["stage"])
-        if m["stage"] == "travelling":
+        if m["stage"] == "exploring":
+            state = await self.conn.request_state() or {}
+            pos = (state.get("self") or {}).get("pos")
+            await self._explore_leg([pos[0], pos[2]] if pos else [m["x"], m["z"]])
+        elif m["stage"] == "travelling":
             await self.conn.command("go_to", x=m["x"], z=m["z"])
         elif m["stage"] == "building":
             r = await self.conn.command("resume_build")
@@ -932,6 +1038,8 @@ class Brain:
         task = d.get("task")
         if d.get("queue_remaining", 0) > 0:
             return task in ("go_to", "build")  # a step in the middle of a queued job: say nothing
+        if m.get("kind") == "explore" and m["stage"] == "exploring" and task == "go_to":
+            return await self._explore_event(event)
         if event.name == "task_failed":
             await self._milestone(f"the mission to {m['label']} is stuck ({d.get('reason')}) at stage {m['stage']}")
             return True
@@ -1207,6 +1315,8 @@ class Brain:
             return await self._find(block.id, args, actions)
         if name == "mission":
             return await self._mission_tool(block.id, args, actions)
+        if name == "explore":
+            return await self._explore_tool(block.id, args, actions)
         if name == "boss_prep":
             return _tool_result(block.id, json.dumps(await self._boss_prep(str(args.get("boss", "")))))
         if name == "opinion":
@@ -1363,6 +1473,13 @@ def _dist(a: tuple[float, float], b: tuple[float, float]) -> float:
 
 
 SETTLEMENTS = ("outpost", "farm", "village", "fort", "mining_camp", "port")
+
+# Exploring: headings in degrees (north is +z, east is +x), legs, and turns to try when the way is blocked.
+HEADINGS = {"north": 0.0, "northeast": 45.0, "east": 90.0, "southeast": 135.0, "south": 180.0, "southwest": 225.0,
+            "west": 270.0, "northwest": 315.0}
+EXPLORE_LEG = 400.0
+EXPLORE_MAX = 3000.0
+EXPLORE_TURNS = (45.0, -45.0, 90.0, -90.0)
 
 # Norse-flavoured names for settlements nobody named: a first part, and an ending that suits the kind of place.
 NAME_STARTS = ["Ulf", "Hrafn", "Bjorn", "Ask", "Frey", "Sig", "Thor", "Eld", "Grim", "Varg", "Orm", "Jarn", "Stein",

@@ -70,7 +70,7 @@ namespace ValheimCompanion.Net
             }
         }
 
-        private static long MasterPeer(long masterId)
+        public static long MasterPeer(long masterId)
         {
             if (masterId == 0)
             {
