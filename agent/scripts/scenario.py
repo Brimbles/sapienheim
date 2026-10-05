@@ -661,9 +661,28 @@ async def scenario_farm(r: Runner) -> None:
         await advance_until_done(r, "farm", res, step_s=1)
 
 
+async def scenario_labels(r: Runner) -> None:
+    """Chest labels: a chest (built as the master) with stone and wood in it gets a sign on top; it stands 20 s later."""
+    s = await r.state()
+    here = s["self"]["pos"]
+    await r.cmd("debug_place", piece="piece_chest_wood", pos=[here[0] + 4, here[2] - 4], as_master=True)
+    for item, qty in (("Stone", 5), ("Wood", 7), ("Coal", 2)):
+        await r.cmd("debug_give", item=item, qty=qty)
+    s = await r.state()
+    chest = min(s.get("chests", []), key=lambda c: c["dist"])
+    await r.task("stock it", "store_items", chest_id=chest["id"], item="Stone", qty=5)
+    res = await r.cmd("label_chests", radius=6)
+    r.results.append(("labels", f"{res.error or 'ok'} {res.data}"))
+    if res.ok:
+        await r.task_wait("put the signs up", res)
+        await asyncio.sleep(20)
+        near = await r.conn.command("pieces_near", pos=[here[0] + 4, here[1], here[2] - 4], radius=3)
+        r.results.append(("standing after 20 s", str(sorted(p["piece"] for p in (near.data or {}).get("pieces", []) if p["creator"] != 0))))
+
+
 SCENARIOS = {
     "m4": scenario_m4, "pieces": scenario_pieces, "build": scenario_build, "inspect": scenario_inspect,
-    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds, "buildportal": scenario_buildportal, "gravestone": scenario_gravestone, "guard": scenario_guard, "fires": scenario_fires, "items": scenario_items, "deposit": scenario_deposit, "tidy_chests": scenario_tidy_chests, "hold": scenario_hold, "sign": scenario_sign, "pieceinfo": scenario_pieceinfo, "stations": scenario_stations, "cookdebug": scenario_cookdebug, "collect": scenario_collect, "find": scenario_find, "farm": scenario_farm,
+    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds, "buildportal": scenario_buildportal, "gravestone": scenario_gravestone, "guard": scenario_guard, "fires": scenario_fires, "items": scenario_items, "deposit": scenario_deposit, "tidy_chests": scenario_tidy_chests, "hold": scenario_hold, "sign": scenario_sign, "pieceinfo": scenario_pieceinfo, "stations": scenario_stations, "cookdebug": scenario_cookdebug, "collect": scenario_collect, "find": scenario_find, "farm": scenario_farm, "labels": scenario_labels,
 }
 
 

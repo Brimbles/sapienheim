@@ -626,6 +626,64 @@ namespace ValheimCompanion.Bridge
                     }
                     return found.Count > 0 ? null : "none_found_in_explored_land";
                 }
+                case "label_chests":
+                {
+                    // A sign in front of each chest naming what's in it (its two commonest things), unless it has one.
+                    Vector3 centre = companion.transform.position;
+                    if (args["x"] != null && args["z"] != null)
+                    {
+                        centre = new Vector3((float)args["x"], centre.y, (float)args["z"]);
+                    }
+                    float radius = Mathf.Clamp(args["radius"] != null ? (float)args["radius"] : 30f, 5f, 60f);
+                    var plan = new System.Collections.Generic.List<Building.BuildStep>();
+                    var labels = new JArray();
+                    foreach (Container chest in CompanionWorkshop.UsableChests(centre, radius, companion.ZDO))
+                    {
+                        var items = chest.GetInventory().GetAllItems();
+                        if (items.Count == 0)
+                        {
+                            continue;
+                        }
+                        // In front of the chest, standing on whatever is there (a floor or the ground; a chest lid
+                        // doesn't hold pieces up): the 0.56 m board's lower edge just into that surface.
+                        Vector3 front = chest.transform.position + chest.transform.forward * 0.75f;
+                        if (!Physics.Raycast(front + Vector3.up * 1.5f, Vector3.down, out RaycastHit hit, 4f, ~0, QueryTriggerInteraction.Ignore))
+                        {
+                            continue;
+                        }
+                        Vector3 at = hit.point + Vector3.up * 0.2f;
+                        if (UnityEngine.Object.FindObjectsByType<Sign>(FindObjectsSortMode.None).Any(s => Vector3.Distance(s.transform.position, at) < 0.6f))
+                        {
+                            continue; // already labelled
+                        }
+                        string text = string.Join(", ", items
+                            .GroupBy(i => Localization.instance.Localize(i.m_shared.m_name))
+                            .OrderByDescending(g => g.Sum(i => i.m_stack)).Take(2).Select(g => g.Key));
+                        if (text.Length > 50)
+                        {
+                            text = text.Substring(0, 50);
+                        }
+                        plan.Add(new Building.BuildStep { Piece = "sign", Pos = at, Rot = chest.transform.rotation, Text = text });
+                        labels.Add(text);
+                    }
+                    data = new JObject { ["labels"] = labels };
+                    if (plan.Count == 0)
+                    {
+                        return "nothing_to_label";
+                    }
+                    var names = plan.Select(p => p.Piece).ToList();
+                    JObject missingSigns = Building.Builder.Missing(names, companion.Inventory);
+                    if (missingSigns.Count > 0 && !IsQueued(args))
+                    {
+                        data["missing"] = missingSigns;
+                        return "missing_materials";
+                    }
+                    if (Building.Builder.FindHammer(companion.Inventory) == null && !IsQueued(args))
+                    {
+                        return "need_hammer";
+                    }
+                    return Queue(companion, args, "label_chests", () => companion.Tasks.CommandBuild("chest labels", plan, TaskId(args, cmdId)));
+                }
                 case "farm":
                 {
                     Vector3 centre = companion.transform.position;

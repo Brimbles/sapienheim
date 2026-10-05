@@ -333,6 +333,15 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "label_chests",
+        "description": "Put a sign in front of each chest around you or a named place saying what's in it (its two commonest "
+        "things); chests already labelled are skipped. Each sign costs Wood 2, Coal 1. Good after deposit.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"radius": {"type": "number"}, "around": {"type": "string"}, "queue": {"type": "boolean"}},
+        },
+    },
+    {
         "name": "farm",
         "description": "Harvest the ripe crops around you or a named place, collect the harvest, and replant each spot from "
         "the seeds you carry (needs a cultivator, like a player; without seeds a spot is left bare). task_done lists the "
@@ -1000,7 +1009,7 @@ class Brain:
             return await self._travel(block.id, args, actions)
         settlement = args.pop("name", None) if name == "build" else None
         torn_place = str(args["around"]) if name == "tear_down" and args.get("around") and args.get("confirm") else None
-        if name in ("build", "repair_nearby", "tear_down", "guard", "tend_fires", "deposit", "load_smelters", "collect_output", "farm") and args.get("around"):
+        if name in ("build", "repair_nearby", "tear_down", "guard", "tend_fires", "deposit", "load_smelters", "collect_output", "farm", "label_chests") and args.get("around"):
             where = self.memory.place(str(args.pop("around")))
             if where is None:
                 known = ", ".join(p["name"] for p in self.memory.data["places"].values()) or "none yet"

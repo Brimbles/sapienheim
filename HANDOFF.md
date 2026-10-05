@@ -105,7 +105,7 @@ Each task is self-contained. Model choice: a mid-size model (Sonnet) for 1–7; 
 5. **Chores, part 2:** crops DONE (`farm`, headless: 3 carrots harvested and replanted); still to do: feeding tamed animals. Original notes:
    - harvest ripe crops (`Pickable` on player-planted pieces) and replant them (needs the cultivator and the plant piece, placed via `Builder.Place` with the right piece from the Cultivator's piece table, much as `PieceCatalog` handles the Hoe);
    - feed tamed animals (the `Tameable`/`MonsterAI` consume-items list; drop food nearby).
-6. **Storehouse labels:** after `deposit`, offer to put a `sign` (template exists) on or by chests naming their main contents. Sign placement on a chest's front: chest position plus forward × 0.5, the sign's bottom edge on the ground.
+6. ~~Storehouse labels~~ done: `label_chests` (signs stand on the floor/ground in front of each chest; a sign on a chest lid falls).
 7. ~~Scouting, simple version~~ done: `find` (headless: all 18 kinds of thing resolve; copper, tin, berries, trees and nests found in the explored Meadows/Black Forest).
 8. **Blueprints** (M5): evaluate the PlanBuild format. This needs the user's go-ahead and an example file.
 9. **Settlements and roads** (M9): a big design job, already in `PLAN.md`. Do it with the user, ideally with a stronger model for the layout design.
