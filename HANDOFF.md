@@ -81,7 +81,6 @@ See `git log` and the `[x]` items in `PLAN.md`.
 
 **Finished (task 1):** `cook` and `load_smelters` (`mod/src/Companion/CompanionStations.cs`, the tasks in `CompanionTasks.cs`, commands, agent tools).
 - **What was wrong with `cook`:** not the task. The headless server has nobody online, so the world clock was frozen and the meat never cooked. The task now waits (touching nothing) while nobody's online, picks up cooked food and burnt coal only from the station's own output point (a nearby kiln's coal was being swept up too), and the test advances the clock. Verified: `scenario.py stations` cooks 2-5 meat, nothing burnt, station emptied; 34 wood into a kiln.
-- Smelter/kiln **output pickup** is task 2 below.
 - **Test leftovers** near (183, −224) in the SapienDev world: a torch, two empty chests, a sign, a fire pit with a spit and a charcoal kiln. They're harmless and noted in `TESTING.md`.
 
 **Waiting on the user, not code:**
@@ -95,7 +94,7 @@ See `git log` and the `[x]` items in `PLAN.md`.
 Each task is self-contained. Model choice: a mid-size model (Sonnet) for 1–7; ask the user before 8–10, which need design decisions.
 
 1. ~~Finish cook~~ done.
-2. **Smelter output pickup.** CODE WRITTEN, NOT YET TESTED: `collect_output` (command, task, agent tool) builds and the agent tests pass. Next: restart the server, stop the agent, run `scenario.py collect` (it advances the world clock so the kiln makes coal), fix anything, then tick PLAN/TESTING. Original notes: Bars and coal drop at the smelter's `m_outputPoint`. Add an optional `collect: true` to `load_smelters`, or a `collect_output` command that picks up drops within 3 m of each nearby smelter or kiln. Reuse `CompanionInventory.TryPickup`.
+2. ~~Smelter output pickup~~ done: `collect_output` (headless: 48 coal from two kilns, `scenario.py collect`).
 3. **Equip tool** (M13; the user said "later", so do it once they agree).
    - Behaviour: `equip(item)` / `unequip(slot)`; wearing armour shows on the viking body.
    - Mod: `Humanoid.EquipItem` on the owner; the visuals sync on their own through `VisEquipment`.

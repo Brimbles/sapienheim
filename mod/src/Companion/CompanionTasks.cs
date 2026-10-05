@@ -1733,6 +1733,10 @@ namespace ValheimCompanion.Companion
                 {
                     done["need_fuel"] = new JArray(_smelterFuelMissing);
                 }
+                if (_loaded.Count == 0)
+                {
+                    done["reason"] = "already_full"; // everything it could take was already loaded
+                }
                 _smelters = null;
                 Complete(_loaded.Count > 0, done);
                 return;
