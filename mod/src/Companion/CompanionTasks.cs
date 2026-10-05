@@ -217,8 +217,20 @@ namespace ValheimCompanion.Companion
         private Vector3 _exitPos;
         private Quaternion _exitRot;
 
+        // An unfinished build outlives the body (death, going off duty), so resume_build can carry on afterwards.
+        private static Queue<BuildStep> s_carriedPlan;
+        private static string s_carriedName;
+        private static int s_carriedTotal;
+
         public CompanionTasks(ZNetView nview, Humanoid character, MonsterAI ai, CompanionInventory inventory)
         {
+            if (s_carriedPlan != null)
+            {
+                _buildPlan = s_carriedPlan;
+                _buildName = s_carriedName;
+                _buildTotal = s_carriedTotal;
+                s_carriedPlan = null;
+            }
             _nview = nview;
             _character = character;
             _ai = ai;
@@ -1239,6 +1251,11 @@ namespace ValheimCompanion.Companion
                 UpdateLevel(step);
                 return;
             }
+            if (step.Piece == Builder.PaveStep)
+            {
+                UpdatePave(step);
+                return;
+            }
             Piece piece = PieceCatalog.Get(step.Piece);
             if (!piece)
             {
@@ -1422,6 +1439,62 @@ namespace ValheimCompanion.Companion
             }
             _repairPlan.Dequeue();
             _nextPlace = Time.time + PlaceInterval;
+            _stepDeadline = 0f;
+        }
+
+        /// <summary>Pave a patch of road: walk to it, one hoe swing, paved. Free; the hoe is the only requirement.</summary>
+        private void UpdatePave(BuildStep step)
+        {
+            if (_stepDeadline <= 0f)
+            {
+                _stepDeadline = Time.time + BuildStepTimeout;
+            }
+            if (!_waypoint)
+            {
+                _waypoint = new GameObject("CompanionWaypoint");
+            }
+            _waypoint.transform.position = step.Pos;
+            if (_ai.GetFollowTarget() != _waypoint)
+            {
+                _ai.SetFollowTarget(_waypoint);
+            }
+            Vector3 delta = step.Pos - _character.transform.position;
+            delta.y = 0f;
+            if (delta.magnitude > BuildReach)
+            {
+                if (Time.time > _stepDeadline)
+                {
+                    _buildPlan.Dequeue(); // can't get to this patch; the road carries on
+                    _buildSkipped++;
+                    _stepDeadline = 0f;
+                }
+                return;
+            }
+            if (Time.time < _nextPlace)
+            {
+                return;
+            }
+            ItemDrop.ItemData hoe = Builder.FindTool(_inventory, "Hoe");
+            if (hoe == null)
+            {
+                FailBuild("need_hoe");
+                return;
+            }
+            if (!Builder.WardAllows(step.Pos, CompanionState.GetMaster(Zdo)))
+            {
+                _buildPlan.Dequeue(); // someone else's ward: leave this bit
+                _buildSkipped++;
+                return;
+            }
+            if (!_character.IsItemEquiped(hoe))
+            {
+                _character.EquipItem(hoe);
+            }
+            _character.GetComponent<CompanionAI>()?.PlaySwing(hoe);
+            LevelGround.PaveAt(step.Pos);
+            _buildPlan.Dequeue();
+            _buildPlaced++;
+            _nextPlace = Time.time + 0.6f;
             _stepDeadline = 0f;
         }
 
@@ -2500,6 +2573,12 @@ namespace ValheimCompanion.Companion
 
         public void OnDestroy()
         {
+            if (_buildPlan != null && _buildPlan.Count > 0)
+            {
+                s_carriedPlan = _buildPlan;
+                s_carriedName = _buildName;
+                s_carriedTotal = _buildTotal;
+            }
             ClearWaypoint();
             _gather.Stop();
         }

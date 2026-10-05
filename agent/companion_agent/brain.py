@@ -70,6 +70,7 @@ RULES = """
 - `cook` cooks the raw food you carry on a spit or cooking station with a lit fire; `load_smelters` loads kilns, smelters and furnaces with ore, wood and fuel from your pack (then `collect_output` gathers what they've made). Fires, spits, kilns and smelters only run while a player is online, so tell your master if they ask for something to be ready for when they're away.
 - `tend_fires` keeps the base's fires and torches burning (bring wood and resin).
 - `guard` patrols around the base (or wherever you're told) until given another order; good at night or while players are away.
+- `mission` sends you far away to do something (e.g. build an outpost) and optionally come back; you only report at milestones.
 - `find` tells you where the nearest known ore, berries, trees or nests are (pin=true to mark the spot for `travel`).
 - `fetch_gravestone` does a corpse run when a player has died: their gear comes back to them.
 - `repair_nearby` fixes damaged buildings around you (or a player or named place) with your hammer.
@@ -301,7 +302,8 @@ TOOLS: list[dict[str, Any]] = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "template": {"type": "string", "enum": ["hut", "wall", "fence", "portal", "sign", "outpost", "farm"]},
+                "template": {"type": "string", "enum": ["hut", "wall", "fence", "portal", "sign", "outpost", "farm", "blueprint"]},
+                "blueprint": {"type": "string", "description": "blueprint: its name (see the blueprints tool)."},
                 "text": {"type": "string", "description": "sign: the inscription, up to 50 characters."},
                 "tag": {"type": "string", "description": "portal: its tag; a portal pairs with the one other portal with the same tag."},
                 "width": {"type": "integer", "description": "hut: width in 2 m floor tiles, 3-5 (default 3)."},
@@ -343,6 +345,23 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "build_road",
+        "description": "Build a stone-paved road (the paving is free; needs a hoe) from where you stand, or a named place "
+        "(`from`), to a named place (`to`) or x/z, up to 600 m. It goes round steep ground, and crosses water only where "
+        "it's narrow (up to 12 m), with a wooden bridge (wood, a hammer and a workbench needed for those; it tells you what's "
+        "missing). If water or cliffs block the way, the road stops as close as it can get and reports where.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "from": {"type": "string", "description": "Named place to start from (default: where you are)."},
+                "to": {"type": "string", "description": "Named place to build to."},
+                "x": {"type": "number"},
+                "z": {"type": "number"},
+                "queue": {"type": "boolean"},
+            },
+        },
+    },
+    {
         "name": "label_chests",
         "description": "Put a sign in front of each chest around you or a named place saying what's in it (its two commonest "
         "things); chests already labelled are skipped. Each sign costs Wood 2, Coal 1. Good after deposit.",
@@ -381,6 +400,33 @@ TOOLS: list[dict[str, Any]] = [
                 "radius": {"type": "number", "description": "Metres, 5-60 (default 30)."},
                 "around": {"type": "string", "description": "A named place, e.g. the base."},
                 "queue": {"type": "boolean"},
+            },
+        },
+    },
+    {
+        "name": "blueprints",
+        "description": "List the building blueprints you can build (template=blueprint, blueprint=<name> on the build tool; "
+        "shared PlanBuild .blueprint files on the server), or save the building nearest you as a new one (`export`: a name) "
+        "so you can build copies of it elsewhere.",
+        "input_schema": {"type": "object", "properties": {"export": {"type": "string"}}},
+    },
+    {
+        "name": "mission",
+        "description": "A long mission: walk to a named place (`to`) or x/z, up to 5 km, optionally build something "
+        "there (`build`: the same arguments as the build tool, e.g. {\"template\": \"outpost\", \"tag\": \"north\", "
+        "\"name\": \"Northwatch\"}), and optionally come back to your master afterwards. You report only at milestones "
+        "(arrived, built, coming home, or if something stops you). If you die on the way you come back to life at the "
+        "mission site and carry on; if everyone logs off you go off duty as usual and carry on when someone's back. "
+        "action=cancel ends the current mission.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "to": {"type": "string", "description": "Named place."},
+                "x": {"type": "number"},
+                "z": {"type": "number"},
+                "build": {"type": "object", "description": "What to build there (build tool arguments)."},
+                "come_back": {"type": "boolean"},
+                "action": {"type": "string", "enum": ["start", "cancel", "continue"], "description": "Default start; continue retries the current step."},
             },
         },
     },
@@ -693,6 +739,8 @@ class Brain:
         elif event.name == "player_left":
             # Last seen as they leave, so a return measures the time they were really away.
             self.memory.note_player_seen(str(event.data.get("player") or "someone"))
+        elif event.name in ("task_done", "task_failed") and self.mission and await self._mission_event(event):
+            pass  # the mission handled it (a milestone, or a step nobody needs to hear about)
         elif event.name in ("task_done", "task_failed") and _worth_reporting(event):
             # The whole job is finished (or failed): tell the players.
             log.info("%s %s", event.name, event.data)
@@ -748,6 +796,8 @@ class Brain:
                 history_line="(you were summoned back)",
             )
         elif event.name == "logged_in":
+            if self.mission:
+                await self._mission_resume("came back on duty")
             if self._greeted_recently():
                 return  # the player who brought it back has just been welcomed
             self._last_greeting = time.time()
@@ -757,6 +807,8 @@ class Brain:
                 history_line="(you came back on duty as a player arrived)",
             )
         elif event.name == "respawned":
+            if self.mission:
+                await self._mission_resume("came back to life at the mission site")
             killer = event.data.get("killed_by") or "something you'd rather not discuss"
             await self.take_turn(
                 f"(You were just killed by {killer}, and have now bounced back to life next to the group. "
@@ -770,6 +822,129 @@ class Brain:
 
     GREETING_WINDOW = 60.0   # one welcome per arrival, however many events announce it
     AWAY_FOR_SUMMARY = 1800  # seconds away before a returning player gets a "while you were away"
+
+    # ---------- missions ----------
+
+    @property
+    def mission(self) -> dict[str, Any] | None:
+        return self.memory.data.get("mission")
+
+    def _set_mission(self, mission: dict[str, Any] | None) -> None:
+        self.memory.data["mission"] = mission
+        self.memory.save()
+
+    async def _mission_tool(self, tool_id: str, args: dict[str, Any], actions: list[str]) -> dict[str, Any]:
+        action = args.get("action") or "start"
+        if action == "cancel":
+            if not self.mission:
+                return _tool_result(tool_id, "no mission to cancel")
+            await self.conn.command("set_mission")
+            self._set_mission(None)
+            actions.append("mission(cancel)")
+            return _tool_result(tool_id, "mission cancelled")
+        if action == "continue":
+            if not self.mission:
+                return _tool_result(tool_id, "failed: no mission", error=True)
+            await self._mission_resume("asked to carry on")
+            return _tool_result(tool_id, f"carrying on: {self.mission['stage']}")
+        if args.get("to"):
+            where = self.memory.place(str(args["to"]))
+            if where is None:
+                known = ", ".join(p["name"] for p in self.memory.data["places"].values()) or "none yet"
+                return _tool_result(tool_id, f"failed: unknown_place (known: {known})", error=True)
+            x, z = where
+        elif args.get("x") is not None and args.get("z") is not None:
+            x, z = float(args["x"]), float(args["z"])
+        else:
+            return _tool_result(tool_id, "failed: need `to` or x/z", error=True)
+        label = str(args.get("to") or f"{round(x)}, {round(z)}")
+        mission = {"x": x, "z": z, "label": label, "build": args.get("build"), "come_back": bool(args.get("come_back")),
+                   "stage": "travelling"}
+        r = await self.conn.command("go_to", x=x, z=z)
+        if not r.ok:
+            return _tool_result(tool_id, f"failed: {r.error}", error=True)
+        await self.conn.command("set_mission", x=x, z=z)
+        self._set_mission(mission)
+        self.memory.log(f"set off on a mission to {label}")
+        actions.append(f"mission({label})")
+        return _tool_result(tool_id, f"on the way to {label}; you'll report when you get there")
+
+    async def _mission_resume(self, why: str) -> None:
+        """Pick the mission up again after a death or going off duty, at whatever step it had reached."""
+        m = self.mission
+        log.info("mission resumes (%s) at stage %s", why, m["stage"])
+        if m["stage"] == "travelling":
+            await self.conn.command("go_to", x=m["x"], z=m["z"])
+        elif m["stage"] == "building":
+            r = await self.conn.command("resume_build")
+            if not r.ok and m.get("build"):
+                await self.conn.command("build", **m["build"])
+        elif m["stage"] == "returning":
+            await self._mission_go_home()
+
+    async def _mission_go_home(self) -> None:
+        state = await self.conn.request_state() or {}
+        players = state.get("players") or []
+        target = next((p for p in players if p.get("pos")), None)
+        if target:
+            await self.conn.command("go_to", x=target["pos"][0], z=target["pos"][2])
+        else:
+            await self.conn.command("follow")  # nobody about: wait where it is; follow resumes when they're back
+
+    async def _milestone(self, text: str) -> None:
+        """A mission milestone: in the journal always, said out loud if anyone's online."""
+        self.memory.log(text)
+        if self.budget.available() and await self._anyone_online():
+            await self.take_turn(f"(Mission milestone: {text}. Say it in one short line, in character.)",
+                                 history_line=f"(mission: {text})", tools=[t for t in TOOLS if t["name"] in CHAT_ONLY_TOOLS])
+
+    async def _mission_event(self, event: Event) -> bool:
+        """Advance the mission on a task event. Returns True if the event belonged to the mission."""
+        m = self.mission
+        d = event.data
+        task = d.get("task")
+        if d.get("queue_remaining", 0) > 0:
+            return task in ("go_to", "build")  # a step in the middle of a queued job: say nothing
+        if event.name == "task_failed":
+            await self._milestone(f"the mission to {m['label']} is stuck ({d.get('reason')}) at stage {m['stage']}")
+            return True
+        if m["stage"] == "travelling" and task == "go_to":
+            if m.get("build"):
+                m["stage"] = "building"
+                self._set_mission(m)
+                await self._milestone(f"arrived at {m['label']}; starting to build")
+                r = await self.conn.command("build", **m["build"])
+                if not r.ok:
+                    detail = f" {json.dumps(r.data)}" if getattr(r, "data", None) else ""
+                    await self._milestone(f"can't start building at {m['label']}: {r.error}{detail}")
+                return True
+            await self._finish_mission(f"arrived at {m['label']}")
+            return True
+        if m["stage"] == "building" and task == "build":
+            name = (m.get("build") or {}).get("name")
+            if name:
+                self.memory.set_place(name, m["x"], m["z"])
+                await self.sync_places(force=True)
+            await self._finish_mission(f"finished building at {m['label']}")
+            return True
+        if m["stage"] == "returning" and task == "go_to":
+            await self.conn.command("follow")
+            self._set_mission(None)
+            await self._milestone(f"back from the mission to {m['label']}")
+            return True
+        return False
+
+    async def _finish_mission(self, text: str) -> None:
+        m = self.mission
+        await self.conn.command("set_mission")  # no more respawning out there
+        if m.get("come_back"):
+            m["stage"] = "returning"
+            self._set_mission(m)
+            await self._milestone(f"{text}; coming home")
+            await self._mission_go_home()
+        else:
+            self._set_mission(None)
+            await self._milestone(text)
 
     async def _find(self, tool_id: str, args: dict[str, Any], actions: list[str]) -> dict[str, Any]:
         thing = str(args.get("thing", ""))
@@ -1003,6 +1178,8 @@ class Brain:
         name, args = block.name, dict(block.input or {})
         if name == "find":
             return await self._find(block.id, args, actions)
+        if name == "mission":
+            return await self._mission_tool(block.id, args, actions)
         if name == "boss_prep":
             return _tool_result(block.id, json.dumps(await self._boss_prep(str(args.get("boss", "")))))
         if name == "opinion":
@@ -1026,6 +1203,14 @@ class Brain:
                 return _tool_result(block.id, f"failed: unknown_place (known: {known})", error=True)
             args["x"], args["z"] = where
             settlement = None  # building around a place doesn't rename it
+        if name == "build_road":
+            for key, xk, zk in (("from", "from_x", "from_z"), ("to", "x", "z")):
+                if args.get(key):
+                    where = self.memory.place(str(args.pop(key)))
+                    if where is None:
+                        known = ", ".join(p["name"] for p in self.memory.data["places"].values()) or "none yet"
+                        return _tool_result(block.id, f"failed: unknown_place (known: {known})", error=True)
+                    args[xk], args[zk] = where
         if name == "go_to" and args.get("place"):
             where = self.memory.place(str(args.pop("place")))
             if where is None:

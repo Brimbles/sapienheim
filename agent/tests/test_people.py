@@ -126,6 +126,37 @@ def test_reports_wait_in_the_journal_when_nobody_is_online():
     assert client.calls == [] and b.memory.data["journal"][-1]["text"] == "gathered 20 Wood"
 
 
+def test_mission_travels_builds_and_comes_home():
+    class Recorder(Conn):
+        async def request_state(self):
+            return {"players_online": 1, "players": [{"name": "Ben", "pos": [5.0, 30.0, 6.0]}]}
+
+    conn = Recorder()
+    b = Brain(conn, FakeClient())
+    b.memory.set_place("Far Hill", 900.0, 100.0)
+    block = SimpleNamespace(type="tool_use", id="m1", name="mission",
+                            input={"to": "far hill", "build": {"template": "outpost", "name": "Northwatch"}, "come_back": True})
+    asyncio.run(b._execute(block, [], []))
+    assert conn.sent[0] == ("go_to", {"x": 900.0, "z": 100.0})
+    assert ("set_mission", {"x": 900.0, "z": 100.0}) in conn.sent
+    asyncio.run(b.on_event(event("task_done", task="go_to", queue_remaining=0)))
+    assert conn.sent[-1] == ("build", {"template": "outpost", "name": "Northwatch"}) and b.mission["stage"] == "building"
+    asyncio.run(b.on_event(event("task_done", task="build", queue_remaining=0)))
+    assert ("set_mission", {}) in conn.sent and conn.sent[-1] == ("go_to", {"x": 5.0, "z": 6.0})
+    assert b.memory.place("northwatch") == (900.0, 100.0)
+    asyncio.run(b.on_event(event("task_done", task="go_to", queue_remaining=0)))
+    assert b.mission is None
+    assert any("finished building" in e["text"] for e in b.memory.data["journal"])
+
+
+def test_mission_resumes_after_respawn():
+    conn = Conn()
+    b = Brain(conn, FakeClient())
+    b._set_mission({"x": 1.0, "z": 2.0, "label": "x", "build": None, "come_back": False, "stage": "travelling"})
+    asyncio.run(b.on_event(event("respawned", killed_by="Troll", on_mission=True)))
+    assert ("go_to", {"x": 1.0, "z": 2.0}) in conn.sent
+
+
 def test_boss_prep_counts_what_you_have():
     class Stocked(Conn):
         async def request_state(self):

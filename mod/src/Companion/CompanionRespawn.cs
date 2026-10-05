@@ -41,6 +41,7 @@ namespace ValheimCompanion.Companion
             public string Inventory;       // base64 of Inventory.Save()
             public string Friends;         // cmp_friends, cmp_friend_ids: who else may command it
             public string FriendIds;
+            public float[] MissionPos;     // on a mission: come back there, not beside the master
         }
 
         private static Record s_record;
@@ -150,6 +151,7 @@ namespace ValheimCompanion.Companion
                 Inventory = inventory != null && inventory.Length > 0 ? Convert.ToBase64String(inventory) : null,
                 Friends = zdo.GetString(CompanionPermissions.KeyFriends),
                 FriendIds = zdo.GetString(CompanionPermissions.KeyFriendIds),
+                MissionPos = CompanionState.GetMission(zdo) is Vector3 m ? new[] { m.x, m.y, m.z } : null,
             };
         }
 
@@ -207,13 +209,22 @@ namespace ValheimCompanion.Companion
             }
 
             Vector3 pos = new Vector3(s_record.DeathPos[0], s_record.DeathPos[1], s_record.DeathPos[2]);
-            if (TryGetPlayerPosition(s_record.MasterId, out Vector3 playerPos) || (s_record.WaitForPlayer && TryGetAnyPlayerPosition(out playerPos)))
+            if (s_record.MissionPos != null)
+            {
+                // On a mission: back at the mission site, to carry on (agreed with the user).
+                pos = new Vector3(s_record.MissionPos[0], s_record.MissionPos[1] + 0.5f, s_record.MissionPos[2]);
+            }
+            else if (TryGetPlayerPosition(s_record.MasterId, out Vector3 playerPos) || (s_record.WaitForPlayer && TryGetAnyPlayerPosition(out playerPos)))
             {
                 pos = playerPos + new Vector3(2f, 0.5f, 2f);
             }
 
             bool loggedOut = s_record.WaitForPlayer && s_record.DueUnixSeconds == 0;
             var data = new JObject();
+            if (s_record.MissionPos != null)
+            {
+                data["on_mission"] = true;
+            }
             if (!loggedOut)
             {
                 data["killed_by"] = s_record.Killer ?? "";
@@ -256,6 +267,7 @@ namespace ValheimCompanion.Companion
             data["pos"] = new JArray(Mathf.Round(pos.x), Mathf.Round(pos.y), Mathf.Round(pos.z));
             Jotunn.Logger.LogInfo($"Companion returning ({returnEvent}) at {pos:F0}");
             string friends = s_record.Friends, friendIds = s_record.FriendIds;
+            float[] mission = s_record.MissionPos;
             CompanionSpawner.RequestSpawn(requester, pos, s_record.MasterId, s_record.MasterName,
                 snapToGround: true, returnEvent: returnEvent, returnData: data, inventory: inventory,
                 onDone: ok =>
@@ -264,6 +276,11 @@ namespace ValheimCompanion.Companion
                     if (ok)
                     {
                         RestoreFriends(friends, friendIds);
+                        CompanionAI back = CompanionAI.FindOwned();
+                        if (mission != null && back)
+                        {
+                            CompanionState.SetMission(back.ZDO, new Vector3(mission[0], mission[1], mission[2]));
+                        }
                         Clear();
                     }
                     else

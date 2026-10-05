@@ -118,6 +118,9 @@ namespace ValheimCompanion.Building
         /// <summary>Marks a build step that levels the ground instead of placing a piece.</summary>
         public const string LevelStep = "(level)";
 
+        /// <summary>Marks a build step that paves a patch of road (free, see LevelGround.PaveAt).</summary>
+        public const string PaveStep = "(pave)";
+
         /// <summary>A damaged piece built by a player that a hammer could repair right now.</summary>
         public static bool NeedsRepair(Piece piece, long masterId, out WearNTear wnt)
         {

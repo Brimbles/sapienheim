@@ -34,7 +34,8 @@ def _slug(name: str) -> str:
 class Memory:
     def __init__(self, path: Path | None = None) -> None:
         self.path = path
-        self.data: dict[str, Any] = {"summary": "", "history": [], "facts": [], "places": {}, "players": {}, "journal": []}
+        self.data: dict[str, Any] = {"summary": "", "history": [], "facts": [], "places": {}, "players": {}, "journal": [],
+                                     "mission": None}
         if path and path.exists():
             loaded = json.loads(path.read_text(encoding="utf-8"))
             self.data.update({k: loaded[k] for k in self.data if k in loaded})

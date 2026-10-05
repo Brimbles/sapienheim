@@ -741,9 +741,56 @@ async def scenario_prefabs(r: Runner) -> None:
         r.results.append((prefab, f"total={d.get('total_objects')} nearest={[f['dist'] for f in d.get('found', [])]}"))
 
 
+async def scenario_road(r: Runner) -> None:
+    """Roads: plan a few routes (dry run), then build one: scenario.py road fx fz tx tz."""
+    fx, fz, tx, tz = (float(v) for v in sys.argv[2:6])
+    for label, a, b in [("test route", (fx, fz), (tx, tz)), ("towards the sea (west)", (fx, fz), (fx - 500, fz)),
+                        ("south", (fx, fz), (fx, fz - 500)), ("north", (fx, fz), (fx, fz + 500))]:
+        res = await r.conn.command("build_road", from_x=a[0], from_z=a[1], x=b[0], z=b[1], plan_only=True)
+        r.results.append((f"plan {label}", f"{res.error or 'ok'} {res.data}"))
+    await r.cmd("debug_give", item="Hoe", qty=1)
+    await r.cmd("debug_give", item="Wood", qty=100)
+    t0 = time.monotonic()
+    res = await r.cmd("build_road", from_x=fx, from_z=fz, x=tx, z=tz)
+    await advance_until_done(r, "build the road", res, max_real_s=1500, step_s=1)
+    r.results.append(("took", f"{time.monotonic() - t0:.0f} s"))
+    await r.cmd("save_world")
+
+
+async def scenario_bridge(r: Runner) -> None:
+    """Find a bridge on a road plan from fx fz to tx tz, then build a short road over it: scenario.py bridge fx fz tx tz."""
+    fx, fz, tx, tz = (float(v) for v in sys.argv[2:6])
+    plan = await r.conn.command("build_road", from_x=fx, from_z=fz, x=tx, z=tz, plan_only=True)
+    spots = (plan.data or {}).get("bridges_at", [])
+    r.results.append(("bridges on the long plan", str(spots)))
+    if not spots:
+        return
+    bx, bz = spots[0]
+    dx, dz = tx - fx, tz - fz
+    n = (dx * dx + dz * dz) ** 0.5
+    a = (bx - dx / n * 10, bz - dz / n * 10)
+    b = (bx + dx / n * 30, bz + dz / n * 30)
+    await r.cmd("debug_clear", all=True)
+    for item, qty in (("Hoe", 1), ("Hammer", 1), ("Wood", 200)):
+        await r.cmd("debug_give", item=item, qty=qty)
+    await r.task("walk to the river", "go_to", x=a[0], z=a[1])
+    res = await r.cmd("build_road", from_x=a[0], from_z=a[1], x=b[0], z=b[1])
+    r.results.append(("short road", f"{res.error or 'ok'} {res.data}"))
+    if res.ok:
+        await advance_until_done(r, "build it", res, max_real_s=900, step_s=1)
+        await asyncio.sleep(20)
+        near = await r.conn.command("pieces_near", pos=[bx, 30, bz], radius=16)
+        kinds = {}
+        for p in (near.data or {}).get("pieces", []):
+            if p["creator"] != 0:
+                kinds[p["piece"]] = kinds.get(p["piece"], 0) + 1
+        r.results.append(("bridge pieces standing after 20 s", str(kinds)))
+    await r.cmd("save_world")
+
+
 SCENARIOS = {
     "m4": scenario_m4, "pieces": scenario_pieces, "build": scenario_build, "inspect": scenario_inspect,
-    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds, "buildportal": scenario_buildportal, "gravestone": scenario_gravestone, "guard": scenario_guard, "fires": scenario_fires, "items": scenario_items, "deposit": scenario_deposit, "tidy_chests": scenario_tidy_chests, "hold": scenario_hold, "sign": scenario_sign, "pieceinfo": scenario_pieceinfo, "stations": scenario_stations, "cookdebug": scenario_cookdebug, "collect": scenario_collect, "find": scenario_find, "farm": scenario_farm, "labels": scenario_labels, "feed": scenario_feed, "settlement": scenario_settlement, "prefabs": scenario_prefabs, "tamecheck": scenario_tamecheck,
+    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds, "buildportal": scenario_buildportal, "gravestone": scenario_gravestone, "guard": scenario_guard, "fires": scenario_fires, "items": scenario_items, "deposit": scenario_deposit, "tidy_chests": scenario_tidy_chests, "hold": scenario_hold, "sign": scenario_sign, "pieceinfo": scenario_pieceinfo, "stations": scenario_stations, "cookdebug": scenario_cookdebug, "collect": scenario_collect, "find": scenario_find, "farm": scenario_farm, "labels": scenario_labels, "feed": scenario_feed, "settlement": scenario_settlement, "prefabs": scenario_prefabs, "road": scenario_road, "bridge": scenario_bridge, "tamecheck": scenario_tamecheck,
 }
 
 

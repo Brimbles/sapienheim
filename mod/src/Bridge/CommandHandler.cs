@@ -546,6 +546,10 @@ namespace ValheimCompanion.Bridge
                     {
                         return BuildSettlement(companion, template, args, cmdId, out data);
                     }
+                    if (template == "blueprint")
+                    {
+                        return BuildBlueprint(companion, args, cmdId, out data);
+                    }
                     if (template != "hut")
                     {
                         return "unknown_template";
@@ -695,6 +699,105 @@ namespace ValheimCompanion.Bridge
                     }
                     data = new JObject { ["hungry"] = hungry.Count };
                     return Queue(companion, args, "feed_animals", () => companion.Tasks.CommandFeedAnimals(hungry, TaskId(args, cmdId)));
+                }
+                case "set_mission":
+                {
+                    // A long mission's site (x/z), or none: while set, a respawn or coming back on duty happens there.
+                    if (args["x"] == null || args["z"] == null)
+                    {
+                        CompanionState.SetMission(companion.ZDO, null);
+                        return null;
+                    }
+                    var site = new Vector3((float)args["x"], 0f, (float)args["z"]);
+                    site.y = ZoneSystem.instance.GetGroundHeight(site, out float gy) ? gy : WorldGenerator.instance.GetHeight(site.x, site.z);
+                    CompanionState.SetMission(companion.ZDO, site);
+                    return null;
+                }
+                case "blueprints":
+                {
+                    // List them, or export (save) the building nearest the companion as a new one.
+                    string export = (string)args["export"];
+                    if (!string.IsNullOrEmpty(export))
+                    {
+                        int saved = Building.Blueprints.Export(export, companion.transform.position, out string path);
+                        if (saved == 0)
+                        {
+                            return "no_building_nearby";
+                        }
+                        data = new JObject { ["saved"] = export, ["pieces"] = saved };
+                        return null;
+                    }
+                    data = new JObject { ["blueprints"] = new JArray(Building.Blueprints.Names()), ["folder"] = Building.Blueprints.Folder };
+                    return null;
+                }
+                case "build_road":
+                {
+                    // From a spot (or where it stands) to another; the agent turns named places into x/z.
+                    Vector3 from = companion.transform.position;
+                    if (args["from_x"] != null && args["from_z"] != null)
+                    {
+                        from = new Vector3((float)args["from_x"], from.y, (float)args["from_z"]);
+                    }
+                    if (args["x"] == null || args["z"] == null)
+                    {
+                        return "need_destination";
+                    }
+                    var to = new Vector3((float)args["x"], 0f, (float)args["z"]);
+                    float dist = Vector2.Distance(new Vector2(from.x, from.z), new Vector2(to.x, to.z));
+                    if (dist > Building.RoadPlanner.MaxLength)
+                    {
+                        data = new JObject { ["dist"] = Mathf.Round(dist), ["max"] = Building.RoadPlanner.MaxLength };
+                        return "too_far";
+                    }
+                    if (Building.Builder.FindTool(companion.Inventory, "Hoe") == null && !IsQueued(args))
+                    {
+                        return "need_hoe";
+                    }
+                    var road = Building.RoadPlanner.Build(from, to);
+                    data = new JObject
+                    {
+                        ["length_m"] = Mathf.Round(road.Length), ["bridges"] = road.Bridges, ["reaches_the_end"] = road.Reached,
+                        ["end"] = new JArray(Mathf.Round(road.End.x), Mathf.Round(road.End.z)),
+                    };
+                    if (road.Steps.Count == 0)
+                    {
+                        return road.StopReason ?? "no_route";
+                    }
+                    if (!road.Reached)
+                    {
+                        data["stops_short"] = road.StopReason; // water too wide or ground too steep before the end
+                    }
+                    if (args["plan_only"] != null && (bool)args["plan_only"])
+                    {
+                        data["steps"] = road.Steps.Count;
+                        data["bridges_at"] = new JArray(road.BridgeAt.Select(v => new JArray(Mathf.Round(v.x), Mathf.Round(v.z))));
+                        return null; // testing: just the route
+                    }
+                    var woodPieces = road.Steps.Where(s => s.Piece != Building.Builder.PaveStep).Select(s => s.Piece).ToList();
+                    JObject missing = Building.Builder.Missing(woodPieces, companion.Inventory);
+                    if (missing.Count > 0 && !IsQueued(args))
+                    {
+                        data["missing"] = missing; // for the bridges
+                        return "missing_materials";
+                    }
+                    if (woodPieces.Count > 0 && Building.Builder.FindHammer(companion.Inventory) == null && !IsQueued(args))
+                    {
+                        return "need_hammer";
+                    }
+                    string roadId = TaskId(args, cmdId);
+                    var steps = road.Steps;
+                    // Walk to the start first if it's far (the road's own steps only walk short distances).
+                    if (Vector3.Distance(from, companion.transform.position) > 20f)
+                    {
+                        string walk = Queue(companion, args, "go_to(road start)", () => companion.Tasks.CommandGoTo(from, null));
+                        if (walk != null)
+                        {
+                            return walk;
+                        }
+                        companion.Tasks.RunOrQueue(true, "build_road", () => companion.Tasks.CommandBuild("road", steps, roadId));
+                        return null;
+                    }
+                    return Queue(companion, args, "build_road", () => companion.Tasks.CommandBuild("road", steps, roadId));
                 }
                 case "label_chests":
                 {
@@ -1262,6 +1365,61 @@ namespace ValheimCompanion.Bridge
         }
 
         // Day fraction: 0 = midnight, 0.5 = noon. Valheim nights run roughly 0.8 -> 0.2.
+        /// <summary>A blueprint by name, on flat clear ground near the companion (levelled first with a hoe).</summary>
+        private static string BuildBlueprint(CompanionAI companion, JObject args, string cmdId, out JObject data)
+        {
+            data = null;
+            var bp = Building.Blueprints.Load((string)args["blueprint"] ?? "");
+            if (bp == null)
+            {
+                data = new JObject { ["known"] = new JArray(Building.Blueprints.Names()) };
+                return "unknown_blueprint";
+            }
+            if (bp.Pieces.Count == 0)
+            {
+                data = new JObject { ["skipped"] = new JArray(bp.Skipped.Distinct()) };
+                return "no_buildable_pieces";
+            }
+            Vector3 near = companion.transform.position;
+            string nearPlayer = (string)args["near"];
+            if (!string.IsNullOrEmpty(nearPlayer) && !TryFindPlayer(nearPlayer, out _, out _, out near))
+            {
+                return "player_not_found";
+            }
+            Vector3 toUs = companion.transform.position - near;
+            toUs.y = 0f;
+            float facing = args["facing"] != null ? (float)args["facing"]
+                : toUs.sqrMagnitude > 1f ? Quaternion.LookRotation(-toUs).eulerAngles.y : companion.transform.eulerAngles.y + 180f;
+            bool level = Building.Builder.FindTool(companion.Inventory, "Hoe") != null;
+            Vector2 half = Building.Blueprints.HalfExtents(bp);
+            if (!Building.HutTemplate.FindSiteBox(half, near, facing, 40f, level, out Vector3 origin, out string why, out var clear))
+            {
+                return why;
+            }
+            var plan = Building.Blueprints.Generate(bp, origin, facing, level, clear);
+            var pieceNames = plan.Where(s => s.Clear == null && s.Piece != Building.Builder.LevelStep).Select(s => s.Piece).ToList();
+            data = new JObject
+            {
+                ["blueprint"] = bp.Name, ["pieces"] = pieceNames.Count, ["levels_ground"] = level,
+                ["site"] = new JArray(Mathf.Round(origin.x), Mathf.Round(origin.y), Mathf.Round(origin.z)),
+            };
+            if (bp.Skipped.Count > 0)
+            {
+                data["skipped_other_mods"] = new JArray(bp.Skipped.Distinct()); // never built, by agreement
+            }
+            JObject missing = Building.Builder.Missing(pieceNames, companion.Inventory);
+            if (missing.Count > 0 && !IsQueued(args))
+            {
+                data["missing"] = missing;
+                return "missing_materials";
+            }
+            if (Building.Builder.FindHammer(companion.Inventory) == null && !IsQueued(args))
+            {
+                return "need_hammer";
+            }
+            return Queue(companion, args, $"build({bp.Name})", () => companion.Tasks.CommandBuild(bp.Name, plan, TaskId(args, cmdId)));
+        }
+
         /// <summary>An outpost or a farm: a site far enough from bases, then the whole layout as one build.</summary>
         private static string BuildSettlement(CompanionAI companion, string kind, JObject args, string cmdId, out JObject data)
         {

@@ -246,6 +246,33 @@ namespace ValheimCompanion.Building
             return bounds.size.x <= MaxClearableSize && bounds.size.z <= MaxClearableSize && bounds.size.y <= MaxClearableSize * 2f;
         }
 
+        /// <summary>A site for any footprint (half-extents in metres), by the hut's rules: for blueprints.</summary>
+        public static bool FindSiteBox(Vector2 half, Vector3 near, float facingYaw, float searchRadius, bool level, out Vector3 origin,
+                                       out string reason, out List<Destructible> clear)
+        {
+            Quaternion facing = Quaternion.Euler(0f, facingYaw, 0f);
+            reason = "no_flat_clear_ground_nearby";
+            for (float r = 0f; r <= searchRadius; r += 2f)
+            {
+                int steps = r == 0f ? 1 : Mathf.CeilToInt(2f * Mathf.PI * r / 2f);
+                for (int s = 0; s < steps; s++)
+                {
+                    float a = s * Mathf.PI * 2f / steps;
+                    Vector3 c = near + new Vector3(Mathf.Cos(a) * r, 0f, Mathf.Sin(a) * r);
+                    // The whole box is the "floor" here (no margins): pad by the margins so CheckSite's floor area is the box.
+                    if (CheckSite(c, half + new Vector2(FloorMarginX, FloorMarginZ), facing, level, out float floorY, out string why, out clear))
+                    {
+                        origin = new Vector3(c.x, floorY + (level ? 0f : 0.05f), c.z);
+                        return true;
+                    }
+                    reason = why?.Split(':')[0] ?? reason;
+                }
+            }
+            origin = Vector3.zero;
+            clear = null;
+            return false;
+        }
+
         /// <summary>The hut's site rules, for settlements that place a hut as one part of a bigger layout.</summary>
         internal static bool CheckSitePublic(Vector3 centre, Vector2 half, Quaternion facing, bool level, out float floorY, out string why,
                                              out List<Destructible> clear) => CheckSite(centre, half, facing, level, out floorY, out why, out clear);
