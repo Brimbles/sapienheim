@@ -392,6 +392,22 @@ namespace ValheimCompanion.Companion
             }
         }
 
+        // Players can't hurt him, by accident or otherwise (PvP on, area attacks, a stray arrow): the owner drops any hit
+        // from a player before it does damage, staggers him, flashes or makes him react.
+        [HarmonyLib.HarmonyPatch(typeof(Character), "RPC_Damage")]
+        private static class NoPlayerDamage
+        {
+            private static bool Prefix(Character __instance, HitData hit)
+            {
+                if (!__instance.GetComponent<CompanionAI>())
+                {
+                    return true;
+                }
+                Character attacker = hit.GetAttacker();
+                return !(attacker && attacker.IsPlayer());
+            }
+        }
+
         // Spike data for M1: is the server owning and simulating it, and does it fight?
         private void LogStatus()
         {

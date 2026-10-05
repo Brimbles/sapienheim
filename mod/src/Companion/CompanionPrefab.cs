@@ -52,6 +52,9 @@ namespace ValheimCompanion.Companion
             ai.m_afraidOfFire = false;
             ai.m_avoidFire = true;
             ai.m_avoidWater = true;
+            // The Dverger's AI is "aggravatable" (hit one and it turns hostile), which also makes players' weapons count
+            // it as fair game; off, their swings and arrows pass it by as they do any tamed creature's.
+            ai.m_aggravatable = false;
 
             // The companion is tamed from the moment it spawns (CompanionAI.InitNew). Never let it use the
             // vanilla feed-to-tame, breeding or pet/command interactions.
