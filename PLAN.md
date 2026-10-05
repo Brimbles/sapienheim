@@ -298,7 +298,7 @@ Each milestone ends with something playable. Acceptance criteria in **bold**.
 ### M7 — Offline operation
 - [x] `ZoneKeeper`: keep the companion's zone active on the server when no players are near/online, building on the M1 spike.
 - [ ] Headless tests: pathfinding, animations, building placement with no clients connected.
-- [ ] Offline budget mode: LLM called only on task completion/failure, plus a slow heartbeat.
+- [x] Offline budget mode: with nobody online, job reports and level-up boasts aren't spoken (no LLM call); they go in the journal for the "while you were away". Proactive moments already need a player online.
 - [x] **Off duty:** after everyone has been offline for `Companion.OfflineMinutes` (default 60; -1 = never) the companion goes off duty, per `Companion.OfflineMode`: `logout` (default) leaves the world and logs back in beside its master (or the first player) when someone joins, keeping inventory; `idle` freezes it in place (no simulation) until someone joins. No LLM calls while off duty; on return it greets the player with a "while you were away".
 - [x] "While you were away…" summary when a player joins. (Mod sends `player_joined`/`player_left`; the agent keeps a journal of notable events and greets a player back after 30+ min with the highlights since they left, welcomes newcomers, and avoids double greetings with `logged_in`/`master_returned`.)
 - [ ] Fallback: catch-up simulation (compute progress from elapsed time) if headless simulation proves unreliable.

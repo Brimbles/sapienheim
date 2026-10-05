@@ -112,3 +112,15 @@ def test_jobs_go_in_the_journal_and_the_player_record():
     b.memory.set_opinion("Ben", "a fine chieftain")
     block = b.memory.context_block()
     assert "Ben" in block and "a fine chieftain" in block and "asked you to gather" in block
+
+
+def test_reports_wait_in_the_journal_when_nobody_is_online():
+    client = FakeClient()
+
+    class Empty(Conn):
+        async def request_state(self):
+            return {"players_online": 0}
+
+    b = Brain(Empty(), client)
+    asyncio.run(b.on_event(event("task_done", task="gather", item="Wood", collected=20, queue_remaining=0)))
+    assert client.calls == [] and b.memory.data["journal"][-1]["text"] == "gathered 20 Wood"

@@ -522,6 +522,8 @@ class Brain:
             # The whole job is finished (or failed): tell the players.
             log.info("%s %s", event.name, event.data)
             self.memory.log(_journal_text(event))
+            if not await self._anyone_online():
+                return  # nobody to hear it; the journal has it for "while you were away"
             await self.take_turn(
                 f"({event.name}: {json.dumps(event.data)}. Report back to the players in character.)",
                 history_line=f"({event.name}: {json.dumps(event.data)})",
@@ -557,6 +559,8 @@ class Brain:
             await self.take_turn(prompt, history_line=history_line, tools=[t for t in TOOLS if t["name"] in CHAT_ONLY_TOOLS])
         elif event.name == "levelled_up":
             self.memory.log(f"you grew stronger: level {event.data.get('level')}")
+            if not await self._anyone_online():
+                return
             await self.take_turn(
                 f"(You've grown stronger alongside your master: now level {event.data.get('level')}, "
                 f"{event.data.get('max_hp')} max health, {event.data.get('armor')} armour. Boast about it, briefly.)",
@@ -590,6 +594,11 @@ class Brain:
 
     GREETING_WINDOW = 60.0   # one welcome per arrival, however many events announce it
     AWAY_FOR_SUMMARY = 1800  # seconds away before a returning player gets a "while you were away"
+
+    async def _anyone_online(self) -> bool:
+        """Is any player online to hear it? (Unknown counts as yes.)"""
+        state = await self.conn.request_state() or {}
+        return state.get("players_online", 1) > 0
 
     def _greeted_recently(self) -> bool:
         return time.time() - getattr(self, "_last_greeting", 0.0) < self.GREETING_WINDOW
