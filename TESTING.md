@@ -88,6 +88,11 @@ Each line in the server log starts with `Proactive:`. Turn it off with `Companio
 - [ ] After a gathering trip, `@Alvar put your stuff away`: he stores everything but his tools and weapons in the base chests, each kind with its own kind where possible.
 - [ ] Log out and come back later: he should be where you left him (waiting, not wandered off).
 
+## 4d5. Cooking and smelting
+- [ ] Put some raw meat in his pack (or chest and `@Alvar fetch...`) and `@Alvar cook the meat` next to a lit fire with a cooking station: he keeps the spit loaded and takes the meat off in time, nothing burnt.
+- [ ] `@Alvar load the kiln` with wood (charcoal kiln) or ore (smelter): it takes fuel and ore up to its limits. Coming back later, the output is in/at the machine (he can't collect it yet).
+- [ ] Ask for either while nobody's online (or log out mid-cook): nothing happens until someone's on, because the world clock stands still on a dedicated server with nobody online. That's vanilla.
+
 ## 4e. People and the day's tale
 - [ ] Log out for 30+ minutes after he's done a few jobs, then log back in: one greeting with a short "while you were away" of the highlights (not two greetings).
 - [ ] A friend joining for the first time gets a welcome and an introduction.

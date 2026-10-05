@@ -230,6 +230,36 @@ namespace ValheimCompanion.Bridge
                     companion.Inventory.Inventory.AddItem(prefab, args["qty"] != null ? (int)args["qty"] : 1);
                     return null;
                 }
+                case "debug_advance_time":
+                {
+                    // Testing command (not an LLM tool): move the world clock on. It stands still on a dedicated server with
+                    // nobody online, so stations, kilns and fires do nothing in headless tests without this. It also lets
+                    // the companion's station tasks run with nobody online.
+                    CompanionStations.TestClock = true;
+                    ZNet.instance.SetNetTime(ZNet.instance.GetTimeSeconds() + (args["seconds"] != null ? (double)args["seconds"] : 5.0));
+                    return null;
+                }
+                case "debug_station":
+                {
+                    // Testing command (not an LLM tool): cooking stations within 30 m, their fire and what's in each slot.
+                    var report = new JArray();
+                    foreach (CookingStation st in CompanionStations.Near<CookingStation>(companion.transform.position, 30f, 0L))
+                    {
+                        var slots = new JArray();
+                        for (int i = 0; i < st.m_slots.Length; i++)
+                        {
+                            st.GetSlot(i, out string item, out float cooked, out CookingStation.Status status, out _);
+                            slots.Add($"{(item == "" ? "-" : item)} {cooked:F0}s {status}");
+                        }
+                        report.Add(new JObject
+                        {
+                            ["name"] = st.GetComponent<Piece>().gameObject.name, ["owner"] = st.m_nview.IsOwner(),
+                            ["fire"] = CompanionStations.CanCook(st), ["slots"] = slots,
+                        });
+                    }
+                    data = new JObject { ["stations"] = report };
+                    return null;
+                }
                 case "debug_raid":
                 {
                     // Testing command (not an LLM tool): start a random event at the companion (e.g. army_eikthyr), or stop it.

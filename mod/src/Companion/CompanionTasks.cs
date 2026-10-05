@@ -1555,20 +1555,36 @@ namespace ValheimCompanion.Companion
             {
                 return;
             }
-            // Pick up what's come off already.
-            HashSet<string> cookedKinds = CompanionStations.CookedFor(st);
-            foreach (ItemDrop drop in ItemDrop.s_instances)
+            // Stations run on the world clock, which stands still with nobody online: wait, touching nothing, so the
+            // food isn't put on a station that can't cook it (it would sit there and burn the moment time resumes).
+            if (!CompanionStations.WorldClockRunning)
             {
-                if (drop && Vector3.Distance(drop.transform.position, _character.transform.position) < 4f
-                    && cookedKinds.Contains(CompanionInventory.PrefabName(drop.m_itemData)))
+                _cookDeadline += Time.deltaTime;
+                return;
+            }
+            // Pick up what's come off already (cooked food, and any that burnt: coal), from a copy of the list since
+            // picking up changes it.
+            HashSet<string> cookedKinds = CompanionStations.CookedFor(st);
+            string burnt = CompanionStations.BurntFor(st);
+            Vector3 outputPoint = st.m_spawnPoint ? st.m_spawnPoint.position : st.transform.position;
+            foreach (ItemDrop drop in new List<ItemDrop>(ItemDrop.s_instances))
+            {
+                // Only what came off this station: near its output, not a neighbouring kiln's coal.
+                if (!drop || Vector3.Distance(drop.transform.position, outputPoint) > 2.5f)
                 {
-                    int before = _inventory.Count(CompanionInventory.PrefabName(drop.m_itemData));
-                    string kind = CompanionInventory.PrefabName(drop.m_itemData);
-                    if (_inventory.TryPickup(drop))
-                    {
-                        _cooked.TryGetValue(kind, out int n);
-                        _cooked[kind] = n + Mathf.Max(1, _inventory.Count(kind) - before);
-                    }
+                    continue;
+                }
+                string kind = CompanionInventory.PrefabName(drop.m_itemData);
+                if (!cookedKinds.Contains(kind) && kind != burnt)
+                {
+                    continue;
+                }
+                int before = _inventory.Count(kind);
+                if (_inventory.TryPickup(drop))
+                {
+                    string label = kind == burnt ? "burnt_" + kind : kind;
+                    _cooked.TryGetValue(label, out int n);
+                    _cooked[label] = n + Mathf.Max(1, _inventory.Count(kind) - before);
                 }
             }
             if (!CompanionStations.CanCook(st))

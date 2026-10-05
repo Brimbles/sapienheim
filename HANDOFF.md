@@ -52,6 +52,7 @@ For a model (or person) picking up implementation. Read `CLAUDE.md` (hard rules,
 - **Terrain operations:** these travel between machines by prefab hash. A custom one must be registered in `ObjectDB.m_terrainOpsByHash` on every machine; see `Building/LevelGround.cs`.
 - **AI with no follow target roams:** use `SetPatrolPoint` to hold a spot. Following an absent master already does this.
 - **Clock:** `Time.time` stops while the PC sleeps; that isn't a bug.
+- **World clock:** on a dedicated server `ZNet.GetTime()` (the world clock) only advances while at least one player is online (`ZNet.UpdateNetTime`). Cooking stations, smelters, kilns, fuel burning and crops all run on it, so they freeze headless. Scenarios that need them call `debug_advance_time` (see `advance_until_done` in `scenario.py`), which also lifts the companion's own wait (`CompanionStations.TestClock`).
 - **Prey animals** (`AnimalAI`) "target" whatever they flee from, so they're never treated as threats.
 - **Item safety:** the user wants items never lost. When moving them, add to the destination first and remove from the source only on success (`CompanionWorkshop.Transfer`/`TransferAll`).
 
@@ -78,14 +79,9 @@ For a model (or person) picking up implementation. Read `CLAUDE.md` (hard rules,
 
 See `git log` and the `[x]` items in `PLAN.md`.
 
-**Work in progress, committed as WIP:** `cook` and `load_smelters` (`mod/src/Companion/CompanionStations.cs`, the tasks in `CompanionTasks.cs`, commands, agent tools).
-- `load_smelters` passes its test: 25 wood went into a charcoal kiln.
-- `cook` timed out in `scenario.py stations`. Afterwards the companion had 1 RawMeat and 1 Coal, and no CookedMeat. Likely causes:
-  1. **Meat burned.** Coal is the spit's overcooked item. `TakeDone` relies on `HaveDoneItem()`; check `IsItemDone` and `NextItemStatus` in `.decompiled/.../CookingStation.cs` to see whether "done" means cooked or burnt, and take cooked items off as soon as they're ready.
-  2. **Cooked drops aren't picked up.** `RPC_RemoveDoneItem(userPoint, amount)` spawns the item flying towards `userPoint`; check `SpawnItem`. The pickup loop only collects `m_to` items within 4 m. It should also collect `m_overCookedItem` (coal), so the station empties and the task can finish.
-  3. **The task never ends.** `Busy()` stays true while a burnt item sits in a slot, because the end condition needs every slot empty. Make the loop take off anything done or burnt.
-
-  Fix these, rerun `scenario.py stations` until it reports cooked meat, then update `PLAN.md` (M13 "Cooking") and `TESTING.md`.
+**Finished (task 1):** `cook` and `load_smelters` (`mod/src/Companion/CompanionStations.cs`, the tasks in `CompanionTasks.cs`, commands, agent tools).
+- **What was wrong with `cook`:** not the task. The headless server has nobody online, so the world clock was frozen and the meat never cooked. The task now waits (touching nothing) while nobody's online, picks up cooked food and burnt coal only from the station's own output point (a nearby kiln's coal was being swept up too), and the test advances the clock. Verified: `scenario.py stations` cooks 2-5 meat, nothing burnt, station emptied; 34 wood into a kiln.
+- Smelter/kiln **output pickup** is task 2 below.
 - **Test leftovers** near (183, −224) in the SapienDev world: a torch, two empty chests, a sign, a fire pit with a spit and a charcoal kiln. They're harmless and noted in `TESTING.md`.
 
 **Waiting on the user, not code:**
@@ -98,7 +94,7 @@ See `git log` and the `[x]` items in `PLAN.md`.
 
 Each task is self-contained. Model choice: a mid-size model (Sonnet) for 1–7; ask the user before 8–10, which need design decisions.
 
-1. **Finish cook** (above).
+1. ~~Finish cook~~ done.
 2. **Smelter output pickup.** Bars and coal drop at the smelter's `m_outputPoint`. Add an optional `collect: true` to `load_smelters`, or a `collect_output` command that picks up drops within 3 m of each nearby smelter or kiln. Reuse `CompanionInventory.TryPickup`.
 3. **Equip tool** (M13; the user said "later", so do it once they agree).
    - Behaviour: `equip(item)` / `unequip(slot)`; wearing armour shows on the viking body.

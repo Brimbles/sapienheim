@@ -39,6 +39,14 @@ namespace ValheimCompanion.Companion
             return false;
         }
 
+        /// <summary>
+        /// Stations run on the world clock, which on a dedicated server only advances while a player is online, so
+        /// with nobody on they're frozen. Headless tests turn this on (see debug_advance_time) to run them anyway.
+        /// </summary>
+        public static bool TestClock;
+
+        public static bool WorldClockRunning => TestClock || ZNet.instance.GetNrOfPlayers() > 0;
+
         // ---------- cooking ----------
 
         public static HashSet<string> RawFor(CookingStation station) =>
@@ -46,6 +54,10 @@ namespace ValheimCompanion.Companion
 
         public static HashSet<string> CookedFor(CookingStation station) =>
             new HashSet<string>(station.m_conversion.Where(c => c.m_to).Select(c => c.m_to.gameObject.name));
+
+        /// <summary>What a station turns food into when it burns (coal), so it can be cleared away.</summary>
+        public static string BurntFor(CookingStation station) =>
+            station.m_overCookedItem ? station.m_overCookedItem.gameObject.name : null;
 
         public static bool CanCook(CookingStation station) => !station.m_requireFire || station.IsFireLit();
 

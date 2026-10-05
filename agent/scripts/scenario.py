@@ -568,16 +568,59 @@ async def scenario_stations(r: Runner) -> None:
     await r.cmd("debug_give", item="Wood", qty=20)
     await r.cmd("debug_give", item="RawMeat", qty=3)
     await r.task("light the fire", "tend_fires", radius=8)
-    await r.task("cook", "cook")
+    await r.cmd("debug_advance_time", seconds=1)
+    await advance_until_done(r, "cook", await r.cmd("cook"))
     await r.task("load the kiln", "load_smelters", radius=15)
     s = await r.state()
     r.results.append(("inventory after", str({i["item"]: i["qty"] for i in s["self"].get("inventory", []) if i["item"] in ("CookedMeat", "RawMeat", "Wood", "Coal")})))
     await r.cmd("save_world")
 
 
+async def advance_until_done(r: Runner, name: str, res, max_real_s: float = 240.0, step_s: float = 5.0, trace: bool = False) -> str:
+    """Wait for a task while moving the world clock on (it stands still on a dedicated server with nobody online)."""
+    if not res.ok:
+        r.results.append((name, f"rejected: {res.error}"))
+        return "rejected"
+    deadline = time.monotonic() + max_real_s
+    last = None
+    t0 = time.monotonic()
+    while time.monotonic() < deadline:
+        await r.conn.command("debug_advance_time", seconds=step_s)
+        if trace:
+            snap = (await r.conn.command("debug_station")).data or {}
+            line = str([x["slots"] for x in snap.get("stations", [])])
+            if line != last:
+                log.info("t+%.0fs station %s", time.monotonic() - t0, line)
+                last = line
+        try:
+            ev = await asyncio.wait_for(r.events.get(), 1.0)
+        except asyncio.TimeoutError:
+            continue
+        log.info("event %s %s", ev.name, ev.data)
+        if ev.name in ("task_done", "task_failed"):
+            r.results.append((name, f"{ev.name} {json.dumps(ev.data)}"))
+            return ev.name
+    r.results.append((name, "TIMEOUT"))
+    return "timeout"
+
+
+async def scenario_cookdebug(r: Runner) -> None:
+    """Cook 3 meat on the spit from `stations` (world clock advanced by the test), print the station as it goes."""
+    await r.cmd("debug_give", item="RawMeat", qty=3)
+    await r.cmd("debug_advance_time", seconds=1)
+    while not r.events.empty():
+        r.events.get_nowait()
+    res = await r.cmd("cook")
+    await advance_until_done(r, "cook", res, trace=True)
+    st = await r.conn.command("debug_station")
+    r.results.append(("station after", str((st.data or {}).get("stations"))))
+    s = await r.state()
+    r.results.append(("inventory", str({i["item"]: i["qty"] for i in s["self"].get("inventory", []) if i["item"] in ("RawMeat", "CookedMeat", "Coal")})))
+
+
 SCENARIOS = {
     "m4": scenario_m4, "pieces": scenario_pieces, "build": scenario_build, "inspect": scenario_inspect,
-    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds, "buildportal": scenario_buildportal, "gravestone": scenario_gravestone, "guard": scenario_guard, "fires": scenario_fires, "items": scenario_items, "deposit": scenario_deposit, "tidy_chests": scenario_tidy_chests, "hold": scenario_hold, "sign": scenario_sign, "pieceinfo": scenario_pieceinfo, "stations": scenario_stations,
+    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds, "buildportal": scenario_buildportal, "gravestone": scenario_gravestone, "guard": scenario_guard, "fires": scenario_fires, "items": scenario_items, "deposit": scenario_deposit, "tidy_chests": scenario_tidy_chests, "hold": scenario_hold, "sign": scenario_sign, "pieceinfo": scenario_pieceinfo, "stations": scenario_stations, "cookdebug": scenario_cookdebug,
 }
 
 
