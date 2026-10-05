@@ -78,6 +78,9 @@ Each line in the server log starts with `Proactive:`. Turn it off with `Companio
 ## 4d2. Corpse runs
 - [ ] Die somewhere (not too far), respawn at your bed, then `@Alvar fetch my gravestone`. He walks there, empties it, comes back and drops your things at your feet. With a very full gravestone he says what he had to leave.
 
+## 4d3. Guard duty
+- [ ] `@Alvar guard the base` (or `guard <named place>`): he walks a loop round it and fights whatever turns up, until you tell him to follow. When a raid starts nearby he raises the alarm; when you come back later, the raid is in his "while you were away".
+
 ## 4e. People and the day's tale
 - [ ] Log out for 30+ minutes after he's done a few jobs, then log back in: one greeting with a short "while you were away" of the highlights (not two greetings).
 - [ ] A friend joining for the first time gets a welcome and an introduction.

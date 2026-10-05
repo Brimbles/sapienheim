@@ -128,6 +128,7 @@ namespace ValheimCompanion.Companion
                     TryDebugAutoSpawn();
                 }
                 CompanionPresence.Update();
+                CompanionRaids.Update();
             }
 
             Request req = s_pending;

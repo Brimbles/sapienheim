@@ -418,9 +418,42 @@ class SimpleOk:
     data = None
 
 
+async def scenario_guard(r: Runner) -> None:
+    """Guard duty: patrol a 10 m loop for a while, then a forced raid starts and stops nearby."""
+    await r.cmd("guard", radius=10)
+    seen = []
+    for _ in range(8):
+        await asyncio.sleep(5)
+        s = await r.state()
+        seen.append(tuple(round(v) for v in s["self"]["pos"][::2]))
+    r.results.append(("patrol positions (every 5 s)", str(seen)))
+    r.results.append(("task while guarding", str(s["self"].get("task"))))
+    while not r.events.empty():
+        r.events.get_nowait()
+    await r.cmd("debug_raid", event="army_eikthyr")
+    raid = await _next_event(r, "raid", 20)
+    r.results.append(("raid start event", str(raid)))
+    await r.cmd("debug_raid")
+    raid = await _next_event(r, "raid", 20)
+    r.results.append(("raid end event", str(raid)))
+    await r.cmd("follow")
+
+
+async def _next_event(r: Runner, name: str, timeout: float):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            ev = await asyncio.wait_for(r.events.get(), 1.0)
+        except asyncio.TimeoutError:
+            continue
+        if ev.name == name:
+            return ev.data
+    return None
+
+
 SCENARIOS = {
     "m4": scenario_m4, "pieces": scenario_pieces, "build": scenario_build, "inspect": scenario_inspect,
-    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds, "buildportal": scenario_buildportal, "gravestone": scenario_gravestone,
+    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds, "buildportal": scenario_buildportal, "gravestone": scenario_gravestone, "guard": scenario_guard,
 }
 
 

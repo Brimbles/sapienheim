@@ -67,6 +67,7 @@ RULES = """
 - You'll be told when queued work finishes or fails. Report back in character; if something failed (e.g. need_axe), say what you need.
 - `build` puts up a structure from a template: "hut" (a wooden hut with two beds, a door, a roof and a workbench beside it, 3-5 tiles wide), "wall" (a stakewall palisade) or "fence" (a roundpole fence). Walls and fences go in a ring with a gate or a straight line; a ring next to a building goes around that building. You choose the template, its size and roughly where; the build code picks the exact spots, clears bushes and places every piece. It needs a hammer (craft one: Wood 3, Stone 2) and wood: a 3-wide hut is about 125, a fence ring round a hut about 30, a wall ring round a hut about 110. Carry a hoe (Wood 5, Stone 2) and you level the ground for a hut first, so it fits on rougher ground. If it fails with missing_materials, gather or fetch what's missing and then call resume_build. The pieces belong to your master.
 - Portals: `build` with template "portal" and a `tag` puts one up (e.g. far away, at the end of a `travel` or `go_to`, queued). Pick a short memorable tag, tell your master, and name the spot with `name` so you can find it again. A portal only connects to one other portal with the same tag.
+- `guard` patrols around the base (or wherever you're told) until given another order; good at night or while players are away.
 - `fetch_gravestone` does a corpse run when a player has died: their gear comes back to them.
 - `repair_nearby` fixes damaged buildings around you (or a player or named place) with your hammer.
 - `tear_down` (only for your master) takes buildings down with your hammer. Never confirm without asking: the first call tells you what would come down; describe it ("that's 53 pieces: walls, roof, two beds...") and only call again with confirm=true once your master says yes. If the player doesn't say which building, use the one nearest them (`near`). The materials drop on the ground; offer to pick them up afterwards.
@@ -277,6 +278,21 @@ TOOLS: list[dict[str, Any]] = [
                 "queue": {"type": "boolean", "description": "true = run after your current work instead of right away."},
             },
             "required": ["template"],
+        },
+    },
+    {
+        "name": "guard",
+        "description": "Guard duty: patrol a loop around you, a player or a named place (`around`) until told to do "
+        "something else (follow or stay end it). You fight anything hostile that comes near, as always, and you'll be "
+        "told when a raid starts or ends nearby.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "radius": {"type": "number", "description": "Metres, 5-40 (default 15)."},
+                "near": {"type": "string", "description": "Around this player."},
+                "around": {"type": "string", "description": "Around this named place, e.g. the base."},
+                "queue": {"type": "boolean", "description": "true = start after your current work."},
+            },
         },
     },
     {
@@ -527,6 +543,8 @@ class Brain:
             self.status.add("event", f"{event.name} {json.dumps(event.data)}")
         if event.name == "player_chat":
             await self.on_chat(event.data)
+        elif event.name == "raid":
+            await self.on_raid(event.data)
         elif event.name == "player_joined":
             await self.on_player_joined(event.data)
         elif event.name == "player_left":
@@ -608,6 +626,21 @@ class Brain:
 
     GREETING_WINDOW = 60.0   # one welcome per arrival, however many events announce it
     AWAY_FOR_SUMMARY = 1800  # seconds away before a returning player gets a "while you were away"
+
+    async def on_raid(self, data: dict[str, Any]) -> None:
+        """A raid starting or ending near the companion: raise the alarm, then report how it went."""
+        name = str(data.get("name") or "a raid")
+        if data.get("state") == "started":
+            self.memory.log(f"a raid began: {data.get('message') or name}")
+            prompt = (f"(A raid is starting near you: \"{data.get('message') or name}\". Raise the alarm in one short line, "
+                      "in character. You'll fight on your own; don't start any jobs.)")
+            history_line = "(a raid began)"
+        else:
+            self.memory.log("the raid ended")
+            prompt = "(The raid near you is over. One short line in character about how it went.)"
+            history_line = "(the raid ended)"
+        if self.budget.available() and await self._anyone_online():
+            await self.take_turn(prompt, history_line=history_line, tools=[t for t in TOOLS if t["name"] in CHAT_ONLY_TOOLS])
 
     async def _anyone_online(self) -> bool:
         """Is any player online to hear it? (Unknown counts as yes.)"""
@@ -801,7 +834,7 @@ class Brain:
             return await self._travel(block.id, args, actions)
         settlement = args.pop("name", None) if name == "build" else None
         torn_place = str(args["around"]) if name == "tear_down" and args.get("around") and args.get("confirm") else None
-        if name in ("build", "repair_nearby", "tear_down") and args.get("around"):
+        if name in ("build", "repair_nearby", "tear_down", "guard") and args.get("around"):
             where = self.memory.place(str(args.pop("around")))
             if where is None:
                 known = ", ".join(p["name"] for p in self.memory.data["places"].values()) or "none yet"

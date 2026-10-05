@@ -226,6 +226,20 @@ namespace ValheimCompanion.Bridge
                     companion.Inventory.Inventory.AddItem(prefab, args["qty"] != null ? (int)args["qty"] : 1);
                     return null;
                 }
+                case "debug_raid":
+                {
+                    // Testing command (not an LLM tool): start a random event at the companion (e.g. army_eikthyr), or stop it.
+                    string ev = (string)args["event"];
+                    if (string.IsNullOrEmpty(ev))
+                    {
+                        RandEventSystem.instance.ResetRandomEvent();
+                    }
+                    else
+                    {
+                        RandEventSystem.instance.SetRandomEventByName(ev, companion.transform.position);
+                    }
+                    return null;
+                }
                 case "debug_gravestone":
                 {
                     // Testing command (not an LLM tool): a gravestone for the companion's master at x,z, holding a few items.
@@ -504,6 +518,25 @@ namespace ValheimCompanion.Bridge
                     string name = $"hut {width}x{Building.HutTemplate.Depth}";
                     return Queue(companion, args, $"build({name})",
                         () => companion.Tasks.CommandBuild(name, plan, TaskId(args, cmdId)));
+                }
+                case "guard":
+                {
+                    Vector3 centre = companion.transform.position;
+                    string nearWho = (string)args["near"];
+                    if (!string.IsNullOrEmpty(nearWho) && !TryFindPlayer(nearWho, out _, out _, out centre))
+                    {
+                        return "player_not_found";
+                    }
+                    if (args["x"] != null && args["z"] != null)
+                    {
+                        centre = new Vector3((float)args["x"], centre.y, (float)args["z"]);
+                    }
+                    if (Vector3.Distance(centre, companion.transform.position) > CompanionTasks.MaxGoToDistance)
+                    {
+                        return "too_far";
+                    }
+                    float radius = Mathf.Clamp(args["radius"] != null ? (float)args["radius"] : 15f, 5f, 40f);
+                    return Queue(companion, args, "guard", () => companion.Tasks.CommandGuard(centre, radius, TaskId(args, cmdId)));
                 }
                 case "fetch_gravestone":
                 {

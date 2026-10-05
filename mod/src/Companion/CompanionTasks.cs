@@ -46,6 +46,7 @@ namespace ValheimCompanion.Companion
         public const string UsePortal = "portal";
         public const string Repair = "repair";
         public const string Gravestone = "gravestone";
+        public const string Guard = "guard";
         public const string TearDown = "tear_down";
 
         private const float ArriveDistance = 3.5f;
@@ -113,6 +114,12 @@ namespace ValheimCompanion.Companion
         private string _giveItem;
         private int _giveQty;
         private Dictionary<string, int> _giveList; // several items at once (a gravestone's contents)
+
+        // guard
+        private Vector3 _guardCentre;
+        private float _guardRadius;
+        private int _guardPoint;
+        private float _guardLegDeadline;
 
         // gravestone
         private ZDOID _grave;
@@ -193,6 +200,7 @@ namespace ValheimCompanion.Companion
                     case Repair:
                     case TearDown:
                     case Gravestone:
+                    case Guard:
                         return task;
                     default:
                         return Follow;
@@ -309,6 +317,17 @@ namespace ValheimCompanion.Companion
         {
             CommandGive(playerId, "(several)", 1, taskId);
             _giveList = new Dictionary<string, int>(items);
+        }
+
+        /// <summary>Patrol a loop around a spot until told otherwise; the combat reflex deals with anything hostile.</summary>
+        public void CommandGuard(Vector3 centre, float radius, string taskId)
+        {
+            _guardCentre = centre;
+            _guardRadius = radius;
+            _guardPoint = 0;
+            _guardLegDeadline = 0f;
+            Zdo.Set(CompanionState.KeyTaskPos, centre);
+            SetTask(Guard, taskId);
         }
 
         /// <summary>At a gravestone: take everything out of it, then bring it back to its owner.</summary>
@@ -500,6 +519,9 @@ namespace ValheimCompanion.Companion
                 case Gravestone:
                     UpdateGravestone();
                     break;
+                case Guard:
+                    UpdateGuard();
+                    break;
             }
         }
 
@@ -521,7 +543,8 @@ namespace ValheimCompanion.Companion
                         || (task == UsePortal && _portal == null)
                         || (task == Repair && _repairPlan == null)
                         || (task == TearDown && _teardownPlan == null)
-                        || (task == Gravestone && _grave.IsNone());
+                        || (task == Gravestone && _grave.IsNone())
+                        || (task == Guard && _guardRadius <= 0f);
             if (lost)
             {
                 CompanionState.SetTask(Zdo, Follow);
@@ -1392,6 +1415,35 @@ namespace ValheimCompanion.Companion
             _teardownSkipped.TryGetValue(reason, out int n);
             _teardownSkipped[reason] = n + 1;
             _stepDeadline = 0f;
+        }
+
+        private const int GuardPoints = 8;
+
+        /// <summary>Walk the loop: eight points round the centre, on to the next on arrival or after 30 s.</summary>
+        private void UpdateGuard()
+        {
+            if (!_waypoint)
+            {
+                _waypoint = new GameObject("CompanionWaypoint");
+            }
+            Vector3 point = _guardCentre + Quaternion.Euler(0f, _guardPoint * 360f / GuardPoints, 0f) * Vector3.forward * _guardRadius;
+            if (ZoneSystem.instance.GetGroundHeight(point, out float h))
+            {
+                point.y = h;
+            }
+            _waypoint.transform.position = point;
+            if (_ai.GetFollowTarget() != _waypoint)
+            {
+                _ai.SetFollowTarget(_waypoint);
+                _guardLegDeadline = Time.time + 30f;
+            }
+            Vector3 delta = point - _character.transform.position;
+            delta.y = 0f;
+            if (delta.magnitude <= ArriveDistance || Time.time > _guardLegDeadline)
+            {
+                _guardPoint = (_guardPoint + 1) % GuardPoints;
+                _guardLegDeadline = Time.time + 30f;
+            }
         }
 
         /// <summary>

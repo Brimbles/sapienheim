@@ -354,7 +354,7 @@ Make the offline simulation (M7) earn its keep.
 - [ ] **Chores routine while players are away:** refuel fires, kilns and smelters, harvest and replant crops, repair damage (`repair_nearby`), feed tamed animals. Builds on M4's `refuel` / `load_smelter` ideas.
 - [x] **Corpse runs:** `fetch_gravestone` (master's by default): walks to the nearest of the player's gravestones (found by owner among all tombstone ZDOs, up to 5 km), empties it into its pack (each stack added before it's removed; what doesn't fit stays), then walks back to the owner and hands it all over (`give` of a list). If the owner is offline it keeps the items until asked. Headless: 15 items taken, gravestone despawned.
 - [ ] **Storehouse tidying:** sort chest contents into sensible groups and label chests with signs.
-- [ ] **Guard duty:** patrol the base at night, fight off raids (random events), report afterwards.
+- [x] **Guard duty:** `guard` patrols an 8-point loop (radius 5-40 m) round the companion, a player or a named place until another order; the combat reflex fights. `CompanionRaids` tells the agent when a random event starts/ends near it (`raid` event): it raises the alarm, and the journal keeps it for "while you were away". Headless: patrol and a forced raid's start/end events.
 - **Leave the base overnight and come back to lit fires, smelted ore, replanted fields and a report of anything that attacked.**
 
 ### M13 — Adventuring helper
