@@ -52,6 +52,10 @@ Things that can't be tested headlessly because they need a player in the world. 
 - [ ] Tune him in the server config's `[Look]` section, then restart the server: `Hair` (Hair1-Hair38), `Beard` (Beard1-Beard26 or BeardNone), `HairColour`, `SkinTone`, `Cape`, `Legs`, `Chest`, `Arms`, `Height`. `Body = dverger` brings the old look back.
 - [ ] He swings axes, pickaxes, the hammer and weapons like a player now; check chopping, mining, building and a fight.
 
+## 4b4. Voice clips
+- [ ] He has a (generated, generic barbarian) voice now: a battle cry when a fight starts, "Timber!" when a tree falls, a line when he dies, levels up, arrives or comes back from death. The AI can add a clip (`laugh`, `crom`) to something he says. Check they're heard from where he stands, get quieter with distance, and follow your sound-effects volume.
+- [ ] Pick a voice: listen to `tools/voice/auditions/*.wav` (the same line in 8 voices), then remake the clips with your choice: `cd tools/voice` and `uv run python make_clips.py lines.txt --voice <name>`. Edit `lines.txt` for your own lines; `--pitch` (deeper below 0.85), `--grit` (rasp) and `--speed` tune it. Rebuild the mod to deploy them.
+
 ## 4c. Levelling (M4.5)
 - [ ] With no bosses beaten he hits for about 18, so a greyling (20 HP) takes two hits. It rises with each boss (32, 48, 65, 85, 110). `Companion.DamageScale` in the server config tunes it.
 - [ ] Stand near Alvar for a minute. With no bosses beaten he stays **level 1**, and his max health becomes about **2.5 × yours**, never below 350. With armour on, the dashboard (or `@Alvar how tough are you?`) shows his armour matching your total.

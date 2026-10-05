@@ -292,6 +292,7 @@ namespace ValheimCompanion.Companion
                 if (health <= damage.m_chop)
                 {
                     _companion.Say(TimberLines[Random.Range(0, TimberLines.Length)]);
+                    _companion.PlayMoment("timber");
                 }
             }
             ((IDestructible)source.Target).Damage(hit);

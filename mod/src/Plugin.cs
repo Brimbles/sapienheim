@@ -31,6 +31,7 @@ namespace ValheimCompanion
         public static ConfigEntry<bool> Proactive;
         public static ConfigEntry<float> DamageScale;
         public static ConfigEntry<string> Body;
+        public static ConfigEntry<float> SoundVolume;
         public static ConfigEntry<string> LookHair;
         public static ConfigEntry<string> LookBeard;
         public static ConfigEntry<string> LookHairColour;
@@ -73,6 +74,7 @@ namespace ValheimCompanion
                 "Multiplier on the companion's damage per hit (18 at level 1, rising to 110 at level 6) (server only).");
             Levelling = Config.Bind("Companion", "Levelling", true,
                 "Scale the companion with its master: level (damage) from bosses defeated, max health from the master's, armour from theirs (server only).");
+            SoundVolume = Config.Bind("Look", "SoundVolume", 1f, "Volume of the companion's voice clips on this machine, 0-1 (before the game's own sound volume).");
             Body = Config.Bind("Look", "Body", "viking", new ConfigDescription(
                 "The companion's body: viking (the player model, shows its gear) or dverger. Needs a restart; set it the same on every machine.",
                 new AcceptableValueList<string>("viking", "dverger")));
@@ -95,6 +97,10 @@ namespace ValheimCompanion
 
             _harmony = new Harmony(PluginGUID);
             _harmony.PatchAll(typeof(Plugin).Assembly);
+            if (!Jotunn.Managers.GUIManager.IsHeadless())
+            {
+                StartCoroutine(Companion.CompanionSounds.LoadAll()); // voice clips, for playing them
+            }
             if (Jotunn.Managers.GUIManager.IsHeadless())
             {
                 LocalPlayerGuards.Apply(_harmony);

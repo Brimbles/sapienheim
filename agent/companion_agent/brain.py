@@ -83,10 +83,15 @@ SYSTEM = f"{PERSONA}\n\n{RULES}"
 TOOLS: list[dict[str, Any]] = [
     {
         "name": "say",
-        "description": "Speak aloud; shown as a speech bubble and chat line to nearby players. One or two short sentences.",
+        "description": "Speak aloud; shown as a speech bubble and chat line to nearby players. One or two short sentences. "
+        "You can add a voice clip from the `sounds` list in the state when one really fits (a laugh, a war cry); use them "
+        "sparingly, not on every line.",
         "input_schema": {
             "type": "object",
-            "properties": {"text": {"type": "string", "description": "What to say, in character."}},
+            "properties": {
+                "text": {"type": "string", "description": "What to say, in character."},
+                "sound": {"type": "string", "description": "Optional: a clip name from the state's `sounds` list."},
+            },
             "required": ["text"],
         },
     },

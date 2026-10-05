@@ -72,6 +72,7 @@ namespace ValheimCompanion.Companion
 
         private static void OnDied(CompanionAI ai, string killer)
         {
+            ai.PlayMoment("death", follow: false); // the body is about to go
             s_record = Capture(ai.ZDO, ai.transform.position);
             s_record.Killer = killer;
             s_record.DueUnixSeconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds() + Plugin.RespawnSeconds.Value;

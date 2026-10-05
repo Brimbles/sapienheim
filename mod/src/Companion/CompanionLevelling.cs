@@ -109,6 +109,7 @@ namespace ValheimCompanion.Companion
             }
             if (announce)
             {
+                _character.GetComponent<CompanionAI>()?.PlayMoment("level_up");
                 AgentClient.SendEvent("levelled_up", new JObject { ["level"] = level, ["max_hp"] = Mathf.Round(maxHp), ["armor"] = Mathf.Round(Armor) });
             }
         }

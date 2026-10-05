@@ -227,6 +227,11 @@ namespace ValheimCompanion.Bridge
                         return "empty_text";
                     }
                     companion.Say(text);
+                    string sound = (string)args["sound"];
+                    if (!string.IsNullOrEmpty(sound))
+                    {
+                        companion.PlaySound(sound); // an unknown or too-soon clip is just skipped
+                    }
                     return null;
                 }
                 case "follow":
@@ -801,6 +806,7 @@ namespace ValheimCompanion.Bridge
             if (EnvMan.instance)
             {
                 state["time_of_day"] = TimeOfDay(EnvMan.instance.GetDayFraction());
+                state["sounds"] = new JArray(Companion.CompanionSounds.Names); // voice clips it can add to a say
                 state["weather"] = EnvMan.instance.GetCurrentEnvironment()?.m_name;
             }
             if (WorldGenerator.instance != null)

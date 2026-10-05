@@ -35,3 +35,7 @@ mod/Environment.props
 # Decompiled game code (copyrighted, reference only)
 .decompiled/
 agent/scripts/pieces.json
+
+# Voice tool: local model environment and audition clips
+tools/voice/.venv/
+tools/voice/auditions/

@@ -1,0 +1,13 @@
+# The companion's voice clips: `name: text`, one per line. Run: uv run python make_clips.py lines.txt
+# Moments play automatically: battle_cry, timber, death, level_up, greeting, respawn (variants: battle_cry2, ...).
+# Any other name is a clip the agent can choose to add to something it says.
+
+battle_cry: Crom! Stand and fight!
+battle_cry2: To battle!
+timber: Timber!
+death: Crom... I have failed you.
+level_up: I grow stronger!
+greeting: The barbarian returns!
+respawn: Death? Not today.
+laugh: Ha ha ha ha!
+crom: By Crom!

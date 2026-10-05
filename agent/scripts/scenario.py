@@ -356,9 +356,17 @@ async def scenario_body(r: Runner) -> None:
     await r.cmd("save_world")
 
 
+async def scenario_sounds(r: Runner) -> None:
+    """Voice clips: the state lists them, and a say can carry one."""
+    s = await r.state()
+    r.results.append(("clips in state", str(s.get("sounds"))))
+    res = await r.cmd("say", text="By Crom!", sound="crom")
+    r.results.append(("say with a clip", "ok" if res.ok else str(res.error)))
+
+
 SCENARIOS = {
     "m4": scenario_m4, "pieces": scenario_pieces, "build": scenario_build, "inspect": scenario_inspect,
-    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body,
+    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds,
 }
 
 

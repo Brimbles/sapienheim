@@ -172,6 +172,8 @@ namespace ValheimCompanion.Companion
             GameObject go = Instantiate(prefab, pos, Quaternion.identity);
             string name = Plugin.CompanionName.Value;
             go.GetComponent<CompanionAI>().InitNew(name, req.MasterId, req.MasterName, req.Inventory);
+            // A clip once players have the new body: back from death, or arriving.
+            go.GetComponent<CompanionAI>().QueueMoment(req.ReturnEvent == "respawned" ? "respawn" : "greeting", 3f);
 
             Jotunn.Logger.LogInfo($"Spawned companion {name} for '{req.MasterName}' at {pos:F0}");
             req.OnDone?.Invoke(true);

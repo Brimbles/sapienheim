@@ -15,6 +15,7 @@ namespace ValheimCompanion.Companion
         private const float StatusInterval = 10f;
 
         private const string RpcSay = "CMP_Say";
+        private const string RpcSound = "CMP_Sound";
         private const string RpcThinking = "CMP_Thinking";
         private const float ThinkingSeconds = 15f;
         private const float BubbleHeight = 2.2f;
@@ -50,6 +51,7 @@ namespace ValheimCompanion.Companion
             s_companions.Add(_character);
             s_instances.Add(this);
             _nview.Register<string>(RpcSay, RPC_Say);
+            _nview.Register<string, bool>(RpcSound, RPC_Sound);
             _nview.Register(RpcThinking, RPC_Thinking);
             _inventory = new CompanionInventory(_nview, _character);
             _levelling = new CompanionLevelling(_nview, _character);
@@ -113,6 +115,48 @@ namespace ValheimCompanion.Companion
         public void Say(string text)
         {
             _nview.InvokeRPC(ZNetView.Everybody, RpcSay, text);
+        }
+
+        /// <summary>Owner: play a voice clip (see CompanionSounds) for everyone. False if there's no such clip.</summary>
+        public bool PlaySound(string clip, bool follow = true)
+        {
+            clip = (clip ?? "").Trim().ToLowerInvariant();
+            if (!CompanionSounds.Names.Contains(clip) || !CompanionSounds.TakeTurn())
+            {
+                return false;
+            }
+            Jotunn.Logger.LogInfo($"{_character.m_name}: plays clip {clip}");
+            _nview.InvokeRPC(ZNetView.Everybody, RpcSound, clip, follow);
+            return true;
+        }
+
+        /// <summary>Owner: play the clip for a moment (battle_cry, timber...), if there is one.</summary>
+        public void PlayMoment(string moment, bool follow = true)
+        {
+            string clip = CompanionSounds.ForMoment(moment);
+            if (clip != null)
+            {
+                PlaySound(clip, follow);
+            }
+        }
+
+        private string _queuedMoment;
+        private float _queuedAt;
+
+        /// <summary>Owner: play a moment's clip a little later (e.g. once players have the newly spawned body).</summary>
+        public void QueueMoment(string moment, float delay)
+        {
+            _queuedMoment = moment;
+            _queuedAt = Time.time + delay;
+        }
+
+        private void RPC_Sound(long sender, string clip, bool follow)
+        {
+            if (!Player.m_localPlayer)
+            {
+                return; // headless server
+            }
+            CompanionSounds.Play(clip, transform, follow);
         }
 
         private string _swingTrigger;
@@ -244,6 +288,11 @@ namespace ValheimCompanion.Companion
             _inventory.KeepRepaired();
             _levelling.Update();
             _doors.Update();
+            if (_queuedMoment != null && Time.time >= _queuedAt)
+            {
+                PlayMoment(_queuedMoment);
+                _queuedMoment = null;
+            }
             _tasks.Update();
             _proactive.Update();
 

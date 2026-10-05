@@ -1,0 +1,17 @@
+[project]
+name = "sapienheim-voice"
+version = "0.1.0"
+description = "Make the companion's voice clips with a local text-to-speech model (Kokoro)."
+requires-python = ">=3.10,<3.13"
+dependencies = [
+    "kokoro>=0.9",
+    "transformers>=4.44",
+    "soundfile>=0.12",
+    "numpy",
+    "scipy",
+    # English pronunciation model Kokoro needs (it would otherwise download it on first run)
+    "en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
+]
+
+[tool.uv]
+package = false

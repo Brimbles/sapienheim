@@ -631,6 +631,7 @@ namespace ValheimCompanion.Companion
             if (companion)
             {
                 companion.Say(BattleCries[UnityEngine.Random.Range(0, BattleCries.Length)]);
+                companion.PlayMoment("battle_cry");
             }
         }
 
