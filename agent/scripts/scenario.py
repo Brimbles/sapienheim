@@ -390,9 +390,37 @@ async def scenario_buildportal(r: Runner) -> None:
     await r.cmd("save_world")
 
 
+async def scenario_gravestone(r: Runner) -> None:
+    """Corpse run: a gravestone for the master 40 m away; the companion empties it (no player online to hand it to)."""
+    s = await r.state()
+    here = s["self"]["pos"]
+    before = {i["item"]: i["qty"] for i in s["self"].get("inventory", [])}
+    made = await r.cmd("debug_gravestone", x=here[0] + 30, z=here[2] + 25)
+    if not made.ok:
+        r.results.append(("make a gravestone", f"failed: {made.error}"))
+        return
+    r.results.append(("gravestone at", str(made.data)))
+    await r.task("fetch the gravestone", "fetch_gravestone")
+    await r.task_wait("empty it", SimpleOk())
+    s = await r.state()
+    after = {i["item"]: i["qty"] for i in s["self"].get("inventory", [])}
+    gained = {k: after.get(k, 0) - before.get(k, 0) for k in after if after.get(k, 0) != before.get(k, 0)}
+    r.results.append(("inventory gained", str(gained)))
+    await asyncio.sleep(6)  # an emptied gravestone despawns on its own timer
+    again = await r.cmd("fetch_gravestone")
+    r.results.append(("a second fetch (gravestone should be gone)", str(again.error)))
+    await r.cmd("save_world")
+
+
+class SimpleOk:
+    ok = True
+    error = None
+    data = None
+
+
 SCENARIOS = {
     "m4": scenario_m4, "pieces": scenario_pieces, "build": scenario_build, "inspect": scenario_inspect,
-    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds, "buildportal": scenario_buildportal,
+    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds, "buildportal": scenario_buildportal, "gravestone": scenario_gravestone,
 }
 
 

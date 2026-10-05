@@ -352,7 +352,7 @@ Builds on M5 (placement, blueprints, templates) and M6 (named places).
 ### M12 — Base keeper
 Make the offline simulation (M7) earn its keep.
 - [ ] **Chores routine while players are away:** refuel fires, kilns and smelters, harvest and replant crops, repair damage (`repair_nearby`), feed tamed animals. Builds on M4's `refuel` / `load_smelter` ideas.
-- [ ] **Corpse runs:** "fetch my gravestone": walk to where the master died, collect the items from the tombstone and bring them back.
+- [x] **Corpse runs:** `fetch_gravestone` (master's by default): walks to the nearest of the player's gravestones (found by owner among all tombstone ZDOs, up to 5 km), empties it into its pack (each stack added before it's removed; what doesn't fit stays), then walks back to the owner and hands it all over (`give` of a list). If the owner is offline it keeps the items until asked. Headless: 15 items taken, gravestone despawned.
 - [ ] **Storehouse tidying:** sort chest contents into sensible groups and label chests with signs.
 - [ ] **Guard duty:** patrol the base at night, fight off raids (random events), report afterwards.
 - **Leave the base overnight and come back to lit fires, smelted ore, replanted fields and a report of anything that attacked.**

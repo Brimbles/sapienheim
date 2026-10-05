@@ -75,6 +75,9 @@ Each line in the server log starts with `Proactive:`. Turn it off with `Companio
 - [ ] **Idle:** stand near him doing nothing, without chatting, for 10 minutes. He makes small talk or offers to help, but doesn't start anything. The next remark comes after 20, then 40 minutes, back to 10 after any task, fight or chat.
 - [ ] **Master returns:** walk 150 m+ away (or log out while a friend stays on) for 10+ minutes, then come back within 30 m. He greets you. Sending him on an errand doesn't count as you being away.
 
+## 4d2. Corpse runs
+- [ ] Die somewhere (not too far), respawn at your bed, then `@Alvar fetch my gravestone`. He walks there, empties it, comes back and drops your things at your feet. With a very full gravestone he says what he had to leave.
+
 ## 4e. People and the day's tale
 - [ ] Log out for 30+ minutes after he's done a few jobs, then log back in: one greeting with a short "while you were away" of the highlights (not two greetings).
 - [ ] A friend joining for the first time gets a welcome and an introduction.

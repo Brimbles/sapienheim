@@ -45,6 +45,7 @@ namespace ValheimCompanion.Companion
         public const string Build = "build";
         public const string UsePortal = "portal";
         public const string Repair = "repair";
+        public const string Gravestone = "gravestone";
         public const string TearDown = "tear_down";
 
         private const float ArriveDistance = 3.5f;
@@ -111,6 +112,11 @@ namespace ValheimCompanion.Companion
         private long _givePlayerId;
         private string _giveItem;
         private int _giveQty;
+        private Dictionary<string, int> _giveList; // several items at once (a gravestone's contents)
+
+        // gravestone
+        private ZDOID _grave;
+        private long _graveOwner;
 
         // store / fetch
         private Container _chest;
@@ -186,6 +192,7 @@ namespace ValheimCompanion.Companion
                     case UsePortal:
                     case Repair:
                     case TearDown:
+                    case Gravestone:
                         return task;
                     default:
                         return Follow;
@@ -297,8 +304,25 @@ namespace ValheimCompanion.Companion
             SetTask(PickUp, taskId);
         }
 
+        /// <summary>Hand over several items at once (e.g. what came out of a gravestone).</summary>
+        public void CommandGiveMany(long playerId, Dictionary<string, int> items, string taskId)
+        {
+            CommandGive(playerId, "(several)", 1, taskId);
+            _giveList = new Dictionary<string, int>(items);
+        }
+
+        /// <summary>At a gravestone: take everything out of it, then bring it back to its owner.</summary>
+        public void CommandGravestone(ZDOID grave, long owner, string taskId)
+        {
+            _grave = grave;
+            _graveOwner = owner;
+            _stepDeadline = 0f;
+            SetTask(Gravestone, taskId);
+        }
+
         public void CommandGive(long playerId, string item, int qty, string taskId)
         {
+            _giveList = null;
             _givePlayerId = playerId;
             _giveItem = item;
             _giveQty = qty;
@@ -473,6 +497,9 @@ namespace ValheimCompanion.Companion
                 case TearDown:
                     UpdateTearDown();
                     break;
+                case Gravestone:
+                    UpdateGravestone();
+                    break;
             }
         }
 
@@ -493,7 +520,8 @@ namespace ValheimCompanion.Companion
                         || (task == Build && (_buildPlan == null || _buildPlan.Count == 0))
                         || (task == UsePortal && _portal == null)
                         || (task == Repair && _repairPlan == null)
-                        || (task == TearDown && _teardownPlan == null);
+                        || (task == TearDown && _teardownPlan == null)
+                        || (task == Gravestone && _grave.IsNone());
             if (lost)
             {
                 CompanionState.SetTask(Zdo, Follow);
@@ -828,6 +856,7 @@ namespace ValheimCompanion.Companion
             if (!player)
             {
                 _giveItem = null;
+                _giveList = null;
                 Complete(false, new JObject { ["task"] = Give, ["reason"] = "player_not_nearby" });
                 return;
             }
@@ -838,7 +867,24 @@ namespace ValheimCompanion.Companion
             if (Time.time > _deadline)
             {
                 _giveItem = null;
+                _giveList = null;
                 Complete(false, new JObject { ["task"] = Give, ["reason"] = "timeout" });
+                return;
+            }
+            if (Vector3.Distance(player.transform.position, _character.transform.position) <= GiveReach && _giveList != null)
+            {
+                var given = new JObject();
+                foreach (var kv in _giveList)
+                {
+                    int n = _inventory.Drop(kv.Key, kv.Value);
+                    if (n > 0)
+                    {
+                        given[kv.Key] = n;
+                    }
+                }
+                _giveList = null;
+                _giveItem = null;
+                Complete(given.Count > 0, new JObject { ["task"] = Give, ["given"] = given, ["player"] = player.GetPlayerName() });
                 return;
             }
             if (Vector3.Distance(player.transform.position, _character.transform.position) <= GiveReach)
@@ -1346,6 +1392,98 @@ namespace ValheimCompanion.Companion
             _teardownSkipped.TryGetValue(reason, out int n);
             _teardownSkipped[reason] = n + 1;
             _stepDeadline = 0f;
+        }
+
+        /// <summary>
+        /// Empty the gravestone (once it's loaded, standing next to it), then queue the way home: walk back to its owner
+        /// and hand everything over. Whatever doesn't fit stays in the gravestone.
+        /// </summary>
+        private void UpdateGravestone()
+        {
+            if (_stepDeadline <= 0f)
+            {
+                _stepDeadline = Time.time + BuildStepTimeout;
+            }
+            ZDO zdo = ZDOMan.instance.GetZDO(_grave);
+            ZNetView view = zdo != null ? ZNetScene.instance.FindInstance(zdo) : null;
+            TombStone tomb = view ? view.GetComponent<TombStone>() : null;
+            if (zdo == null || (!tomb && Time.time > _stepDeadline))
+            {
+                _grave = ZDOID.None;
+                Complete(false, new JObject { ["task"] = Gravestone, ["reason"] = zdo == null ? "gravestone_gone" : "gravestone_not_loaded" });
+                return;
+            }
+            if (!tomb)
+            {
+                return; // its area is still loading
+            }
+            if (!_waypoint)
+            {
+                _waypoint = new GameObject("CompanionWaypoint");
+            }
+            _waypoint.transform.position = tomb.transform.position;
+            if (_ai.GetFollowTarget() != _waypoint)
+            {
+                _ai.SetFollowTarget(_waypoint);
+            }
+            Vector3 delta = tomb.transform.position - _character.transform.position;
+            delta.y = 0f;
+            if (delta.magnitude > PickupReach)
+            {
+                if (Time.time > _stepDeadline)
+                {
+                    _grave = ZDOID.None;
+                    Complete(false, new JObject { ["task"] = Gravestone, ["reason"] = "cant_reach_gravestone" });
+                }
+                return;
+            }
+
+            Container container = tomb.GetComponent<Container>();
+            if (container.IsInUse())
+            {
+                return; // someone has it open; wait
+            }
+            if (!view.IsOwner())
+            {
+                view.ClaimOwnership();
+                return; // take it next tick, once it's ours
+            }
+            container.Load();
+            Dictionary<string, int> taken = CompanionWorkshop.TransferAll(container.GetInventory(), _inventory.Inventory);
+            container.Save();
+            int left = container.GetInventory().NrOfItems();
+            _grave = ZDOID.None;
+
+            var data = new JObject { ["task"] = Gravestone, ["taken"] = JObject.FromObject(taken) };
+            if (left > 0)
+            {
+                data["left_in_gravestone"] = left; // no room; a second trip (or the owner) can get the rest
+            }
+            if (taken.Count > 0)
+            {
+                // Home: to wherever the owner is now, then hand it all over.
+                Vector3? ownerPos = null;
+                foreach (ZNet.PlayerInfo info in ZNet.instance.GetPlayerList())
+                {
+                    ZDO character = ZDOMan.instance.GetZDO(info.m_characterID);
+                    if (character != null && character.GetLong(ZDOVars.s_playerID) == _graveOwner)
+                    {
+                        ownerPos = character.GetPosition();
+                    }
+                }
+                if (ownerPos.HasValue)
+                {
+                    long owner = _graveOwner;
+                    Vector3 home = ownerPos.Value;
+                    RunOrQueue(true, "go_to(gravestone owner)", () => CommandGoTo(home, null));
+                    RunOrQueue(true, "give(gravestone items)", () => CommandGiveMany(owner, taken, null));
+                }
+                else
+                {
+                    data["note"] = "owner offline: keeping the items safe until asked";
+                }
+            }
+            Complete(taken.Count > 0, data, afterwards: Stay);
         }
 
         private int _clearHits;

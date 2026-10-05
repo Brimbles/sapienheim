@@ -226,6 +226,24 @@ namespace ValheimCompanion.Bridge
                     companion.Inventory.Inventory.AddItem(prefab, args["qty"] != null ? (int)args["qty"] : 1);
                     return null;
                 }
+                case "debug_gravestone":
+                {
+                    // Testing command (not an LLM tool): a gravestone for the companion's master at x,z, holding a few items.
+                    GameObject playerPrefab = ZNetScene.instance.GetPrefab("Player");
+                    GameObject tombPrefab = playerPrefab.GetComponent<Player>().m_tombstone;
+                    var at = new Vector3((float)args["x"], 0f, (float)args["z"]);
+                    at.y = ZoneSystem.instance.GetGroundHeight(at, out float gy) ? gy + 0.5f : companion.transform.position.y;
+                    GameObject tomb = UnityEngine.Object.Instantiate(tombPrefab, at, Quaternion.identity);
+                    tomb.GetComponent<TombStone>().Setup(CompanionState.GetMasterName(companion.ZDO), CompanionState.GetMaster(companion.ZDO));
+                    Inventory inv = tomb.GetComponent<Container>().GetInventory();
+                    foreach (var kv in new[] { ("Wood", 7), ("Stone", 3), ("Club", 1), ("Resin", 4) })
+                    {
+                        inv.AddItem(ObjectDB.instance.GetItemPrefab(kv.Item1), kv.Item2);
+                    }
+                    tomb.GetComponent<Container>().Save();
+                    data = new JObject { ["pos"] = new JArray(Mathf.Round(at.x), Mathf.Round(at.y), Mathf.Round(at.z)) };
+                    return null;
+                }
                 case "say":
                 {
                     string text = ((string)args["text"] ?? "").Trim();
@@ -486,6 +504,46 @@ namespace ValheimCompanion.Bridge
                     string name = $"hut {width}x{Building.HutTemplate.Depth}";
                     return Queue(companion, args, $"build({name})",
                         () => companion.Tasks.CommandBuild(name, plan, TaskId(args, cmdId)));
+                }
+                case "fetch_gravestone":
+                {
+                    // Whose: a named player, or the master.
+                    long owner = CompanionState.GetMaster(companion.ZDO);
+                    string whose = (string)args["player"];
+                    if (!string.IsNullOrEmpty(whose))
+                    {
+                        if (!TryFindPlayer(whose, out owner, out _, out _))
+                        {
+                            return "player_not_found";
+                        }
+                    }
+                    var graves = CompanionWorkshop.FindGravestones(owner, companion.transform.position);
+                    if (graves.Count == 0)
+                    {
+                        return "no_gravestone";
+                    }
+                    ZDO grave = graves[0];
+                    Vector3 at = grave.GetPosition();
+                    data = new JObject
+                    {
+                        ["gravestones"] = graves.Count,
+                        ["pos"] = new JArray(Mathf.Round(at.x), Mathf.Round(at.y), Mathf.Round(at.z)),
+                        ["dist"] = Mathf.Round(Vector3.Distance(at, companion.transform.position)),
+                    };
+                    if (Vector3.Distance(at, companion.transform.position) > CompanionTasks.MaxGoToDistance)
+                    {
+                        return "too_far";
+                    }
+                    string id = TaskId(args, cmdId);
+                    ZDOID graveId = grave.m_uid;
+                    // There and back as queued steps: walk, empty it, then (queued by the gravestone step) home and hand over.
+                    string first = Queue(companion, args, "go_to(gravestone)", () => companion.Tasks.CommandGoTo(at, null));
+                    if (first != null)
+                    {
+                        return first;
+                    }
+                    companion.Tasks.RunOrQueue(true, "empty gravestone", () => companion.Tasks.CommandGravestone(graveId, owner, id));
+                    return null;
                 }
                 case "tear_down":
                 {

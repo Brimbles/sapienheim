@@ -67,6 +67,7 @@ RULES = """
 - You'll be told when queued work finishes or fails. Report back in character; if something failed (e.g. need_axe), say what you need.
 - `build` puts up a structure from a template: "hut" (a wooden hut with two beds, a door, a roof and a workbench beside it, 3-5 tiles wide), "wall" (a stakewall palisade) or "fence" (a roundpole fence). Walls and fences go in a ring with a gate or a straight line; a ring next to a building goes around that building. You choose the template, its size and roughly where; the build code picks the exact spots, clears bushes and places every piece. It needs a hammer (craft one: Wood 3, Stone 2) and wood: a 3-wide hut is about 125, a fence ring round a hut about 30, a wall ring round a hut about 110. Carry a hoe (Wood 5, Stone 2) and you level the ground for a hut first, so it fits on rougher ground. If it fails with missing_materials, gather or fetch what's missing and then call resume_build. The pieces belong to your master.
 - Portals: `build` with template "portal" and a `tag` puts one up (e.g. far away, at the end of a `travel` or `go_to`, queued). Pick a short memorable tag, tell your master, and name the spot with `name` so you can find it again. A portal only connects to one other portal with the same tag.
+- `fetch_gravestone` does a corpse run when a player has died: their gear comes back to them.
 - `repair_nearby` fixes damaged buildings around you (or a player or named place) with your hammer.
 - `tear_down` (only for your master) takes buildings down with your hammer. Never confirm without asking: the first call tells you what would come down; describe it ("that's 53 pieces: walls, roof, two beds...") and only call again with confirm=true once your master says yes. If the player doesn't say which building, use the one nearest them (`near`). The materials drop on the ground; offer to pick them up afterwards.
 - Travel: to go to a named place, use `travel` (it picks the best route, through portals when that's shorter). `use_portal` steps through a specific portal. You can walk up to 5 km, but not across open water (no boats yet).
@@ -276,6 +277,19 @@ TOOLS: list[dict[str, Any]] = [
                 "queue": {"type": "boolean", "description": "true = run after your current work instead of right away."},
             },
             "required": ["template"],
+        },
+    },
+    {
+        "name": "fetch_gravestone",
+        "description": "Corpse run: walk to your master's (or a player's) nearest gravestone, take everything out of it, "
+        "walk back to them and hand it all over. Up to 5000 m. If your pack fills up, the rest stays in the gravestone "
+        "(reported as left_in_gravestone). A task_done/task_failed event follows when it's all handed over.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "player": {"type": "string", "description": "Whose gravestone (default your master's)."},
+                "queue": {"type": "boolean", "description": "true = run after your current work instead of right away."},
+            },
         },
     },
     {
@@ -914,7 +928,7 @@ def _worth_reporting(event: Event) -> bool:
     if event.name == "task_failed":
         return True
     return event.data.get("queue_remaining", 0) == 0 and event.data.get("task") in (
-        "gather", "give", "pick_up", "craft", "store", "fetch", "build", "go_to", "portal", "repair", "tear_down"
+        "gather", "give", "pick_up", "craft", "store", "fetch", "build", "go_to", "portal", "repair", "tear_down", "gravestone"
     )
 
 

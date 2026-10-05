@@ -104,6 +104,55 @@ namespace ValheimCompanion.Companion
             return null;
         }
 
+        /// <summary>A player's gravestones (anywhere in the world, loaded or not), nearest <paramref name="from"/> first.</summary>
+        public static List<ZDO> FindGravestones(long playerId, Vector3 from)
+        {
+            var found = new List<ZDO>();
+            GameObject playerPrefab = ZNetScene.instance.GetPrefab("Player");
+            GameObject tomb = playerPrefab ? playerPrefab.GetComponent<Player>().m_tombstone : null;
+            if (!tomb)
+            {
+                return found;
+            }
+            var zdos = new List<ZDO>();
+            int index = 0;
+            while (!ZDOMan.instance.GetAllZDOsWithPrefabIterative(tomb.name, zdos, ref index))
+            {
+            }
+            foreach (ZDO z in zdos)
+            {
+                if (z != null && z.GetLong(ZDOVars.s_owner) == playerId)
+                {
+                    found.Add(z);
+                }
+            }
+            found.Sort((a, b) => Vector3.Distance(a.GetPosition(), from).CompareTo(Vector3.Distance(b.GetPosition(), from)));
+            return found;
+        }
+
+        /// <summary>
+        /// Everything from <paramref name="from"/> into <paramref name="to"/>, equipped or not, as far as it fits. Each
+        /// stack is added to the destination before it leaves the source, so nothing can be lost. Returns what moved.
+        /// </summary>
+        public static Dictionary<string, int> TransferAll(Inventory from, Inventory to)
+        {
+            var moved = new Dictionary<string, int>();
+            foreach (ItemDrop.ItemData item in new List<ItemDrop.ItemData>(from.GetAllItems()))
+            {
+                ItemDrop.ItemData copy = item.Clone();
+                copy.m_equipped = false;
+                if (!to.CanAddItem(copy) || !to.AddItem(copy))
+                {
+                    continue; // no room for this one; it stays where it was
+                }
+                from.RemoveItem(item);
+                string prefab = CompanionInventory.PrefabName(item);
+                moved.TryGetValue(prefab, out int n);
+                moved[prefab] = n + item.m_stack;
+            }
+            return moved;
+        }
+
         /// <summary>Move up to <paramref name="qty"/> of an item (null = everything not equipped). Returns how many moved.</summary>
         public static int Transfer(Inventory from, Inventory to, string prefab, int qty)
         {
