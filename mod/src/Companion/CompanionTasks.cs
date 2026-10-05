@@ -52,6 +52,7 @@ namespace ValheimCompanion.Companion
         public const string Deposit = "deposit";
         public const string Cook = "cook";
         public const string LoadSmelters = "load_smelters";
+        public const string CollectOutput = "collect_output";
         public const string TearDown = "tear_down";
 
         private const float ArriveDistance = 3.5f;
@@ -133,6 +134,11 @@ namespace ValheimCompanion.Companion
         private Queue<Smelter> _smelters;
         private Dictionary<string, int> _loaded;
         private HashSet<string> _smelterFuelMissing;
+
+        // collect output
+        private Queue<Smelter> _outputs;
+        private Dictionary<string, int> _collected;
+        private float _emptiedAt;
 
         // tend fires
         private Queue<Fireplace> _fires;
@@ -230,6 +236,7 @@ namespace ValheimCompanion.Companion
                     case Deposit:
                     case Cook:
                     case LoadSmelters:
+                    case CollectOutput:
                         return task;
                     default:
                         return Follow;
@@ -379,6 +386,15 @@ namespace ValheimCompanion.Companion
             _smelterFuelMissing = new HashSet<string>();
             _stepDeadline = 0f;
             SetTask(LoadSmelters, taskId);
+        }
+
+        public void CommandCollectOutput(List<Smelter> smelters, string taskId)
+        {
+            _outputs = new Queue<Smelter>(smelters);
+            _collected = new Dictionary<string, int>();
+            _emptiedAt = -1f;
+            _stepDeadline = 0f;
+            SetTask(CollectOutput, taskId);
         }
 
         public void CommandTendFires(List<Fireplace> fires, string taskId)
@@ -606,6 +622,9 @@ namespace ValheimCompanion.Companion
                 case LoadSmelters:
                     UpdateLoadSmelters();
                     break;
+                case CollectOutput:
+                    UpdateCollectOutput();
+                    break;
             }
         }
 
@@ -633,7 +652,8 @@ namespace ValheimCompanion.Companion
                         || (task == TendFires && _fires == null)
                         || (task == Deposit && _depositPlan == null)
                         || (task == Cook && !_cookStation)
-                        || (task == LoadSmelters && _smelters == null);
+                        || (task == LoadSmelters && _smelters == null)
+                        || (task == CollectOutput && _outputs == null);
             if (lost)
             {
                 CompanionState.SetTask(Zdo, Follow);
@@ -1605,6 +1625,91 @@ namespace ValheimCompanion.Companion
                     done["note"] = "stopped after 10 minutes; anything still on the station is left there";
                 }
                 Complete(_cooked.Count > 0, done);
+            }
+        }
+
+        /// <summary>
+        /// Walk to each smelter or kiln with something finished, have it drop any stack it's holding (as a player's
+        /// "empty" does), then pick up the output lying at its output point. Stops early if the pack is full.
+        /// </summary>
+        private void UpdateCollectOutput()
+        {
+            Smelter sm = null;
+            while (_outputs.Count > 0 && !sm)
+            {
+                sm = _outputs.Peek();
+                if (!sm || !sm.m_nview || !sm.m_nview.IsValid() || (_emptiedAt < 0f && !CompanionStations.HasOutput(sm)))
+                {
+                    _outputs.Dequeue();
+                    sm = null;
+                }
+            }
+            if (!sm)
+            {
+                _outputs = null;
+                Complete(_collected.Count > 0, new JObject { ["task"] = CollectOutput, ["collected"] = JObject.FromObject(_collected) });
+                return;
+            }
+            if (_stepDeadline <= 0f)
+            {
+                _stepDeadline = Time.time + BuildStepTimeout;
+            }
+            Vector3 output = CompanionStations.OutputPoint(sm);
+            if (!_waypoint)
+            {
+                _waypoint = new GameObject("CompanionWaypoint");
+            }
+            _waypoint.transform.position = output;
+            if (_ai.GetFollowTarget() != _waypoint)
+            {
+                _ai.SetFollowTarget(_waypoint);
+            }
+            if (Vector3.Distance(output, _character.transform.position) > PickupReach)
+            {
+                if (Time.time > _stepDeadline)
+                {
+                    _outputs.Dequeue(); // can't get to this one
+                    _emptiedAt = -1f;
+                    _stepDeadline = 0f;
+                }
+                return;
+            }
+            if (!CompanionStations.Own(sm.m_nview))
+            {
+                return;
+            }
+            if (_emptiedAt < 0f)
+            {
+                sm.m_nview.InvokeRPC("RPC_EmptyProcessed"); // drops a held stack; nothing if there's none
+                _emptiedAt = Time.time;
+                return; // give the drop a moment to appear
+            }
+            foreach (ItemDrop drop in CompanionStations.OutputLying(sm))
+            {
+                string kind = CompanionInventory.PrefabName(drop.m_itemData);
+                int before = _inventory.Count(kind);
+                if (_inventory.TryPickup(drop))
+                {
+                    _collected.TryGetValue(kind, out int n);
+                    _collected[kind] = n + Mathf.Max(1, _inventory.Count(kind) - before);
+                }
+            }
+            bool left = CompanionStations.OutputLying(sm).Count > 0;
+            if (left && _inventory.Inventory.GetEmptySlots() == 0)
+            {
+                _outputs = null;
+                Complete(_collected.Count > 0, new JObject
+                {
+                    ["task"] = CollectOutput, ["collected"] = JObject.FromObject(_collected), ["reason"] = "pack_full",
+                });
+                return;
+            }
+            // Pick-ups take a tick or two to complete (ownership); move on once nothing's left or after a few seconds.
+            if (!left || Time.time - _emptiedAt > 6f)
+            {
+                _outputs.Dequeue();
+                _emptiedAt = -1f;
+                _stepDeadline = 0f;
             }
         }
 

@@ -572,6 +572,23 @@ namespace ValheimCompanion.Bridge
                     data = new JObject { ["station"] = Localization.instance.Localize(station.GetComponent<Piece>().m_name) };
                     return Queue(companion, args, "cook", () => companion.Tasks.CommandCook(station, TaskId(args, cmdId)));
                 }
+                case "collect_output":
+                {
+                    Vector3 centre = companion.transform.position;
+                    if (args["x"] != null && args["z"] != null)
+                    {
+                        centre = new Vector3((float)args["x"], centre.y, (float)args["z"]);
+                    }
+                    float radius = Mathf.Clamp(args["radius"] != null ? (float)args["radius"] : 30f, 5f, 60f);
+                    var ready = CompanionStations.Near<Smelter>(centre, radius, CompanionState.GetMaster(companion.ZDO))
+                        .Where(CompanionStations.HasOutput).ToList();
+                    if (ready.Count == 0)
+                    {
+                        return "nothing_ready";
+                    }
+                    data = new JObject { ["stations"] = new JArray(ready.Select(s => Localization.instance.Localize(s.m_name))) };
+                    return Queue(companion, args, "collect_output", () => companion.Tasks.CommandCollectOutput(ready, TaskId(args, cmdId)));
+                }
                 case "load_smelters":
                 {
                     Vector3 centre = companion.transform.position;

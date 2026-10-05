@@ -145,6 +145,23 @@ namespace ValheimCompanion.Companion
             return used;
         }
 
+        public static HashSet<string> OutputsFor(Smelter smelter) =>
+            new HashSet<string>(smelter.m_conversion.Where(c => c.m_to).Select(c => c.m_to.gameObject.name));
+
+        public static Vector3 OutputPoint(Smelter smelter) => smelter.m_outputPoint ? smelter.m_outputPoint.position : smelter.transform.position;
+
+        /// <summary>Finished output lying at the smelter's output point (bars, coal, flour...).</summary>
+        public static List<ItemDrop> OutputLying(Smelter smelter)
+        {
+            HashSet<string> outputs = OutputsFor(smelter);
+            Vector3 at = OutputPoint(smelter);
+            return ItemDrop.s_instances.Where(d => d && Vector3.Distance(d.transform.position, at) <= 2.5f
+                                                   && outputs.Contains(CompanionInventory.PrefabName(d.m_itemData))).ToList();
+        }
+
+        /// <summary>Anything to collect: output lying there, or a stack it's holding until someone empties it.</summary>
+        public static bool HasOutput(Smelter smelter) => smelter.GetProcessedQueueSize() > 0 || OutputLying(smelter).Count > 0;
+
         private static bool RemoveOne(CompanionInventory inv, string prefab)
         {
             foreach (ItemDrop.ItemData item in inv.Inventory.GetAllItems())

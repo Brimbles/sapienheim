@@ -618,9 +618,24 @@ async def scenario_cookdebug(r: Runner) -> None:
     r.results.append(("inventory", str({i["item"]: i["qty"] for i in s["self"].get("inventory", []) if i["item"] in ("RawMeat", "CookedMeat", "Coal")})))
 
 
+async def scenario_collect(r: Runner) -> None:
+    """Run the kiln from `stations` on an advanced clock until it has coal, then collect it."""
+    await r.cmd("debug_give", item="Wood", qty=10)
+    await r.task("load the kiln", "load_smelters", radius=15)
+    for _ in range(30):  # a kiln makes a coal about every 60 s of world time
+        await r.conn.command("debug_advance_time", seconds=20)
+        await asyncio.sleep(0.5)
+    res = await r.cmd("collect_output", radius=15)
+    r.results.append(("ready", f"{res.error or 'ok'} {res.data}"))
+    if res.ok:
+        await advance_until_done(r, "collect", res)
+    s = await r.state()
+    r.results.append(("coal carried", str({i["item"]: i["qty"] for i in s["self"].get("inventory", []) if i["item"] == "Coal"})))
+
+
 SCENARIOS = {
     "m4": scenario_m4, "pieces": scenario_pieces, "build": scenario_build, "inspect": scenario_inspect,
-    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds, "buildportal": scenario_buildportal, "gravestone": scenario_gravestone, "guard": scenario_guard, "fires": scenario_fires, "items": scenario_items, "deposit": scenario_deposit, "tidy_chests": scenario_tidy_chests, "hold": scenario_hold, "sign": scenario_sign, "pieceinfo": scenario_pieceinfo, "stations": scenario_stations, "cookdebug": scenario_cookdebug,
+    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds, "buildportal": scenario_buildportal, "gravestone": scenario_gravestone, "guard": scenario_guard, "fires": scenario_fires, "items": scenario_items, "deposit": scenario_deposit, "tidy_chests": scenario_tidy_chests, "hold": scenario_hold, "sign": scenario_sign, "pieceinfo": scenario_pieceinfo, "stations": scenario_stations, "cookdebug": scenario_cookdebug, "collect": scenario_collect,
 }
 
 

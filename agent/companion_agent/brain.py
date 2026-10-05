@@ -67,7 +67,7 @@ RULES = """
 - You'll be told when queued work finishes or fails. Report back in character; if something failed (e.g. need_axe), say what you need.
 - `build` puts up a structure from a template: "hut" (a wooden hut with two beds, a door, a roof and a workbench beside it, 3-5 tiles wide), "wall" (a stakewall palisade) or "fence" (a roundpole fence). Walls and fences go in a ring with a gate or a straight line; a ring next to a building goes around that building. You choose the template, its size and roughly where; the build code picks the exact spots, clears bushes and places every piece. It needs a hammer (craft one: Wood 3, Stone 2) and wood: a 3-wide hut is about 125, a fence ring round a hut about 30, a wall ring round a hut about 110. Carry a hoe (Wood 5, Stone 2) and you level the ground for a hut first, so it fits on rougher ground. If it fails with missing_materials, gather or fetch what's missing and then call resume_build. The pieces belong to your master.
 - Portals: `build` with template "portal" and a `tag` puts one up (e.g. far away, at the end of a `travel` or `go_to`, queued). Pick a short memorable tag, tell your master, and name the spot with `name` so you can find it again. A portal only connects to one other portal with the same tag.
-- `cook` cooks the raw food you carry on a spit or cooking station with a lit fire; `load_smelters` loads kilns, smelters and furnaces with ore, wood and fuel from your pack (then collect the output with pick_up). Fires, spits, kilns and smelters only run while a player is online, so tell your master if they ask for something to be ready for when they're away.
+- `cook` cooks the raw food you carry on a spit or cooking station with a lit fire; `load_smelters` loads kilns, smelters and furnaces with ore, wood and fuel from your pack (then `collect_output` gathers what they've made). Fires, spits, kilns and smelters only run while a player is online, so tell your master if they ask for something to be ready for when they're away.
 - `tend_fires` keeps the base's fires and torches burning (bring wood and resin).
 - `guard` patrols around the base (or wherever you're told) until given another order; good at night or while players are away.
 - `fetch_gravestone` does a corpse run when a player has died: their gear comes back to them.
@@ -304,6 +304,15 @@ TOOLS: list[dict[str, Any]] = [
         "description": "Load the kilns, smelters, furnaces (and the like) around you or a named place with what they take "
         "from your pack: ore or wood in, coal (or other fuel) to burn. They then work on their own; collect the bars or "
         "coal later with pick_up. task_done says what went in and any fuel you lacked.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"radius": {"type": "number"}, "around": {"type": "string"}, "queue": {"type": "boolean"}},
+        },
+    },
+    {
+        "name": "collect_output",
+        "description": "Collect what the kilns, smelters and furnaces around you or a named place have finished (coal, "
+        "bars...) into your pack. Follow it with deposit to put it in the chests. task_done lists what you collected.",
         "input_schema": {
             "type": "object",
             "properties": {"radius": {"type": "number"}, "around": {"type": "string"}, "queue": {"type": "boolean"}},
@@ -922,7 +931,7 @@ class Brain:
             return await self._travel(block.id, args, actions)
         settlement = args.pop("name", None) if name == "build" else None
         torn_place = str(args["around"]) if name == "tear_down" and args.get("around") and args.get("confirm") else None
-        if name in ("build", "repair_nearby", "tear_down", "guard", "tend_fires", "deposit", "load_smelters") and args.get("around"):
+        if name in ("build", "repair_nearby", "tear_down", "guard", "tend_fires", "deposit", "load_smelters", "collect_output") and args.get("around"):
             where = self.memory.place(str(args.pop("around")))
             if where is None:
                 known = ", ".join(p["name"] for p in self.memory.data["places"].values()) or "none yet"
@@ -1049,7 +1058,7 @@ def _worth_reporting(event: Event) -> bool:
     if event.name == "task_failed":
         return True
     return event.data.get("queue_remaining", 0) == 0 and event.data.get("task") in (
-        "gather", "give", "pick_up", "craft", "store", "fetch", "build", "go_to", "portal", "repair", "tear_down", "gravestone", "tend_fires", "deposit", "cook", "load_smelters"
+        "gather", "give", "pick_up", "craft", "store", "fetch", "build", "go_to", "portal", "repair", "tear_down", "gravestone", "tend_fires", "deposit", "cook", "load_smelters", "collect_output"
     )
 
 

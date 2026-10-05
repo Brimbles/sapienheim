@@ -95,7 +95,7 @@ See `git log` and the `[x]` items in `PLAN.md`.
 Each task is self-contained. Model choice: a mid-size model (Sonnet) for 1–7; ask the user before 8–10, which need design decisions.
 
 1. ~~Finish cook~~ done.
-2. **Smelter output pickup.** Bars and coal drop at the smelter's `m_outputPoint`. Add an optional `collect: true` to `load_smelters`, or a `collect_output` command that picks up drops within 3 m of each nearby smelter or kiln. Reuse `CompanionInventory.TryPickup`.
+2. **Smelter output pickup.** CODE WRITTEN, NOT YET TESTED: `collect_output` (command, task, agent tool) builds and the agent tests pass. Next: restart the server, stop the agent, run `scenario.py collect` (it advances the world clock so the kiln makes coal), fix anything, then tick PLAN/TESTING. Original notes: Bars and coal drop at the smelter's `m_outputPoint`. Add an optional `collect: true` to `load_smelters`, or a `collect_output` command that picks up drops within 3 m of each nearby smelter or kiln. Reuse `CompanionInventory.TryPickup`.
 3. **Equip tool** (M13; the user said "later", so do it once they agree).
    - Behaviour: `equip(item)` / `unequip(slot)`; wearing armour shows on the viking body.
    - Mod: `Humanoid.EquipItem` on the owner; the visuals sync on their own through `VisEquipment`.
