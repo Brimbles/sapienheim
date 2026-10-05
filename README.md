@@ -50,7 +50,7 @@ You need a Valheim **dedicated server** you control and a **Claude API key**. Us
 4. **Summon it:** as an admin, open the console and run `cmp_spawn`. Then `@<name> hello` in chat.
 
 ### Personality
-The default persona is a friendly, dry-witted Viking. To change it, put your own `persona.md` in the agent's data folder (`/data` in Docker), or point `AGENT_PERSONA` at a file. [agent/personas/alvar.md](agent/personas/alvar.md) is a much sillier example: a pompous skald in the style of Alan Partridge. The companion's name is set in the mod's server config (`[Companion] Name`).
+The default persona is a friendly, dry-witted Viking. To change it, put your own `persona.md` in the agent's data folder (`/data` in Docker), or point `AGENT_PERSONA` at a file. Two examples in [agent/personas/](agent/personas/): `alvar_barbarian.md`, a deadpan muscle-bound barbarian (it goes with the viking body and the voice clips), and `alvar.md`, a pompous skald in the style of Alan Partridge. The companion's name is set in the mod's server config (`[Companion] Name`).
 
 ## Development
 - `PLAN.md`: architecture, decisions, protocol and milestones.

@@ -53,6 +53,8 @@ Things that can't be tested headlessly because they need a player in the world. 
 - [ ] He swings axes, pickaxes, the hammer and weapons like a player now; check chopping, mining, building and a fight.
 
 ## 4b4. Voice clips
+- [ ] **New personality:** he's now Alvar the Barbarian (deadpan, short sentences, big on strength and discipline) to match the body and voice; your local agent uses `agent/personas/alvar_barbarian.md` (copied to `agent/data/persona.md`). The Partridge one is saved as `agent/data/persona.partridge.md`: copy it back over `persona.md` and restart the agent to return to it.
+- [ ] Speech bubbles for battle cries and "Timber!" now show the words of the clip he says.
 - [ ] He speaks with George's voice in a strong Austrian accent (87 clips). Check they're heard from where he stands, get quieter with distance, and follow your sound-effects volume:
   - **fights**: a battle cry at the start, picked for the enemy he's facing ("Let off some steam, Troll!", "Greyling! You son of a bitch!", "I eat Draugr for breakfast"), general ones ("If it bleeds, we can kill it") otherwise; a victory line at the end ("Hasta la vista, baby", "Consider that a divorce"...)
   - "Timber!", "Knock, knock" when he opens a door, "I'll be back" / "I have failed you" when he dies, "Death? Not today" when he's back, a greeting when he arrives, a line on levelling up

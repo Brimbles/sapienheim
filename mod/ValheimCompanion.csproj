@@ -35,7 +35,7 @@
     <Copy SourceFiles="@(_PluginFiles)" DestinationFolder="%(_DeployRoot.Identity)\BepInEx\plugins\$(AssemblyName)" Condition="'@(_DeployRoot)' != ''" />
     <!-- Voice clips (mod/sounds) go in a sounds folder next to the DLL. -->
     <ItemGroup>
-      <_SoundFiles Include="$(MSBuildProjectDirectory)\sounds\*.ogg;$(MSBuildProjectDirectory)\sounds\*.wav" />
+      <_SoundFiles Include="$(MSBuildProjectDirectory)\sounds\*.ogg;$(MSBuildProjectDirectory)\sounds\*.wav;$(MSBuildProjectDirectory)\sounds\captions.json" />
     </ItemGroup>
     <RemoveDir Directories="%(_DeployRoot.Identity)\BepInEx\plugins\$(AssemblyName)\sounds" Condition="'@(_DeployRoot)' != ''" />
     <Copy SourceFiles="@(_SoundFiles)" DestinationFolder="%(_DeployRoot.Identity)\BepInEx\plugins\$(AssemblyName)\sounds" Condition="'@(_DeployRoot)' != '' And '@(_SoundFiles)' != ''" />
@@ -57,7 +57,7 @@
     <RemoveDir Directories="$(_StageDir)" />
     <Copy SourceFiles="thunderstore\icon.png;thunderstore\README.md;thunderstore\CHANGELOG.md;$(TargetDir)$(TargetName).dll" DestinationFolder="$(_StageDir)" />
     <ItemGroup>
-      <_PackageSounds Include="$(MSBuildProjectDirectory)\sounds\*.ogg;$(MSBuildProjectDirectory)\sounds\*.wav" />
+      <_PackageSounds Include="$(MSBuildProjectDirectory)\sounds\*.ogg;$(MSBuildProjectDirectory)\sounds\*.wav;$(MSBuildProjectDirectory)\sounds\captions.json" />
     </ItemGroup>
     <Copy SourceFiles="@(_PackageSounds)" DestinationFolder="$(_StageDir)sounds" Condition="'@(_PackageSounds)' != ''" />
     <!-- ASCII: no UTF-8 byte-order mark, which JSON parsers can reject; Escape keeps any ; in the text intact. -->

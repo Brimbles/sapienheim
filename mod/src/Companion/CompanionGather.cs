@@ -291,8 +291,7 @@ namespace ValheimCompanion.Companion
                 float health = tree.m_nview.GetZDO().GetFloat(ZDOVars.s_health, tree.m_health);
                 if (health <= damage.m_chop)
                 {
-                    _companion.Say(TimberLines[Random.Range(0, TimberLines.Length)]);
-                    _companion.PlayMoment("timber");
+                    _companion.PlayMoment("timber", fallbackLine: TimberLines[Random.Range(0, TimberLines.Length)]);
                 }
             }
             ((IDestructible)source.Target).Damage(hit);

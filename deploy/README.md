@@ -20,7 +20,7 @@ Edit the **PhValheim** container: set *Network Type* to `Custom: sapienheim` and
 3. Docker → **Add Container** → template **sapienheim-agent**, then fill in:
    - **Claude API key** (masked).
    - **Agent token:** a long random string, for example `openssl rand -base64 24`. Use the same value in the mod config (section 4).
-   - **Memory / data:** `/mnt/user/appdata/sapienheim-agent`. To give the companion your own personality, put a `persona.md` here, for example a copy of `agent/personas/alvar.md`. Without one it uses a neutral built-in persona.
+   - **Memory / data:** `/mnt/user/appdata/sapienheim-agent`. To give the companion your own personality, put a `persona.md` here, for example a copy of `agent/personas/alvar_barbarian.md`. Without one it uses a neutral built-in persona.
    - **Dashboard:** only map it if you want it on your LAN.
 4. Start it. Its log should say `listening on 0.0.0.0:7777`. To update later: Docker → the container → **Force update**, which pulls the latest image.
 

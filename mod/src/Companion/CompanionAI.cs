@@ -130,13 +130,17 @@ namespace ValheimCompanion.Companion
             return true;
         }
 
-        /// <summary>Owner: play the clip for a moment (battle_cry, timber...), if there is one; `subject` prefers its own.</summary>
-        public void PlayMoment(string moment, bool follow = true, string subject = null)
+        /// <summary>
+        /// Owner: play the clip for a moment (battle_cry, timber...), if there is one; `subject` prefers its own. With
+        /// <paramref name="fallbackLine"/>, also say something: the clip's caption if one played, else that line.
+        /// </summary>
+        public void PlayMoment(string moment, bool follow = true, string subject = null, string fallbackLine = null)
         {
             string clip = CompanionSounds.ForMoment(moment, subject);
-            if (clip != null)
+            bool played = clip != null && PlaySound(clip, follow);
+            if (fallbackLine != null)
             {
-                PlaySound(clip, follow);
+                Say((played ? CompanionSounds.Caption(clip) : null) ?? fallbackLine);
             }
         }
 

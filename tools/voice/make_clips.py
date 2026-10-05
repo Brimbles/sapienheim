@@ -24,6 +24,7 @@ model (about 330 MB) from Hugging Face.
 """
 
 import argparse
+import json
 import re
 import sys
 from pathlib import Path
@@ -187,6 +188,12 @@ def main() -> None:
     print(f"{len(clips)} clip(s), voice {args.voice}, accent {args.accent}, pitch {args.pitch}, speed {args.speed}, grit {args.grit}:")
     for name, text in clips:
         write(args.out / f"{name}.ogg", voice.speak(text, args.voice, args.pitch, args.speed, args.grit, args.accent))
+    # Captions: what each clip says, shown in his speech bubble when a moment plays one.
+    captions_file = args.out / "captions.json"
+    captions = json.loads(captions_file.read_text(encoding="utf-8")) if captions_file.exists() else {}
+    captions.update({name: text for name, text in clips})
+    captions = {k: v for k, v in captions.items() if (args.out / f"{k}.ogg").exists()}
+    captions_file.write_text(json.dumps(captions, indent=1, ensure_ascii=False, sort_keys=True), encoding="utf-8")
     print(f"Done: {args.out}. Rebuild the mod (or copy the files) to hear them in game.")
 
 

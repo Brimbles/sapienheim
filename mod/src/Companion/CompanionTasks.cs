@@ -631,8 +631,9 @@ namespace ValheimCompanion.Companion
             CompanionAI companion = _character.GetComponent<CompanionAI>();
             if (companion)
             {
-                companion.Say(BattleCries[UnityEngine.Random.Range(0, BattleCries.Length)]);
-                companion.PlayMoment("battle_cry", subject: CompanionSounds.Subject(threat));
+                // The voice clip's words if there's one for this, else one of these lines.
+                companion.PlayMoment("battle_cry", subject: CompanionSounds.Subject(threat),
+                    fallbackLine: BattleCries[UnityEngine.Random.Range(0, BattleCries.Length)]);
             }
         }
 

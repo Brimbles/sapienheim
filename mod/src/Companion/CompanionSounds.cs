@@ -28,6 +28,7 @@ namespace ValheimCompanion.Companion
 
         private static readonly Dictionary<string, AudioClip> s_clips = new Dictionary<string, AudioClip>();
         private static List<string> s_names;
+        private static Dictionary<string, string> s_captions;
         private static float s_lastPlayed = -MinGap;
         private static AudioMixerGroup s_sfxGroup;
         private static bool s_sfxLooked;
@@ -47,6 +48,31 @@ namespace ValheimCompanion.Companion
                 }
                 return s_names;
             }
+        }
+
+        /// <summary>What a clip says (from sounds/captions.json, written by make_clips.py), or null.</summary>
+        public static string Caption(string clip)
+        {
+            if (s_captions == null)
+            {
+                s_captions = new Dictionary<string, string>();
+                string file = Path.Combine(Folder, "captions.json");
+                if (File.Exists(file))
+                {
+                    try
+                    {
+                        foreach (var kv in Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(file)))
+                        {
+                            s_captions[kv.Key.ToLowerInvariant()] = (string)kv.Value;
+                        }
+                    }
+                    catch (System.Exception e)
+                    {
+                        Jotunn.Logger.LogWarning($"Couldn't read {file}: {e.Message}");
+                    }
+                }
+            }
+            return clip != null && s_captions.TryGetValue(clip, out string text) ? text : null;
         }
 
         /// <summary>The clips the agent may pick for a line: everything that isn't a moment's.</summary>
