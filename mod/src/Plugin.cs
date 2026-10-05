@@ -47,6 +47,35 @@ namespace ValheimCompanion
 
         private Harmony _harmony;
 
+        // Re-read the config file when it's saved, so settings such as his look can be tuned without a restart.
+        private System.IO.FileSystemWatcher _configWatcher;
+        private volatile bool _configChanged;
+
+        private void WatchConfig()
+        {
+            try
+            {
+                string path = Config.ConfigFilePath;
+                _configWatcher = new System.IO.FileSystemWatcher(System.IO.Path.GetDirectoryName(path), System.IO.Path.GetFileName(path));
+                _configWatcher.Changed += (sender, e) => _configChanged = true; // on a worker thread: just flag it
+                _configWatcher.EnableRaisingEvents = true;
+            }
+            catch (System.Exception e)
+            {
+                Jotunn.Logger.LogWarning($"Not watching the config file for changes: {e.Message}");
+            }
+        }
+
+        private void Update()
+        {
+            if (_configChanged)
+            {
+                _configChanged = false;
+                Config.Reload();
+                Jotunn.Logger.LogInfo("Config file changed: reloaded");
+            }
+        }
+
         private void Awake()
         {
             DebugAutoSpawnAt = Config.Bind("Debug", "AutoSpawnAt", "",
@@ -84,8 +113,8 @@ namespace ValheimCompanion
             LookSkinTone = Config.Bind("Look", "SkinTone", 0.4f, "Viking body: 0 = pale, 1 = dark (server only).");
             LookLegs = Config.Bind("Look", "Legs", "ArmorRagsLegs", "Viking body: what its legs show when it wears no leg armour (an item name, or none) (server only).");
             LookCape = Config.Bind("Look", "Cape", "CapeWolf", "Viking body: the cape it shows when it wears none (an item name, or none) (server only).");
-            LookChest = Config.Bind("Look", "Chest", 1.25f, "Viking body: chest and shoulder size, 1 = a normal player (0.8-1.6) (server only).");
-            LookArms = Config.Bind("Look", "Arms", 1.3f, "Viking body: arm size, 1 = a normal player (0.8-1.6) (server only).");
+            LookChest = Config.Bind("Look", "Chest", 1.45f, "Viking body: chest and shoulder size, 1 = a normal player (0.8-1.6) (server only).");
+            LookArms = Config.Bind("Look", "Arms", 1.55f, "Viking body: arm size, 1 = a normal player (0.8-1.6) (server only).");
             LookHeight = Config.Bind("Look", "Height", 1.05f, "Viking body: overall height, 1 = a normal player (0.8-1.3) (server only).");
             MapMarker = Config.Bind("Companion", "MapMarker", "everyone", new ConfigDescription(
                 "Who sees the companion on the minimap and big map: everyone, master (only its master) or off (server only).",
@@ -116,6 +145,7 @@ namespace ValheimCompanion
             gameObject.AddComponent<Net.CompanionMapMarker>();
             gameObject.AddComponent<Net.PlacePins>();
 
+            WatchConfig();
             Jotunn.Logger.LogInfo($"{PluginName} {PluginVersion} loaded (headless={Jotunn.Managers.GUIManager.IsHeadless()})");
         }
 

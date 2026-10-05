@@ -56,6 +56,9 @@ def austrian(phonemes: str, level: int) -> str:
         while core and core[-1] in ".,!?;:—…\"”":
             core, tail = core[:-1], core[-1] + tail
         w = core
+        if level >= 4:
+            words.append(arnold(w) + tail)
+            continue
         if level >= 3:
             w = re.sub(r"^([ˈˌ]?)ð", r"\1d", w)  # "this" -> "dis", before level 1 makes the rest of the "th"s "z"
         w = w.replace("w", "v").replace("ð", "z").replace("θ", "s")
@@ -95,6 +98,55 @@ def thick(w: str) -> str:
     return w
 
 
+VOWELS = "aeiouɐɑɒɔəɛɜɪʊʌæœIAOQW"
+
+
+def arnold(w: str) -> str:
+    """Level 4, Arnold: built on what's distinctive in his English rather than generic German. "v" for "w"; "d" for
+    every voiced "th" ("dis", "dat", "de") and "s" for the other; "bek", "kam", "eet"; pure vowels ("goh", "deh");
+    a light tapped r (British pronunciation underneath drops the final ones: "choppa"); "-a" endings; "sht"/"shp"/
+    "shl"/"shm"/"shn"/"shv"; "ch" for "j"; hard endings; and the stressed vowel drawn out ("baack"). No glottal stops
+    and no throaty r: those made level 3 sound choppy and French."""
+    plain = w.replace("ˈ", "").replace("ˌ", "")
+    w = w.replace("w", "v").replace("ð", "d").replace("θ", "s")
+    w = w.replace("æ", "ɛ").replace("a", "ɛ").replace("ʌ", "a")
+    w = w.replace("ɪ", "i").replace("ʊ", "u").replace("ɜː", "œː").replace("ɜ", "œ")
+    w = w.replace("ɹ", "ɾ").replace("ʤ", "ʧ")
+    w = w.replace("Q", "oː").replace("O", "oː").replace("A", "eː").replace("ɒ", "ɔ").replace("ɛː", "ɛɐ")
+    for sp, sh in (("st", "ʃt"), ("sp", "ʃp"), ("sl", "ʃl"), ("sm", "ʃm"), ("sn", "ʃn"), ("sv", "ʃv")):
+        lead = len(w) - len(w.lstrip(STRESS))
+        if w[lead:].startswith(sp):
+            w = w[:lead] + sh + w[lead + len(sp):]
+    if w.endswith("ŋ"):
+        w += "k"
+    if len(plain) > 2 and w and w[-1] in "əɚ":
+        w = w[:-1] + "ɐ"
+    # Draw out the stressed vowel (the slow, deliberate delivery): the first vowel after the main stress mark.
+    i = w.find("ˈ")
+    if i >= 0:
+        for j in range(i + 1, len(w)):
+            if w[j] in VOWELS:
+                # Plain vowels only: the capitals are diphthongs ("now", "my") and keep their glide.
+                if w[j] not in "IAOQW" and (j + 1 >= len(w) or w[j + 1] != "ː"):
+                    w = w[:j + 1] + "ː" + w[j + 1:]
+                break
+    if w and w[-1] in VOICED_TO_UNVOICED:
+        w = w[:-1] + VOICED_TO_UNVOICED[w[-1]]
+    return w
+
+
+def staccato(text: str) -> str:
+    """His halting delivery: a short pause after every second word ("I'll be, back"), never inside a name."""
+    out = []
+    for sentence in re.split(r"(?<=[.!?])\s+", text.strip()):
+        words = sentence.split()
+        for k, word in enumerate(words):
+            last = k == len(words) - 1
+            pause = k % 2 == 1 and not last and word[-1:].isalpha() and not words[k + 1][:1].isupper()
+            out.append(word + ("," if pause else ""))
+    return " ".join(out)
+
+
 def parse_lines(path: Path) -> list[tuple[str, str]]:
     enemies: list[tuple[str, str]] = []
     templates = []
@@ -132,15 +184,18 @@ class Voice:
         # English pronunciation, American or British (for the British voices, b*_), whatever the voice.
         self.pipelines = {lang: KPipeline(lang_code=lang, repo_id="hexgrad/Kokoro-82M") for lang in ("a", "b")}
 
-    def speak(self, text: str, voice: str, pitch: float, speed: float, grit: float, accent: int = 0) -> np.ndarray:
-        pipeline = self.pipelines["b" if voice.startswith("b") else "a"]
+    def speak(self, text: str, voice: str, pitch: float, speed: float, grit: float, accent: int = 0, halting: bool = False) -> np.ndarray:
+        pipeline = self.pipelines["b" if voice.startswith("b") or accent >= 4 else "a"]
+        if halting:
+            text = staccato(text)
         phonemes, _ = pipeline.g2p(text)
         phonemes = austrian(phonemes, accent)
         # Generate faster by 1/pitch, then stretch it back out: slower playback lowers the pitch, the pace evens out.
         parts = [np.asarray(r.audio, dtype=np.float32) for r in pipeline.generate_from_tokens(phonemes, voice=voice, speed=speed / pitch)]
         audio = np.concatenate(parts) if parts else np.zeros(1, dtype=np.float32)
         up, down = _ratio(1.0 / pitch)
-        audio = resample_poly(audio, up, down).astype(np.float32)
+        if up != down:
+            audio = resample_poly(audio, up, down).astype(np.float32)
         if grit > 0:
             audio = np.tanh(audio * (1.0 + 6.0 * grit)) / np.tanh(1.0 + 6.0 * grit)  # soft saturation
         return _finish(audio)
@@ -177,8 +232,10 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("lines", nargs="?", type=Path, help="text file of `name: text` lines")
     ap.add_argument("--only", help="make just this clip")
-    ap.add_argument("--voice", default="bm_george", help="Kokoro voice (default bm_george)")
-    ap.add_argument("--accent", type=int, default=3, choices=[0, 1, 2, 3], help="Austrian accent: 0 none, 1 light, 2 strong, 3 thick (default)")
+    ap.add_argument("--voice", default="bm_george", help="Kokoro voice (default bm_george), or a blend: am_michael,bm_george")
+    ap.add_argument("--accent", type=int, default=3, choices=[0, 1, 2, 3, 4], help="Austrian accent: 0 none, 1 light, 2 strong, 3 thick (default), 4 Arnold")
+    ap.add_argument("--halting", action="store_true", help="a short pause after every second word")
+    ap.add_argument("--arnold-auditions", action="store_true", help="the Arnold accent in a grid of voices, paces and pitches")
     ap.add_argument("--pitch", type=float, default=0.85, help="pitch factor, below 1 is deeper (default 0.85)")
     ap.add_argument("--speed", type=float, default=0.95, help="speaking pace (default 0.95)")
     ap.add_argument("--grit", type=float, default=0.3, help="rasp, 0-1 (default 0.3)")
@@ -188,6 +245,27 @@ def main() -> None:
     args.voice_given = any(a == "--voice" or a.startswith("--voice=") for a in sys.argv[1:])
 
     voice = Voice()
+    if args.arnold_auditions:
+        text = args.audition or "I'll be back. Get to the boat, now! Come with me if you want to live."
+        # (file name, voice, pitch, speed, grit, halting)
+        grid = [
+            ("a_george", "bm_george", 1.0, 0.9, 0.0, False),
+            ("b_michael", "am_michael", 1.0, 0.9, 0.0, False),
+            ("c_onyx", "am_onyx", 1.0, 0.9, 0.0, False),
+            ("d_michael_george", "am_michael,bm_george", 1.0, 0.9, 0.0, False),
+            ("e_onyx_michael", "am_onyx,am_michael", 1.0, 0.9, 0.0, False),
+            ("f_george_halting", "bm_george", 1.0, 0.9, 0.0, True),
+            ("g_michael_deeper_slow", "am_michael", 0.93, 0.82, 0.0, False),
+            ("h_fenrir", "am_fenrir", 1.0, 0.9, 0.0, False),
+            ("i_george_old_settings", "bm_george", 0.85, 0.95, 0.3, False),
+        ]
+        out = HERE / "auditions" / "arnold"
+        print(f"Arnold auditions ({text!r}):")
+        for name, v, pitch, speed, grit, halting in grid:
+            write(out / f"{name}.wav", voice.speak(text, v, pitch, speed, grit, 4, halting))
+        print(f"Listen in {out}. Then make the clips with the one you like, e.g.\n"
+              "  uv run python make_clips.py lines.txt --accent 4 --voice am_michael,bm_george --pitch 1.0 --speed 0.9 --grit 0")
+        return
     if args.audition:
         print("Auditions:")
         if args.voice_given:
@@ -209,7 +287,7 @@ def main() -> None:
             sys.exit(f"no clip called {args.only!r} in {args.lines.name}")
     print(f"{len(clips)} clip(s), voice {args.voice}, accent {args.accent}, pitch {args.pitch}, speed {args.speed}, grit {args.grit}:")
     for name, text in clips:
-        write(args.out / f"{name}.ogg", voice.speak(text, args.voice, args.pitch, args.speed, args.grit, args.accent))
+        write(args.out / f"{name}.ogg", voice.speak(text, args.voice, args.pitch, args.speed, args.grit, args.accent, args.halting))
     # Captions: what each clip says, shown in his speech bubble when a moment plays one.
     captions_file = args.out / "captions.json"
     captions = json.loads(captions_file.read_text(encoding="utf-8")) if captions_file.exists() else {}

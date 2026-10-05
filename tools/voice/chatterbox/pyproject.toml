@@ -1,0 +1,28 @@
+[project]
+name = "sapienheim-voice-chatterbox"
+version = "0.1.0"
+description = "Voice clips for the companion with Chatterbox (local voice cloning from a short reference sample)"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "chatterbox-tts",
+    "torch==2.6.0",
+    "torchaudio==2.6.0",
+    "soundfile",
+    "scipy",
+    "numpy",
+    "setuptools<81",  # perth (the audio watermarker) still imports pkg_resources
+]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu124" }
+torchaudio = { index = "pytorch-cu124" }
+
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
+
+[tool.uv]
+# pkuseg (Chinese word splitting, for Chatterbox's multilingual model) needs the C++ build tools to install;
+# English clips don't use it.
+override-dependencies = ["pkuseg; sys_platform == 'never'"]
