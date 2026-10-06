@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.1
+- Package tidy-up: voice clips included, no outside links.
+
 ## 0.1.0
 First test release.
 - Companion NPC on the player model (a configurable viking: hair, beard, colours, outfit and a bigger chest and arms; or the Dverger body), configurable name, tame from birth, simulated by the dedicated server even with nobody nearby.
