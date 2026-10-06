@@ -22,7 +22,7 @@
 - **Levels with you:** stronger after each boss, and its armour matches yours.
 - **Map marker** for the companion.
 - **A look of its own:** a burly viking (hair, beard, colours and proportions are configurable), or the Dverger body.
-- **Voice (optional):** plays short voice clips at moments (battle cries, "Timber!", arriving) if you add them. The package ships without clips: put `.ogg` files in `BepInEx/plugins/ValheimCompanion/sounds/` on each player's game (the repo's `tools/voice` makes them from a lines file, with a local text-to-speech or voice-cloning model). Without clips its lines still show as speech bubbles.
+- **A voice:** short voice clips at moments (battle cries, "Timber!", arriving) and when the AI adds one to what it says. Replace the files in `BepInEx/plugins/ValheimCompanion/sounds/` to give it a different voice (the repo's `tools/voice` makes clips from a lines file).
 
 ## Requirements
 - A **dedicated server** (Windows or Linux). Not tested on player-hosted games.
