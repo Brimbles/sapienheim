@@ -26,6 +26,6 @@ First test release.
 - Rides along on boats as a passenger (swims to the ladder, stands by the mast, swims back if he falls in). Fishes with a rod and bait.
 - Long missions: if he dies far away on a job, he comes back at the job's site.
 - Exploring: goes off in a direction, uncovering its master's map and pinning boss altars, traders, dungeons and the like; settlements nobody named get a name of his choosing.
-- A new voice for the clips, made with Chatterbox; swap in your own with the repo's `tools/voice`.
+- A new voice for the clips, made with Chatterbox.
 - Guard duty with raid alerts; corpse runs to fetch a gravestone; building tagged portals and signs; scouting for ores, berries and trees in explored land; boss prep.
 - Remembers each player and what they did together; a "while you were away" when someone returns; a tale of the day at dusk.

@@ -22,12 +22,12 @@
 - **Levels with you:** stronger after each boss, and its armour matches yours.
 - **Map marker** for the companion.
 - **A look of its own:** a burly viking (hair, beard, colours and proportions are configurable), or the Dverger body.
-- **A voice:** short voice clips at moments (battle cries, "Timber!", arriving) and when the AI adds one to what it says. Replace the files in `BepInEx/plugins/ValheimCompanion/sounds/` to give it a different voice (the repo's `tools/voice` makes clips from a lines file).
+- **A voice:** short voice clips at moments (battle cries, "Timber!", arriving) and when the AI adds one to what it says. Replace the `.ogg` files in `BepInEx/plugins/ValheimCompanion/sounds/` to give it a different voice.
 
 ## Requirements
 - A **dedicated server** (Windows or Linux). Not tested on player-hosted games.
 - **Every player** needs this mod (Jötunn enforces it).
-- The **agent** running where the server can reach it, and a Claude API key. The agent, its Docker image and setup steps are at https://github.com/Brimbles/sapienheim.
+- The **agent** running where the server can reach it, and a Claude API key.
 
 ## Setup (server)
 1. Install the mod on the server and on every player's game (a mod manager or PhValheim handles this).

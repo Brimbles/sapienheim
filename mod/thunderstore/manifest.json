@@ -1,7 +1,7 @@
 {
   "name": "Sapienheim",
   "version_number": "{VERSION}",
-  "website_url": "https://github.com/Brimbles/sapienheim",
+  "website_url": "",
   "description": "Experimental: an AI companion (Claude) that follows, fights, gathers, crafts and builds. Server-side; needs a self-hosted agent and your own Claude API key. Every player needs the mod.",
   "dependencies": [
     "denikson-BepInExPack_Valheim-5.4.2351",
