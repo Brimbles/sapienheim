@@ -45,3 +45,6 @@ why_you_cry: I know now why you cry. But it's something I can never do.
 no_requests: I don't do requests.
 you_are_me: You are not you, you are me!
 eat_that_contract: I live to see you eat that contract!
+get_to_midgard: Get your ass to Midgard
+built_a_ship: I need your clothes, your boots, and your longship.
+this_fight_looks_tough: But I hope you leave enough room for my fist, because I'm going to ram it into your stomach!

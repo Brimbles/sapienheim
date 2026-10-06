@@ -39,3 +39,6 @@ agent/scripts/pieces.json
 # Voice tool: local model environment and audition clips
 tools/voice/.venv/
 tools/voice/auditions/
+
+# Voice reference recordings (not for the repo)
+tools/voice/my_arnold_impressions/
