@@ -8,7 +8,7 @@ First test release.
 - Gather (wood, stone, pickables) with tools, respecting wards; chests; crafting at stations.
 - Build from templates: a hut (3-5 x 4 floor tiles, two beds, levels the ground first if it has a hoe), wall and fence rings fitted around a building, or lines. Repair nearby buildings, use portals, open doors.
 - Named places (settlements it built, spots it was told to remember) show as pins on everyone's map.
-- Voice clips (`sounds` folder): played at moments (battle cry, Timber!, death, level-up, arrival) and when the AI adds one to a line.
+- Voice clips you add to the `sounds` folder play at moments (battle cry, Timber!, death, level-up, arrival) and when the AI adds one to a line.
 - Tear down buildings on its master's orders (a building, everything within a radius, or only one material), always after asking.
 - Damage per hit grows with bosses defeated (18 at the start, 110 at the end), tunable with `Companion.DamageScale`.
 - Keeps its inventory through death, restarts and going off duty; levels with its master; map marker.
@@ -25,6 +25,7 @@ First test release.
 - Blueprints: builds shared PlanBuild `.blueprint` files (vanilla pieces only) and saves buildings as new ones; ships with a `cabin`.
 - Rides along on boats as a passenger (swims to the ladder, stands by the mast, swims back if he falls in). Fishes with a rod and bait.
 - Long missions: if he dies far away on a job, he comes back at the job's site.
-- A much thicker Austrian accent on the voice clips.
+- Exploring: goes off in a direction, uncovering its master's map and pinning boss altars, traders, dungeons and the like; settlements nobody named get a name of his choosing.
+- Voice clips are optional and not bundled: add your own `.ogg` files (the repo's `tools/voice` makes them).
 - Guard duty with raid alerts; corpse runs to fetch a gravestone; building tagged portals and signs; scouting for ores, berries and trees in explored land; boss prep.
 - Remembers each player and what they did together; a "while you were away" when someone returns; a tale of the day at dusk.

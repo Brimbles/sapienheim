@@ -60,7 +60,9 @@
     <Error Text="Couldn't read PluginVersion (x.y.z) from src/Plugin.cs" Condition="'$(_PackageVersion)' == ''" />
     <RemoveDir Directories="$(_StageDir)" />
     <Copy SourceFiles="thunderstore\icon.png;thunderstore\README.md;thunderstore\CHANGELOG.md;$(TargetDir)$(TargetName).dll" DestinationFolder="$(_StageDir)" />
-    <ItemGroup>
+    <!-- Voice clips stay out of the public package unless asked for (dotnet build -c Release -p:PackageSounds=true):
+         players add their own (see the README). Local deploys above always copy them. -->
+    <ItemGroup Condition="'$(PackageSounds)' == 'true'">
       <_PackageSounds Include="$(MSBuildProjectDirectory)\sounds\*.ogg;$(MSBuildProjectDirectory)\sounds\*.wav;$(MSBuildProjectDirectory)\sounds\captions.json" />
     </ItemGroup>
     <Copy SourceFiles="@(_PackageSounds)" DestinationFolder="$(_StageDir)sounds" Condition="'@(_PackageSounds)' != ''" />
