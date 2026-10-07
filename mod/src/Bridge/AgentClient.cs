@@ -37,6 +37,8 @@ namespace ValheimCompanion.Bridge
 
         public static bool IsConnected => s_instance && s_instance._connected;
 
+        private bool _warnedNoToken;
+
         private void Awake() => s_instance = this;
 
         public static bool Send(JObject msg)
@@ -55,6 +57,12 @@ namespace ValheimCompanion.Bridge
         private void Update()
         {
             bool shouldRun = Role.IsServer && ZNet.instance && Plugin.AgentToken.Value.Length > 0;
+            if (Role.IsServer && ZNet.instance && Plugin.AgentToken.Value.Length == 0 && !_warnedNoToken)
+            {
+                // Say so once: without a token it never tries, and a silent log hid that on the first deploy.
+                _warnedNoToken = true;
+                Jotunn.Logger.LogWarning("Not connecting to the agent: no [Agent] Token set in com.sapienheim.valheimcompanion.cfg");
+            }
             if (shouldRun && !_running)
             {
                 StartLoop();
