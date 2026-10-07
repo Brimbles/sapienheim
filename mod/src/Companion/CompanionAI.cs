@@ -164,25 +164,30 @@ namespace ValheimCompanion.Companion
             CompanionSounds.Play(clip, transform, follow);
         }
 
-        private string _swingTrigger;
-        private bool _swingResolved;
+        // Each tool's swing, worked out once per tool (an axe and a hammer swing differently).
+        private readonly Dictionary<string, string> _swingTriggers = new Dictionary<string, string>();
 
         /// <summary>
         /// Owner only: play a swing for a tool hit. Uses the tool's own attack animation if this body's animator
         /// has it, otherwise the first attack animation of an item it carries that the animator does know.
-        /// Triggers are synced to clients by ZSyncAnimation.
+        /// Triggers are synced to clients by ZSyncAnimation, so it's the players' animators that play them.
         /// </summary>
         public void PlaySwing(ItemDrop.ItemData tool)
         {
-            if (!_swingResolved)
+            if (tool == null)
             {
-                _swingResolved = true;
-                _swingTrigger = ResolveSwingTrigger(tool);
-                Jotunn.Logger.LogInfo($"{_character.m_name}: swing animation = {_swingTrigger ?? "(none available)"}");
+                return;
             }
-            if (_swingTrigger != null)
+            string key = tool.m_shared.m_name;
+            if (!_swingTriggers.TryGetValue(key, out string trigger))
             {
-                _character.m_zanim.SetTrigger(_swingTrigger);
+                trigger = ResolveSwingTrigger(tool);
+                _swingTriggers[key] = trigger;
+                Jotunn.Logger.LogInfo($"{_character.m_name}: swing animation for {key} = {trigger ?? "(none available)"}");
+            }
+            if (trigger != null)
+            {
+                _character.m_zanim.SetTrigger(trigger);
             }
         }
 
@@ -199,7 +204,14 @@ namespace ValheimCompanion.Companion
                     }
                 }
             }
-            var candidates = new List<string> { tool.m_shared.m_attack?.m_attackAnimation };
+            string own = tool.m_shared.m_attack?.m_attackAnimation;
+            if (triggers.Count == 0)
+            {
+                // A headless server's animator may report no parameters at all (Linux, no rendering). The trigger is
+                // only sent on to the players, whose animators have the tool's own swing, so trust it.
+                return string.IsNullOrEmpty(own) ? "swing_axe" : own;
+            }
+            var candidates = new List<string> { own };
             foreach (ItemDrop.ItemData item in _character.GetInventory().GetAllItems())
             {
                 candidates.Add(item.m_shared.m_attack?.m_attackAnimation);

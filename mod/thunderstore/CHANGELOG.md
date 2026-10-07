@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.2
+- He swings his axe, pickaxe and hammer again on Linux servers (the swing was looked up once and could come back empty on a headless server); each tool gets its own swing.
+- The server log says so when no agent token is set, instead of staying silent.
+
 ## 0.1.1
 - Package tidy-up: voice clips included, no outside links.
 
