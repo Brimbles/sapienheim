@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.3
+- He no longer chases enemies far or for long: he gives up beyond 25 m from where he was (or from you, when following) or after 30 s of chasing, and leaves that enemy be for a while. Orders to attack, and guard duty, still let him pursue.
+- New build: a workshop, the starter shelter that makes a workbench usable (two floors, back and side walls, open front, roof, a torch if he has resin). He builds one when a craft needs a workbench.
+
 ## 0.1.2
 - He swings his axe, pickaxe and hammer again on Linux servers (the swing was looked up once and could come back empty on a headless server); each tool gets its own swing.
 - The server log says so when no agent token is set, instead of staying silent.

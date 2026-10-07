@@ -69,6 +69,9 @@ namespace ValheimCompanion.Companion
         private const int MaxQueue = 8;
         private const float ThreatRange = 20f;
         private const float DisengageRange = 35f;
+        private const float ChaseLeash = 25f;      // give up when the enemy gets this far from his anchor
+        private const float ChaseTimeout = 30f;    // or still chasing (not trading blows) after this long
+        private const float IgnoreAfterGivingUp = 20f;
         private const float BattleCryCooldown = 30f;
         private const float CraftSeconds = 2f;
         private const float StationTimeout = 120f;
@@ -105,6 +108,24 @@ namespace ValheimCompanion.Companion
         private Character _threat;
         private bool _inCombat;
         private float _combatStart;
+        private Vector3 _combatAnchor;
+        private readonly Dictionary<Character, float> _ignoreUntil = new Dictionary<Character, float>();
+
+        /// <summary>An enemy he gave up chasing a moment ago: not a target again yet (for him or his vanilla AI).</summary>
+        public bool IsIgnored(Character c)
+        {
+            if (c == null || !_ignoreUntil.TryGetValue(c, out float until))
+            {
+                return false;
+            }
+            // Back on top of him (it turned to fight), it's fair game again.
+            if (Time.time < until && Vector3.Distance(c.transform.position, _character.transform.position) > 5f)
+            {
+                return true;
+            }
+            _ignoreUntil.Remove(c);
+            return false;
+        }
         private float _nextBattleCry;
 
         private string _applied; // task the AI is currently set up for
@@ -858,12 +879,26 @@ namespace ValheimCompanion.Companion
                 threat = FindThreat();
             }
 
+            if (threat && TooFarToChase(threat))
+            {
+                // Don't run off after it: let it go (for a while) and get back to work, unless something else is on us.
+                Jotunn.Logger.LogInfo($"{_character.m_name}: giving up the chase after {threat.m_name}");
+                _ignoreUntil[threat] = Time.time + IgnoreAfterGivingUp;
+                if (_ai.m_targetCreature == threat)
+                {
+                    _ai.m_targetCreature = null;
+                }
+                _threat = null;
+                threat = FindThreat();
+            }
+
             if (threat)
             {
                 if (!_inCombat)
                 {
                     _inCombat = true;
                     _combatStart = Time.time;
+                    _combatAnchor = _character.transform.position;
                     Jotunn.Logger.LogInfo($"{_character.m_name}: pausing {Current} to fight {threat.m_name}");
                     BattleCry(threat);
                     AgentClient.SendEvent("combat", new JObject { ["state"] = "started", ["enemy"] = Localization.instance.Localize(threat.m_name), ["paused_task"] = Current });
@@ -891,6 +926,30 @@ namespace ValheimCompanion.Companion
             return false;
         }
 
+        /// <summary>
+        /// Chasing too far or too long. The anchor is his master when following, the guarded area on guard (whose
+        /// leash is the area plus a margin, and no time limit: patrolling is for fighting), else where the fight began.
+        /// </summary>
+        private bool TooFarToChase(Character threat)
+        {
+            Vector3 me = _character.transform.position, them = threat.transform.position;
+            if (Current == Guard)
+            {
+                return Flat(them - _guardCentre) > _guardRadius + 20f;
+            }
+            Vector3 anchor = _inCombat ? _combatAnchor : me;
+            if (Current == Follow && FindMaster() is Player master)
+            {
+                anchor = master.transform.position;
+            }
+            if (Flat(them - anchor) > ChaseLeash)
+            {
+                return true;
+            }
+            bool chasing = Flat(them - me) > 6f;
+            return _inCombat && chasing && Time.time - _combatStart > ChaseTimeout;
+        }
+
         /// <summary>The nearest enemy within range that is actually aggressive (alerted, or going for us, a player or a tamed animal).</summary>
         private Character FindThreat()
         {
@@ -898,7 +957,7 @@ namespace ValheimCompanion.Companion
             float bestDist = ThreatRange;
             foreach (Character c in Character.GetAllCharacters())
             {
-                if (c == _character || c.IsDead() || c.IsPlayer() || c.IsTamed())
+                if (c == _character || c.IsDead() || c.IsPlayer() || c.IsTamed() || IsIgnored(c))
                 {
                     continue;
                 }

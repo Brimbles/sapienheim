@@ -349,6 +349,12 @@ namespace ValheimCompanion.Companion
                 {
                     return;
                 }
+                // One he just gave up chasing: his vanilla AI shouldn't pick it straight back up.
+                if (IsGivenUp(a, b) || IsGivenUp(b, a))
+                {
+                    __result = false;
+                    return;
+                }
                 if (s_companions.Contains(a) && b.GetFaction() == Character.Faction.AnimalsVeg)
                 {
                     __result = IsHostileTowardUs(b, a);
@@ -357,6 +363,16 @@ namespace ValheimCompanion.Companion
                 {
                     __result = IsHostileTowardUs(a, b);
                 }
+            }
+
+            private static bool IsGivenUp(Character companion, Character other)
+            {
+                if (!s_companions.Contains(companion))
+                {
+                    return false;
+                }
+                CompanionAI ai = companion.GetComponent<CompanionAI>();
+                return ai && ai._tasks != null && ai._tasks.IsIgnored(other);
             }
 
             private static bool IsCommandedTarget(Character companion, Character other)

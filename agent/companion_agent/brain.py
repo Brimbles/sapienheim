@@ -61,7 +61,7 @@ RULES = """
 - You carry an inventory (see `inventory` in the state; items are named by id, e.g. "Wood"). Players hand you things by dropping them near you; use `pick_up` to collect them. Use `give` to hand items to a player.
 - `gather` collects resources: it picks things up, picks branches and stones, chops trees and logs (needs an axe in your inventory) and mines rocks (needs a pickaxe). It never chops or mines inside a ward (anyone's base, including your master's), though picking up and harvesting there is fine. If the only trees or rocks nearby are warded it fails with only_sources_inside_wards, so offer to go further out.
 - `chests` in the state lists nearby chests with their contents; use `fetch_items` / `store_items` with a chest id.
-- `craft` makes items from your inventory, walking to the right crafting station if the recipe needs one. Check what an item needs with `recipe` first; if you're short, gather or fetch the materials, then craft.
+- `craft` makes items from your inventory, walking to the right crafting station if the recipe needs one. Check what an item needs with `recipe` first; if you're short, gather or fetch the materials, then craft. A hammer needs no station (Wood 3, Stone 2). If a craft fails with no_station:Workbench, build a `workshop` first (the build tool: a small roofed shelter with a workbench, about 32 wood, needs a hammer; a torch too if you carry 2 resin), then craft.
 - You automatically drop whatever you're doing to fight aggressive enemies nearby, then carry on. No tool call is needed for that.
 - Work tools (go_to, attack, pick_up, give, gather, store_items, fetch_items, craft, build, resume_build, repair_nearby) take `queue: true` to run one after another. Plan multi-step jobs as a queue, e.g. gather wood, then give it. If one task fails, the rest of the queue is dropped and you'll hear about it.
 - You'll be told when queued work finishes or fails. Report back in character; if something failed (e.g. need_axe), say what you need.
@@ -291,7 +291,8 @@ TOOLS: list[dict[str, Any]] = [
         "description": "Build a structure from a template near you, near a player, or around a named place. Templates: "
         "hut (a wooden hut to live in: two beds, a door, gable roof, workbench beside it; width 3-5 floor tiles of 2 m, "
         "8 m deep; about 125 wood for width 3, +20 per extra tile; with a hoe in your inventory you level the ground "
-        "first, otherwise it needs fairly flat ground); wall (2 m stakewall palisade, 2 wood per metre, 12 for the "
+        "first, otherwise it needs fairly flat ground); workshop (the starter shelter for a workbench, so you can craft at it: "
+        "two floor pieces, back and side walls, open front, roof, a torch if you carry 2 resin; about 32 wood, needs a hammer); wall (2 m stakewall palisade, 2 wood per metre, 12 for the "
         "gate); fence (1 m roundpole fence, 0.5 wood per metre, 4 for the gate). Walls and fences go in a ring with a "
         "gate facing you (shape=ring) or a straight line facing you (shape=line). A ring next to a building (near you, "
         "the player, or `around` a named place) is automatically fitted around that building with 3 m to spare, "
@@ -304,7 +305,7 @@ TOOLS: list[dict[str, Any]] = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "template": {"type": "string", "enum": ["hut", "wall", "fence", "portal", "sign", "outpost", "farm", "village", "fort", "mining_camp", "port", "blueprint"]},
+                "template": {"type": "string", "enum": ["hut", "wall", "fence", "portal", "sign", "outpost", "farm", "village", "fort", "mining_camp", "port", "blueprint", "workshop"]},
                 "blueprint": {"type": "string", "description": "blueprint: its name (see the blueprints tool)."},
                 "text": {"type": "string", "description": "sign: the inscription, up to 50 characters."},
                 "tag": {"type": "string", "description": "portal: its tag; a portal pairs with the one other portal with the same tag."},

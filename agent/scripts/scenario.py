@@ -828,7 +828,7 @@ async def scenario_near(r: Runner) -> None:
     st = await r.state()
     res = await r.conn.command("pieces_near", pos=[x, st["self"]["pos"][1], z], radius=radius)
     for p in sorted((res.data or {}).get("pieces", []), key=lambda p: p["piece"]):
-        if p["piece"] not in ("wood_roof", "wood_wall_roof_a", "wood_floor"):
+        if p["piece"] not in ("wood_roof", "wood_wall_roof_a", "wood_floor") or len(sys.argv) > 5:
             r.results.append((p["piece"], f"{p['pos']} yaw {p['yaw']}"))
     r.results.append(("he is at", str(st["self"]["pos"])))
 
@@ -848,6 +848,42 @@ async def scenario_resume(r: Runner) -> None:
     if res.ok:
         await advance_until_done(r, "resumed build", res, max_real_s=1500, step_s=1)
         await r.cmd("save_world")
+
+
+async def scenario_workshop(r: Runner) -> None:
+    """The workshop (roofed workbench lean-to): scenario.py workshop [x z]. Builds it, counts what stands, checks cover."""
+    if len(sys.argv) > 3:
+        await r.cmd("debug_teleport", x=float(sys.argv[2]), z=float(sys.argv[3]))
+        await asyncio.sleep(5)
+    rec = await r.cmd("recipe", item="Hammer")
+    r.results.append(("hammer recipe", f"{rec.error or 'ok'} {rec.data}"))
+    await r.cmd("debug_clear", all=True)
+    for item, qty in (("Hammer", 1), ("Hoe", 1), ("Wood", 60), ("Stone", 10), ("Resin", 4)):
+        await r.cmd("debug_give", item=item, qty=qty)
+    res = await r.cmd("build", template="workshop")
+    r.results.append(("build", f"{res.error or 'ok'} {res.data}"))
+    if not res.ok:
+        return
+    await advance_until_done(r, "build the workshop", res, max_real_s=600, step_s=1)
+    await asyncio.sleep(20)
+    near = await r.conn.command("pieces_near", pos=res.data["site"], radius=6)
+    kinds = {}
+    for p in (near.data or {}).get("pieces", []):
+        if p["creator"] != 0:
+            kinds[p["piece"]] = kinds.get(p["piece"], 0) + 1
+    r.results.append(("standing after 20 s", f"{sum(kinds.values())}: {kinds}"))
+    cover = await r.cmd("debug_cover")
+    r.results.append(("workbench cover", f"{cover.error or 'ok'} {cover.data}"))
+    await r.cmd("save_world")
+
+
+async def scenario_cover(r: Runner) -> None:
+    """Cover at the nearest crafting station (roof and the 70% rule): scenario.py cover [x z]."""
+    if len(sys.argv) > 3:
+        await r.cmd("debug_teleport", x=float(sys.argv[2]), z=float(sys.argv[3]))
+        await asyncio.sleep(4)
+    cover = await r.cmd("debug_cover")
+    r.results.append(("cover", f"{cover.error or 'ok'} {cover.data}"))
 
 
 async def scenario_tamecheck(r: Runner) -> None:
@@ -981,7 +1017,7 @@ async def scenario_blueprint(r: Runner) -> None:
 
 SCENARIOS = {
     "m4": scenario_m4, "pieces": scenario_pieces, "build": scenario_build, "inspect": scenario_inspect,
-    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds, "buildportal": scenario_buildportal, "gravestone": scenario_gravestone, "guard": scenario_guard, "fires": scenario_fires, "items": scenario_items, "deposit": scenario_deposit, "tidy_chests": scenario_tidy_chests, "hold": scenario_hold, "sign": scenario_sign, "pieceinfo": scenario_pieceinfo, "stations": scenario_stations, "cookdebug": scenario_cookdebug, "collect": scenario_collect, "find": scenario_find, "farm": scenario_farm, "labels": scenario_labels, "feed": scenario_feed, "settlement": scenario_settlement, "prefabs": scenario_prefabs, "road": scenario_road, "bridge": scenario_bridge, "blueprint": scenario_blueprint, "fish": scenario_fish, "boat": scenario_boat, "teleport": scenario_teleport, "near": scenario_near, "shore": scenario_shore, "resume": scenario_resume, "mission": scenario_mission, "coast": scenario_coast, "tamecheck": scenario_tamecheck,
+    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds, "buildportal": scenario_buildportal, "gravestone": scenario_gravestone, "guard": scenario_guard, "fires": scenario_fires, "items": scenario_items, "deposit": scenario_deposit, "tidy_chests": scenario_tidy_chests, "hold": scenario_hold, "sign": scenario_sign, "pieceinfo": scenario_pieceinfo, "stations": scenario_stations, "cookdebug": scenario_cookdebug, "collect": scenario_collect, "find": scenario_find, "farm": scenario_farm, "labels": scenario_labels, "feed": scenario_feed, "settlement": scenario_settlement, "prefabs": scenario_prefabs, "road": scenario_road, "bridge": scenario_bridge, "blueprint": scenario_blueprint, "fish": scenario_fish, "boat": scenario_boat, "teleport": scenario_teleport, "near": scenario_near, "shore": scenario_shore, "resume": scenario_resume, "workshop": scenario_workshop, "cover": scenario_cover, "mission": scenario_mission, "coast": scenario_coast, "tamecheck": scenario_tamecheck,
 }
 
 

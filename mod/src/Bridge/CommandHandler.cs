@@ -344,6 +344,46 @@ namespace ValheimCompanion.Bridge
                     companion.Tasks.CommandStay();
                     return null;
                 }
+                case "debug_cover":
+                {
+                    // Testing command (not an LLM tool): is the nearest crafting station roofed and covered enough to
+                    // use (vanilla needs a roof and at least 70% cover)?
+                    CraftingStation station = null;
+                    float best = 30f;
+                    foreach (CraftingStation cs in UnityEngine.Object.FindObjectsByType<CraftingStation>(FindObjectsSortMode.None))
+                    {
+                        float d = Vector3.Distance(cs.transform.position, companion.transform.position);
+                        if (d < best)
+                        {
+                            station = cs;
+                            best = d;
+                        }
+                    }
+                    if (!station)
+                    {
+                        return "no_station_nearby";
+                    }
+                    Vector3 point = station.m_roofCheckPoint ? station.m_roofCheckPoint.position : station.transform.position;
+                    Cover.GetCoverForPoint(point, out float cover, out bool underRoof);
+                    // What a ray straight up (and one each way) actually hits, on which layer: to see why cover fails.
+                    var rays = new JObject();
+                    foreach (var (label, dir) in new[] { ("up", Vector3.up), ("back", station.transform.forward * -1f), ("front", station.transform.forward),
+                                                         ("left", -station.transform.right), ("right", station.transform.right) })
+                    {
+                        rays[label] = Physics.Raycast(point, dir, out RaycastHit hit, 10f, ~0, QueryTriggerInteraction.Ignore)
+                            ? $"{hit.collider.name} [{LayerMask.LayerToName(hit.collider.gameObject.layer)}] {hit.distance:F2}m"
+                            : "nothing";
+                    }
+                    data = new JObject
+                    {
+                        ["station"] = station.m_name, ["dist"] = Mathf.Round(best), ["under_roof"] = underRoof,
+                        ["cover"] = Mathf.Round(cover * 100f) / 100f, ["usable"] = underRoof && cover >= 0.7f,
+                        ["check_point"] = new JArray(Mathf.Round(point.x * 10f) / 10f, Mathf.Round(point.y * 10f) / 10f, Mathf.Round(point.z * 10f) / 10f),
+                        ["rays"] = rays,
+                        ["bench"] = new JArray(Mathf.Round(station.transform.position.x * 10f) / 10f, Mathf.Round(station.transform.position.y * 10f) / 10f, Mathf.Round(station.transform.position.z * 10f) / 10f),
+                    };
+                    return null;
+                }
                 case "debug_kill":
                 {
                     // Testing command (not an LLM tool): he dies where he stands.
@@ -738,6 +778,13 @@ namespace ValheimCompanion.Bridge
                     if (template == "blueprint")
                     {
                         return BuildBlueprint(companion, args, cmdId, out data);
+                    }
+                    if (template == "workshop")
+                    {
+                        // The starter workbench shelter, built like a blueprint, its open front towards him; a torch in it
+                        // if he has the resin.
+                        bool torch = companion.Inventory.Count("Resin") >= 2 && Building.PieceCatalog.Get(Building.WorkshopTemplate.Torch);
+                        return BuildBlueprint(companion, args, cmdId, out data, Building.WorkshopTemplate.Create(torch));
                     }
                     if (template != "hut")
                     {
@@ -1597,10 +1644,11 @@ namespace ValheimCompanion.Bridge
 
         // Day fraction: 0 = midnight, 0.5 = noon. Valheim nights run roughly 0.8 -> 0.2.
         /// <summary>A blueprint by name, on flat clear ground near the companion (levelled first with a hoe).</summary>
-        private static string BuildBlueprint(CompanionAI companion, JObject args, string cmdId, out JObject data)
+        private static string BuildBlueprint(CompanionAI companion, JObject args, string cmdId, out JObject data,
+                                             Building.Blueprints.Blueprint given = null)
         {
             data = null;
-            var bp = Building.Blueprints.Load((string)args["blueprint"] ?? "");
+            var bp = given ?? Building.Blueprints.Load((string)args["blueprint"] ?? "");
             if (bp == null)
             {
                 data = new JObject { ["known"] = new JArray(Building.Blueprints.Names()) };
