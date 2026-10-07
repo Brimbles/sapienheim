@@ -8,7 +8,7 @@
   <Name>sapienheim-agent</Name>
   <Repository>ghcr.io/brimbles/sapienheim-agent:latest</Repository>
   <Registry>https://github.com/Brimbles/sapienheim/pkgs/container/sapienheim-agent</Registry>
-  <Network>sapienheim</Network>
+  <Network>bridge</Network>
   <MyIP/>
   <Shell>sh</Shell>
   <Privileged>false</Privileged>
@@ -25,10 +25,10 @@
   <DateInstalled/>
   <DonateText/>
   <DonateLink/>
-  <Requires>A custom Docker network named "sapienheim" that the PhValheim container also joins (see deploy/README.md).</Requires>
+  <Requires>The Valheim server's mod config points at this machine's IP and the agent port (see deploy/README.md). Don't forward the port on your router.</Requires>
   <Config Name="Claude API key" Target="ANTHROPIC_API_KEY" Default="" Mode="" Description="From platform.claude.com. Never commit or share it." Type="Variable" Display="always" Required="true" Mask="true"/>
   <Config Name="Agent token" Target="AGENT_TOKEN" Default="" Mode="" Description="Shared secret; must match Agent.Token in the mod's server config." Type="Variable" Display="always" Required="true" Mask="true"/>
-  <Config Name="Agent port" Target="AGENT_PORT" Default="7777" Mode="" Description="TCP port the mod connects to, inside the private network. Do not map it to the host." Type="Variable" Display="advanced" Required="false" Mask="false">7777</Config>
+  <Config Name="Agent port" Target="7777" Default="7777" Mode="tcp" Description="TCP port the mod connects to (Agent.Port in the mod config). LAN only: don't forward it on your router." Type="Port" Display="always" Required="true" Mask="false">7777</Config>
   <Config Name="Memory / data" Target="/data" Default="/mnt/user/appdata/sapienheim-agent" Mode="rw" Description="Long-term memory per world. Put a persona.md here to change its personality." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/sapienheim-agent</Config>
   <Config Name="Dashboard (LAN only)" Target="7778" Default="7778" Mode="tcp" Description="Status page. Map only on your LAN; never expose it to the internet." Type="Port" Display="advanced" Required="false" Mask="false">7778</Config>
   <Config Name="Chat model" Target="AGENT_CHAT_MODEL" Default="claude-haiku-4-5" Mode="" Description="" Type="Variable" Display="advanced" Required="false" Mask="false">claude-haiku-4-5</Config>
