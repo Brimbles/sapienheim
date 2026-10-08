@@ -1,74 +1,68 @@
 # Deploying to Unraid / PhValheim
 
 Three pieces need to be in place:
-- the **Sapienheim** mod, published on Thunderstore and installed by PhValheim on the server (Linux) and every player's game;
-- the **agent** container;
-- a **private Docker network** joining them.
+- the **Sapienheim** mod, published on Thunderstore as `sapiteam-Sapienheim` and installed by PhValheim on the server (Linux) and every player's game;
+- the **agent** container on Unraid;
+- the mod's server config pointing at the agent.
 
-> Status: written but **not yet tried**. The image and the mod aren't published yet. Do this on a separate PhValheim **test world** first.
+> Status: done once, on 7 Oct 2026, with the PhValheim test world **camilla** on Unraid at `192.168.0.162`. The notes below are what actually worked, including the snags.
 
-## 1. Private network
-On Unraid, open a terminal:
-```sh
-docker network create sapienheim
-```
-Edit the **PhValheim** container: set *Network Type* to `Custom: sapienheim` and apply. The agent container joins the same network below. The agent's port 7777 is then reachable only from containers on that network, never from the internet.
+## 1. Network
+No custom Docker network is needed. The agent runs on Unraid's normal `bridge` network with its port 7777 mapped on the host, and the Valheim server (PhValheim, also on `bridge`) connects to `192.168.0.162:7777`. The port is reachable only on your LAN, and only with the token. Don't forward it on your router.
 
 ## 2. Agent container
-1. The image is published by GitHub Actions to `ghcr.io/brimbles/sapienheim-agent`: `:latest` on each release tag, `:edge` on each push to `main`. To build it yourself instead: `docker build -t sapienheim-agent agent/`, and use that name as the template's repository.
-2. Copy `deploy/unraid-template.xml` to `/boot/config/plugins/dockerMan/templates-user/my-sapienheim-agent.xml`.
-3. Docker → **Add Container** → template **sapienheim-agent**, then fill in:
-   - **Claude API key** (masked).
-   - **Agent token:** a long random string, for example `openssl rand -base64 24`. Use the same value in the mod config (section 4).
-   - **Memory / data:** `/mnt/user/appdata/sapienheim-agent`. To give the companion your own personality, put a `persona.md` here, for example a copy of `agent/personas/alvar_barbarian.md`. Without one it uses a neutral built-in persona.
-   - **Dashboard:** only map it if you want it on your LAN.
-4. Start it. Its log should say `listening on 0.0.0.0:7777`. To update later: Docker → the container → **Force update**, which pulls the latest image.
+1. **The image** is built by GitHub Actions (`.github/workflows/agent-image.yml`) and published to `ghcr.io/brimbles/sapienheim-agent`:
+   - `:latest` and `:<version>` on a version tag `vX.Y.Z`;
+   - `:edge` on pushes to `main` that touch `agent/`.
+
+   The tag must match `__version__` in `agent/companion_agent/__init__.py`, or the build stops at a check.
+2. **Make the image public, once.** New GitHub container images are private by default, even from a public repo, and Unraid can't pull a private one without a login. Go to *GitHub → your profile → Packages → sapienheim-agent → Package settings → Change visibility → Public*. The image holds no secrets.
+3. **Get the template onto Unraid.** In the web terminal (`>_`):
+   ```sh
+   wget -O /boot/config/plugins/dockerMan/templates-user/my-sapienheim-agent.xml https://raw.githubusercontent.com/Brimbles/sapienheim/main/deploy/unraid-template.xml
+   ```
+4. **Give it a personality:**
+   ```sh
+   mkdir -p /mnt/user/appdata/sapienheim-agent && wget -O /mnt/user/appdata/sapienheim-agent/persona.md https://raw.githubusercontent.com/Brimbles/sapienheim/main/agent/personas/alvar_barbarian.md
+   ```
+5. **Create the container:** *Docker → Add Container → template sapienheim-agent*. Set the Claude API key and the agent token, a long random string (for example `python -c "import secrets; print(secrets.token_urlsafe(32))"`). Keep both secret. Optionally, set *Planning model* to `claude-haiku-4-5` to save money.
+6. **Check it:** the container log says `listening on 0.0.0.0:7777`, and the dashboard at `http://192.168.0.162:7778/` answers.
+7. **Updating:** after a new `vX.Y.Z` tag has built, use *Docker → sapienheim-agent → Force update*.
 
 ## 3. Publish the mod to Thunderstore
-PhValheim installs mods from Thunderstore, and its launcher gives every player the same version, so the mod goes there as the package **Sapienheim**.
+1. Bump `PluginVersion` in `mod/src/Plugin.cs` and add a section to `mod/thunderstore/CHANGELOG.md`. Thunderstore never accepts the same version twice: you get "Package of the same namespace, name and version already exists".
+2. Build: `dotnet build mod/ValheimCompanion.csproj -c Release`. This writes `mod/bin/thunderstore/Sapienheim-<version>.zip`, with the DLL, voice clips, cabin blueprint, manifest, README, changelog and icon. Use `-p:PackageSounds=false` to leave the clips out.
+3. Upload the zip at thunderstore.io under the team **sapiteam**, Valheim community.
+4. **Wait before syncing PhValheim.** PhValheim reads Thunderstore's whole Valheim list (`/c/valheim/api/v1/package/`), which Thunderstore regenerates only every so often: on 7 Oct a new version took about 10 minutes to appear there. Check with `https://thunderstore.io/c/valheim/api/v1/package/` before syncing, or just sync again after a while.
 
-1. Bump `PluginVersion` in `mod/src/Plugin.cs` and add a section to `mod/thunderstore/CHANGELOG.md`. Thunderstore never accepts the same version twice.
-2. Build in Release:
-   ```sh
-   dotnet build mod/ValheimCompanion.csproj -c Release
-   ```
-   This writes `mod/bin/thunderstore/Sapienheim-<version>.zip`, containing `manifest.json` (version filled in), `icon.png`, `README.md`, `CHANGELOG.md` and the DLL. The package files live in `mod/thunderstore/`.
-3. The first time only: sign in at thunderstore.io and create a team.
-4. Upload the zip at thunderstore.io → **Upload**, choosing the **Valheim** community and fitting categories (for example Server-side and Client-side). The upload page validates the zip.
-5. Keep developing against the local dev server. Only publish when a version has passed `TESTING.md`.
-
-The dependencies are BepInExPack_Valheim and Jötunn, at the versions in `mod/thunderstore/manifest.json`. Keep the Jötunn version in step with `JotunnLib` in the `.csproj`.
+Keep the Jötunn version in `mod/thunderstore/manifest.json` in step with `JotunnLib` in the `.csproj`.
 
 ## 4. Mod on the PhValheim server
-1. On a **test world**, add **Sapienheim** in PhValheim's mod picker. It brings Jötunn and BepInEx with it.
-2. Start the world once, so the mod writes its default config. Then fill in `com.sapienheim.valheimcompanion.cfg` in the world's `BepInEx/config/`:
+1. Add `sapiteam-Sapienheim` to the world in PhValheim's mod picker. Jötunn and BepInEx come with it.
+2. Start the world once, so the mod writes its default config.
+3. **Put the server config in the world's `custom_configs_secure/`:** `/mnt/user/appdata/phvalheim-server/games/valheim/worlds/<world>/custom_configs_secure/com.sapienheim.valheimcompanion.cfg`. A minimal file is enough:
    ```ini
    [Agent]
-   Host = sapienheim-agent      ; the agent container's name on the sapienheim network
+   Host = 192.168.0.162
    Port = 7777
-   Token = <same as AGENT_TOKEN>
-
-   [Companion]
-   Name = Alvar
-   OfflineMinutes = 60
-
-   [Permissions]
-   Commanders = friends
-   Friends =                    ; comma-separated player names
-   ChestAccess = own
+   Token = <the agent token>
    ```
-   **Check this:** the file holds the token, so it must **not** be sent to players. If PhValheim syncs `BepInEx/config` to clients, use its server-only config location instead (check the PhValheim docs).
-3. Restart the world and check its log for:
+   - PhValheim copies the `custom_configs*` folders into the world's `game/BepInEx/config/` when it **deploys** the world (a mod-list change or update), not on a plain restart. Anything only in `game/BepInEx/config/` is wiped by a mod-list edit.
+   - To apply it straight away, copy it into `game/BepInEx/config/` as well. The mod reloads its config when the file changes.
+   - Checked: the token does **not** reach players. Their game writes its own default copy (`Host = 127.0.0.1`, empty token).
+4. Check the world log (`worlds/<world>/game/BepInEx/LogOutput.log`) for:
    - `ValheimCompanion <version> loaded (headless=True)`
-   - `LocalPlayerGuards: made 5 vanilla owner-side methods safe…`
    - `Connected to agent`
-4. Update the world in PhValheim (for example add or remove a mod). Check that the config edits survive, and so does the companion's away record in `BepInEx/config/sapienheim/`, which holds its inventory while it's logged out.
-5. Join with the PhValheim launcher. The mod should arrive automatically. Every player needs the same version; Jötunn enforces this.
 
-## 5. First run on Linux
-Watch the world log for anything different from the Windows dev server, especially:
-- **path or case-sensitivity errors**, which affect the away-record file under `BepInEx/config/sapienheim/`;
-- `NullReferenceException`s from **headless-only code paths**;
-- whether `ZoneKeeper` keeps the companion's area loaded with nobody online (`Everyone is offline; companion goes off duty in 60 min`).
+   Without a token the mod doesn't try to connect, and since 0.1.2 it says so: `Not connecting to the agent: no [Agent] Token set`. On the agent side, the dashboard shows `connected: true`.
+5. Join through the PhValheim client and run `cmp_spawn` in the console as admin.
 
-Then go through `TESTING.md` with a friend online, which also covers the M1 "looks right on two clients" check.
+## 5. Testing from a dev PC
+For a clean test from the PC used for development, make sure no dev mods load. Move the Steam Valheim folder's `BepInEx/`, `winhttp.dll`, `doorstop_config.ini` and `doorstop_libs/` aside. On the dev PC they're in `C:\Users\benri\ValheimDevBackup`, and `mod/Environment.props` sets `BEPINEX_PATH` there, so builds still work and deploy only to the local dev server.
+
+The PhValheim client installs its own loader files into the game folder and loads mods only from `%AppData%\PhValheim\worlds\<server>\<world>\`. Launching through it never loads the Steam folder's mods; launching from Steam's Play button would.
+
+## 6. Linux notes
+Found on the first run:
+- A headless Linux server's animator may report no animations, which broke tool swings until 0.1.2 (the swing now comes from the tool itself).
+- Watch the world log for path or case-sensitivity errors (the away record under `BepInEx/config/sapienheim/`), and for `NullReferenceException`s from headless-only code paths.
