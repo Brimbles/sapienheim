@@ -56,6 +56,7 @@ RULES = """
 
 - You can only talk through the `say` tool. Plain text replies are never heard by anyone.
 - Every reply should include a `say` call. When asked to do something you can do, call the matching tool and say something in character about it.
+- When a player asks for a story, a tale, a song or a poem, tell it: several `say` calls in the same reply (up to about 8), each still one or two short sentences. They're spoken one after another, so together they make a proper telling with a beginning, middle and end. Don't brush it off or tell them to ask someone else.
 - Amounts for gather: use the number asked for. For vague requests ("some wood", "chop some trees", "a bit of stone") use qty 20 and mention the amount when you agree. Omit qty (everything nearby) only when explicitly asked for all of it ("all", "clear this area", "chop up those logs"). A single gather never collects more than 100.
 - Work takes time. When you start a job, say you're on it; never claim it's finished, or give numbers, until the task_done event arrives. Tool results of "ok" only mean the job was accepted.
 - You carry an inventory (see `inventory` in the state; items are named by id, e.g. "Wood"). Players hand you things by dropping them near you; use `pick_up` to collect them. Use `give` to hand items to a player.
@@ -124,7 +125,8 @@ BOSSES: dict[str, dict[str, Any]] = {
 TOOLS: list[dict[str, Any]] = [
     {
         "name": "say",
-        "description": "Speak aloud; shown as a speech bubble and chat line to nearby players. One or two short sentences. "
+        "description": "Speak aloud; shown as a speech bubble and chat line to nearby players. One or two short sentences; for a story or song, "
+        "call it several times in one reply and the lines are spoken in order. "
         "You can add a voice clip from the `sounds` list in the state when one really fits (a laugh, a war cry); use them "
         "sparingly, not on every line.",
         "input_schema": {
@@ -1192,13 +1194,14 @@ class Brain:
         else:
             tools = TOOLS
         model = PLAN_MODEL if can_command and PLAN_PATTERN.search(text) else CHAT_MODEL
-        actions = await self.take_turn(prompt, history_line=line, model=model, tools=tools)
+        actions = await self.take_turn(prompt, history_line=line, model=model, tools=tools, must_reply=True)
         jobs = [a.split("(")[0] for a in actions if not a.startswith(("remember", "opinion", "name_place"))]
         if jobs:
             self.memory.note_together(player, f"asked you to {', '.join(dict.fromkeys(jobs))}")
 
     async def take_turn(
-        self, prompt: str, history_line: str, model: str = CHAT_MODEL, tools: list[dict[str, Any]] | None = None
+        self, prompt: str, history_line: str, model: str = CHAT_MODEL, tools: list[dict[str, Any]] | None = None,
+        must_reply: bool = False,
     ) -> list[str]:
         """One LLM turn: prompt plus notes and a fresh state snapshot, then record it in history. Returns what it did."""
         if not self.budget.available():
@@ -1216,7 +1219,7 @@ class Brain:
             self.notes.clear()
         content += "\n\nCurrent state:\n" + (json.dumps(state) if state else "(unavailable)")
 
-        spoken, actions = await self.run_turn(model, content, tools or TOOLS)
+        spoken, actions = await self.run_turn(model, content, tools or TOOLS, must_reply=must_reply)
 
         # History keeps plain text only: the prompt line and what the companion said/did. It's persisted with the memory.
         summary = " ".join(spoken) or "(said nothing)"
@@ -1244,7 +1247,7 @@ class Brain:
         return text or previous
 
     async def run_turn(
-        self, model: str, content: str, tools: list[dict[str, Any]] | None = None
+        self, model: str, content: str, tools: list[dict[str, Any]] | None = None, must_reply: bool = False
     ) -> tuple[list[str], list[str]]:
         tools = tools or TOOLS
         allowed = {t["name"] for t in tools}
@@ -1273,7 +1276,8 @@ class Brain:
                 break
 
             results = await asyncio.gather(*(
-                self._execute(b, spoken, actions) if b.name in allowed
+                self._speak_in_turn(b, spoken, actions, [u for u in tool_uses if u.name == "say"]) if b.name == "say"
+                else self._execute(b, spoken, actions) if b.name in allowed
                 else _async_result(_tool_result(b.id, "failed: not_allowed (you can't do that for this player)", error=True))
                 for b in tool_uses
             ))
@@ -1285,6 +1289,12 @@ class Brain:
             if all(b.name == "say" for b in tool_uses) and not any(r.get("is_error") for r in results):
                 break
 
+        if final_text:
+            log.info("plain text from %s: %s", model, final_text)
+        # A player spoke to him: an answer with no `say` (only an action, or plain-text narration) leaves them
+        # talking to a wall. Ask once more, with `say` forced.
+        if not spoken and must_reply and self.budget.available():
+            await self._force_say(messages, tools, spoken, actions)
         # Models sometimes answer in plain text instead of calling `say`; speak it rather than lose it.
         if not spoken and final_text:
             text = re.sub(r"\[.*?\]", "", final_text).strip()
@@ -1293,7 +1303,35 @@ class Brain:
                 spoken.append(text)
         return spoken, actions
 
-    async def _create(self, model: str, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None = None):
+    async def _force_say(
+        self, messages: list[dict[str, Any]], tools: list[dict[str, Any]], spoken: list[str], actions: list[str]
+    ) -> None:
+        nudge = {"type": "text", "text": "(They're waiting for you to answer. Reply out loud now with `say`.)"}
+        if messages[-1]["role"] == "user" and isinstance(messages[-1]["content"], list):
+            messages[-1]["content"].append(nudge)  # after tool results, in the same user message
+        else:
+            messages.append({"role": "user", "content": [nudge]})
+        # A forced tool can't be combined with thinking, so this never uses the thinking model.
+        model = "claude-haiku-4-5" if CHAT_MODEL.startswith("claude-sonnet-5-5") else CHAT_MODEL
+        self.budget.consume()
+        response = await self._create(model, messages, tools, tool_choice={"type": "tool", "name": "say"})
+        self.status.record_usage(model, getattr(response, "usage", None))
+        log.info("%s (say forced) -> stop=%s", model, response.stop_reason)
+        for block in response.content:
+            if block.type == "tool_use" and block.name == "say":
+                await self._execute(block, spoken, actions)
+
+    async def _speak_in_turn(self, block: Any, spoken: list[str], actions: list[str], says: list[Any]) -> dict[str, Any]:
+        """Several `say`s in one reply (a story, a song) go out one bubble at a time, each left up long enough to read."""
+        index = says.index(block)
+        if index > 0:  # the first line goes out straight away, ahead of the reply's other commands
+            await asyncio.sleep(sum(_reading_seconds(str((b.input or {}).get("text", ""))) for b in says[:index]))
+        return await self._execute(block, spoken, actions)
+
+    async def _create(
+        self, model: str, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None = None,
+        tool_choice: dict[str, Any] | None = None,
+    ):
         params: dict[str, Any] = {
             "model": model,
             "max_tokens": 1024,
@@ -1301,6 +1339,8 @@ class Brain:
             "tools": tools or TOOLS,
             "messages": messages,
         }
+        if tool_choice:
+            params["tool_choice"] = tool_choice
         if model.startswith("claude-sonnet-5-5"):
             # Adaptive thinking is on by default. Server-side fallback reroutes the rare policy refusal.
             params["max_tokens"] = 8000
@@ -1467,6 +1507,11 @@ class Brain:
 
 async def _async_result(result: dict[str, Any]) -> dict[str, Any]:
     return result
+
+
+def _reading_seconds(text: str) -> float:
+    """How long a line's bubble should stay up before the next one (the mod keeps a bubble 8 s)."""
+    return min(8.0, max(3.0, 0.07 * len(text)))
 
 
 def _dist(a: tuple[float, float], b: tuple[float, float]) -> float:

@@ -141,8 +141,28 @@ def test_chat_runs_tool_loop_and_executes_commands():
     assert '"players_online": 1' in client.calls[0]["messages"][-1]["content"]
 
 
-def test_plain_text_reply_is_spoken():
-    mod, _ = asyncio.run(_run([reply(text("Well, hello there."))], ["hi"], expect_commands=1))
+def test_plain_text_reply_to_a_player_is_asked_again_with_say_forced():
+    script = [reply(text("[shrugs]")), reply(tool("say", text="Well, hello there."), stop="tool_use")]
+    mod, client = asyncio.run(_run(script, ["hi"], expect_commands=1, expect_llm_calls=2))
+    assert mod.commands[0]["args"] == {"text": "Well, hello there."}
+    assert client.calls[1]["tool_choice"] == {"type": "tool", "name": "say"}
+    assert "tool_choice" not in client.calls[0]
+
+
+def test_action_only_reply_to_a_player_still_gets_an_answer():
+    script = [
+        reply(tool("follow"), stop="tool_use"),
+        reply(),
+        reply(tool("say", text="Right behind you."), stop="tool_use"),
+    ]
+    mod, client = asyncio.run(_run(script, ["who is your best friend"], expect_commands=2, expect_llm_calls=3))
+    assert [c["action"] for c in mod.commands] == ["follow", "say"]
+    # The nudge rides in a user message after the previous turn, and the earlier tool calls stay valid.
+    assert client.calls[2]["messages"][-1]["role"] == "user"
+
+
+def test_plain_text_is_spoken_if_the_forced_call_still_says_nothing():
+    mod, _ = asyncio.run(_run([reply(text("Well, hello there.")), reply()], ["hi"], expect_commands=1, expect_llm_calls=2))
     assert mod.commands[0]["args"] == {"text": "Well, hello there."}
 
 
@@ -169,6 +189,25 @@ def test_say_only_turn_makes_one_llm_call():
     script = [reply(tool("say", text="Aha! Hello."), stop="tool_use"), reply(text("should never be requested"))]
     _, client = asyncio.run(_run(script, ["hi"], expect_commands=1))
     assert len(client.calls) == 1
+
+
+def test_story_lines_are_spoken_in_order_one_bubble_at_a_time(monkeypatch):
+    waits = []
+    real_sleep = asyncio.sleep
+
+    async def fake_sleep(seconds, *args, **kwargs):
+        if seconds >= 1:
+            waits.append(seconds)
+            seconds = 0
+        await real_sleep(seconds, *args, **kwargs)
+
+    monkeypatch.setattr(brain_mod.asyncio, "sleep", fake_sleep)
+    lines = ["Gather round.", "A troll once fell in love with a goat.", "The goat said no. The end."]
+    script = [reply(*(tool("say", text=t) for t in lines), stop="tool_use")]
+    mod, _ = asyncio.run(_run(script, ["tell me a story"], expect_commands=3))
+    assert [c["args"]["text"] for c in mod.commands] == lines
+    # The second line waits for the first bubble, the third for both (other waits are the agent's own 10 s loops).
+    assert [w for w in waits if w < 10] == [3.0, 3.0 + brain_mod._reading_seconds(lines[1])]
 
 
 def test_tool_schemas_are_well_formed():
