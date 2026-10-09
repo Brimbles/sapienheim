@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.6
+- Blueprint packs: he also builds blueprints from PlanBuild's folder and from packs installed as mods (any `blueprints` folder under plugins, e.g. BiomeBlueprints), and from subfolders of his own. Asked what he can build, he can search them by words ("longhouse", "meadows") and size, and sees what each costs.
+- Big blueprints get extra workbenches (and stonecutters for stone) round the outside: a workbench only reaches 10 m, so long builds used to stop partway with "need a workbench".
+- Older blueprints' roof walls (`wood_wall_roof`, since renamed by the game) are built instead of skipped.
+- Finding a building site is quicker on rough ground.
+
 ## 0.1.5
 - He swings his axe again when chopping on Linux servers. Axe swings come in a chain (swing_axe0, 1, 2) and the server was sending the bare name, which players' games don't know.
 

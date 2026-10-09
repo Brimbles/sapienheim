@@ -431,10 +431,20 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "blueprints",
-        "description": "List the building blueprints you can build (template=blueprint, blueprint=<name> on the build tool; "
-        "shared PlanBuild .blueprint files on the server), or save the building nearest you as a new one (`export`: a name) "
-        "so you can build copies of it elsewhere.",
-        "input_schema": {"type": "object", "properties": {"export": {"type": "string"}}},
+        "description": "Find building blueprints you can build (template=blueprint, blueprint=<name> on the build tool; "
+        "shared PlanBuild .blueprint files on the server, possibly hundreds), or save the building nearest you as a new "
+        "one (`export`: a name) so you can build copies of it elsewhere. A listing gives the categories (often biomes) "
+        "with counts, and up to 25 matches, smallest first, each with its piece count and total materials. Narrow it "
+        "with `filter` (words from the name, title or category, e.g. \"longhouse\" or \"meadows\") and `max_pieces`. "
+        "Suggest builds the player can afford in their biome; a few hundred pieces is a big job.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "export": {"type": "string"},
+                "filter": {"type": "string"},
+                "max_pieces": {"type": "integer"},
+            },
+        },
     },
     {
         "name": "mission",

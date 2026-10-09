@@ -1005,7 +1005,7 @@ namespace ValheimCompanion.Bridge
                         data = new JObject { ["saved"] = export, ["pieces"] = saved };
                         return null;
                     }
-                    data = new JObject { ["blueprints"] = new JArray(Building.Blueprints.Names()), ["folder"] = Building.Blueprints.Folder };
+                    data = Building.Blueprints.List((string)args["filter"], (int?)args["max_pieces"] ?? 0);
                     return null;
                 }
                 case "build_road":
@@ -1651,7 +1651,7 @@ namespace ValheimCompanion.Bridge
             var bp = given ?? Building.Blueprints.Load((string)args["blueprint"] ?? "");
             if (bp == null)
             {
-                data = new JObject { ["known"] = new JArray(Building.Blueprints.Names()) };
+                data = new JObject { ["similar"] = new JArray(Building.Blueprints.Similar((string)args["blueprint"])) };
                 return "unknown_blueprint";
             }
             if (bp.Pieces.Count == 0)
@@ -1671,7 +1671,11 @@ namespace ValheimCompanion.Bridge
                 : toUs.sqrMagnitude > 1f ? Quaternion.LookRotation(-toUs).eulerAngles.y : companion.transform.eulerAngles.y + 180f;
             bool level = Building.Builder.FindTool(companion.Inventory, "Hoe") != null;
             Vector2 half = Building.Blueprints.HalfExtents(bp);
-            if (!Building.HutTemplate.FindSiteBox(half, near, facing, 40f, level, out Vector3 origin, out string why, out var clear))
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            bool found = Building.HutTemplate.FindSiteBox(half, near, facing, 40f, level, out Vector3 origin, out string why, out var clear);
+            Jotunn.Logger.LogInfo($"Blueprint {bp.Name}: {bp.Pieces.Count} pieces, {half.x * 2:F0} x {half.y * 2:F0} m, " +
+                                  $"site {(found ? $"at {origin:F0}" : why)} in {watch.ElapsedMilliseconds} ms");
+            if (!found)
             {
                 return why;
             }

@@ -64,5 +64,17 @@ The PhValheim client installs its own loader files into the game folder and load
 
 ## 6. Linux notes
 Found on the first run:
-- A headless Linux server's animator may report no animations, which broke tool swings until 0.1.2 (the swing now comes from the tool itself).
+- A headless Linux server's animator may report no animations, which broke tool swings until 0.1.2 (the swing now comes from the tool itself). Axe swings stayed broken until 0.1.5: chained attacks fire numbered triggers (`swing_axe0`), and the bare `swing_axe` doesn't exist.
 - Watch the world log for path or case-sensitivity errors (the away record under `BepInEx/config/sapienheim/`), and for `NullReferenceException`s from headless-only code paths.
+
+## 7. Blueprint packs
+The companion builds PlanBuild `.blueprint` files from three places on the server, first match by name wins:
+1. `BepInEx/config/sapienheim/blueprints/` and its subfolders: the shipped `cabin`, his own exports, and files you drop in.
+2. `BepInEx/config/PlanBuild/blueprints/`, if PlanBuild is installed.
+3. Any `blueprints` folder under `BepInEx/plugins/`: packs installed as mods.
+
+**BiomeBlueprints** ([Thunderstore](https://thunderstore.io/c/valheim/p/OverDrive/BiomeBlueprints/)) is a good set: 353 builds using base-game pieces only, sorted by biome (huts and cottages up to forts). It isn't bundled with Sapienheim: it has no licence, and its builders gave permission for that pack. Two ways to use it:
+- **As a mod:** add `OverDrive-BiomeBlueprints` to the world in PhValheim. It lands under `plugins/`, survives redeploys, and players get it too (with PlanBuild, which it depends on, so they can build the same designs themselves).
+- **Files only:** download the zip and copy its `blueprints/*.blueprint` into `worlds/<world>/game/BepInEx/config/sapienheim/blueprints/biomeblueprints/`. No extra mods, but PhValheim wipes `game/BepInEx/config/` on a mod-list edit, so keep a copy to put back.
+
+Pieces the hammer can't build (decorative food and meads, dungeon stone, Dvergr props) are skipped and reported. Older blueprints' `wood_wall_roof` is built as today's `wood_wall_roof_a`. A workbench reaches only 10 m, so big builds get extra workbenches (or stonecutters, for stone) round the outside, and he gathers the wood for them too.

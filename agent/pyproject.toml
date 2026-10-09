@@ -1,6 +1,6 @@
 [project]
 name = "companion-agent"
-version = "0.1.4"
+version = "0.1.6"
 description = "LLM brain for the Sapienheim Valheim companion"
 requires-python = ">=3.12"
 dependencies = [

@@ -3,6 +3,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
+using Newtonsoft.Json.Linq;
 using UnityEngine;
 
 namespace ValheimCompanion.Building
@@ -10,13 +11,27 @@ namespace ValheimCompanion.Building
     /// <summary>
     /// Blueprints in PlanBuild's <c>.blueprint</c> text format, so players can share them: a few <c>#Key:value</c> header
     /// lines, then after <c>#Pieces</c> one line per piece, <c>prefab;category;x;y;z;qx;qy;qz;qw[;info;sx;sy;sz]</c>, in
-    /// metres relative to the blueprint's base. They live in <c>BepInEx/config/sapienheim/blueprints</c> on the server.
+    /// metres relative to the blueprint's base. Read on the server from (first match wins):
+    /// <list type="bullet">
+    /// <item><c>BepInEx/config/sapienheim/blueprints</c> and its subfolders: the starters, exports, files dropped in.</item>
+    /// <item><c>BepInEx/config/PlanBuild/blueprints</c>: PlanBuild's own folder, if it's installed.</item>
+    /// <item>Any <c>blueprints</c> folder under <c>BepInEx/plugins</c>: blueprint packs installed as mods (BiomeBlueprints).</item>
+    /// </list>
     /// Only the game's own hammer pieces are built: pieces from other mods are skipped (agreed with the user) and
     /// reported. Export writes an existing building out in the same format.
     /// </summary>
     internal static class Blueprints
     {
         public static string Folder => Path.Combine(BepInEx.Paths.ConfigPath, "sapienheim", "blueprints");
+
+        private const int ListLimit = 25;
+
+        /// <summary>Pieces the game has since renamed: older blueprints (most shared ones) still use the old name.</summary>
+        private static readonly Dictionary<string, string> Renamed = new Dictionary<string, string>
+        {
+            ["wood_wall_roof"] = "wood_wall_roof_a",
+            ["wood_wall_roof_67"] = "wood_wall_roof_67_a",
+        };
 
         public class Blueprint
         {
@@ -25,19 +40,161 @@ namespace ValheimCompanion.Building
             public List<string> Skipped = new List<string>();
         }
 
-        public static List<string> Names() =>
-            Directory.Exists(Folder) ? Directory.GetFiles(Folder, "*.blueprint").Select(Path.GetFileNameWithoutExtension).OrderBy(n => n).ToList() : new List<string>();
+        /// <summary>What the listing shows of a file without building it; refreshed when the file changes.</summary>
+        private class Entry
+        {
+            public string Name, Title, Category, File;
+            public System.DateTime Written;
+            public int Pieces;
+            public JObject Materials; // worked out on first listing (needs the game's pieces)
+        }
+
+        private static readonly Dictionary<string, Entry> s_entries = new Dictionary<string, Entry>(System.StringComparer.OrdinalIgnoreCase);
+
+        private static IEnumerable<string> Folders()
+        {
+            yield return Folder;
+            yield return Path.Combine(BepInEx.Paths.ConfigPath, "PlanBuild", "blueprints");
+            if (Directory.Exists(BepInEx.Paths.PluginPath))
+            {
+                foreach (string dir in Directory.GetDirectories(BepInEx.Paths.PluginPath, "blueprints", SearchOption.AllDirectories))
+                {
+                    yield return dir;
+                }
+            }
+        }
+
+        /// <summary>Every blueprint by name (the file name), first folder first.</summary>
+        private static Dictionary<string, Entry> Index()
+        {
+            var seen = new Dictionary<string, Entry>(System.StringComparer.OrdinalIgnoreCase);
+            foreach (string folder in Folders().Where(Directory.Exists))
+            {
+                foreach (string file in Directory.GetFiles(folder, "*.blueprint", SearchOption.AllDirectories))
+                {
+                    string name = Path.GetFileNameWithoutExtension(file);
+                    if (seen.ContainsKey(name))
+                    {
+                        continue;
+                    }
+                    System.DateTime written = File.GetLastWriteTimeUtc(file);
+                    if (!s_entries.TryGetValue(name, out Entry e) || e.File != file || e.Written != written)
+                    {
+                        e = ReadHeader(name, file, written);
+                        s_entries[name] = e;
+                    }
+                    seen[name] = e;
+                }
+            }
+            return seen;
+        }
+
+        private static Entry ReadHeader(string name, string file, System.DateTime written)
+        {
+            var e = new Entry { Name = name, Title = name, Category = "", File = file, Written = written };
+            bool inPieces = false;
+            foreach (string raw in File.ReadLines(file))
+            {
+                string line = raw.Trim();
+                if (line.StartsWith("#"))
+                {
+                    inPieces = line.StartsWith("#Pieces", System.StringComparison.OrdinalIgnoreCase);
+                    if (line.StartsWith("#Name:", System.StringComparison.OrdinalIgnoreCase))
+                    {
+                        e.Title = line.Substring(6).Trim();
+                    }
+                    else if (line.StartsWith("#Category:", System.StringComparison.OrdinalIgnoreCase))
+                    {
+                        e.Category = line.Substring(10).Trim();
+                    }
+                }
+                else if (inPieces && line.Length > 0)
+                {
+                    e.Pieces++;
+                }
+            }
+            return e;
+        }
+
+        /// <summary>
+        /// For the agent: blueprints matching every word of <paramref name="filter"/> (in the name, title or category)
+        /// with at most <paramref name="maxPieces"/> pieces, smallest first, with what they cost; plus how many there are
+        /// in each category, so it can narrow down a big collection.
+        /// </summary>
+        public static JObject List(string filter, int maxPieces)
+        {
+            Dictionary<string, Entry> all = Index();
+            string[] words = (filter ?? "").ToLowerInvariant().Split(new[] { ' ', ',' }, System.StringSplitOptions.RemoveEmptyEntries);
+            List<Entry> matches = all.Values
+                .Where(e => maxPieces <= 0 || e.Pieces <= maxPieces)
+                .Where(e => words.All(w => (e.Name + " " + e.Title + " " + e.Category).ToLowerInvariant().Contains(w)))
+                .OrderBy(e => e.Pieces).ThenBy(e => e.Name).ToList();
+            var list = new JArray();
+            foreach (Entry e in matches.Take(ListLimit))
+            {
+                e.Materials = e.Materials ?? Materials(Load(e.Name));
+                list.Add(new JObject
+                {
+                    ["name"] = e.Name, ["title"] = e.Title, ["category"] = e.Category, ["pieces"] = e.Pieces, ["materials"] = e.Materials,
+                });
+            }
+            var categories = new JObject();
+            foreach (var g in all.Values.GroupBy(e => e.Category.Length > 0 ? e.Category : "(none)").OrderBy(g => g.Key))
+            {
+                categories[g.Key] = g.Count();
+            }
+            return new JObject
+            {
+                ["total"] = all.Count, ["categories"] = categories, ["matching"] = matches.Count, ["blueprints"] = list,
+                ["more"] = Mathf.Max(0, matches.Count - ListLimit), ["folder"] = Folder,
+            };
+        }
+
+        /// <summary>A short list of names like <paramref name="name"/>, for an unknown one.</summary>
+        public static List<string> Similar(string name)
+        {
+            string[] words = (name ?? "").ToLowerInvariant().Split(new[] { ' ', '_', '-' }, System.StringSplitOptions.RemoveEmptyEntries);
+            return Index().Values
+                .Select(e => (e, score: words.Count(w => (e.Name + " " + e.Title).ToLowerInvariant().Contains(w))))
+                .Where(x => x.score > 0).OrderByDescending(x => x.score).ThenBy(x => x.e.Pieces)
+                .Take(10).Select(x => x.e.Name).ToList();
+        }
+
+        /// <summary>What the buildable pieces cost altogether, by item (Wood, Stone...).</summary>
+        private static JObject Materials(Blueprint bp)
+        {
+            var totals = new SortedDictionary<string, int>();
+            foreach (var p in bp?.Pieces ?? new List<(string, Vector3, Quaternion)>())
+            {
+                foreach (Piece.Requirement req in PieceCatalog.Get(p.piece).m_resources)
+                {
+                    if (req.m_resItem && req.m_amount > 0)
+                    {
+                        string item = req.m_resItem.gameObject.name;
+                        totals[item] = (totals.TryGetValue(item, out int n) ? n : 0) + req.m_amount;
+                    }
+                }
+            }
+            var o = new JObject();
+            foreach (var kv in totals.OrderByDescending(kv => kv.Value))
+            {
+                o[kv.Key] = kv.Value;
+            }
+            return o;
+        }
 
         public static Blueprint Load(string name)
         {
-            string file = Directory.Exists(Folder)
-                ? Directory.GetFiles(Folder, "*.blueprint").FirstOrDefault(f => string.Equals(Path.GetFileNameWithoutExtension(f), name, System.StringComparison.OrdinalIgnoreCase))
-                : null;
-            if (file == null)
+            Dictionary<string, Entry> all = Index();
+            Entry entry = string.IsNullOrEmpty(name) ? null
+                : all.TryGetValue(name, out Entry byName) ? byName
+                : all.Values.FirstOrDefault(e => string.Equals(e.Title, name, System.StringComparison.OrdinalIgnoreCase));
+            if (entry == null)
             {
                 return null;
             }
-            var bp = new Blueprint { Name = Path.GetFileNameWithoutExtension(file) };
+            string file = entry.File;
+            var bp = new Blueprint { Name = entry.Name };
             bool inPieces = false;
             foreach (string raw in File.ReadAllLines(file))
             {
@@ -56,12 +213,13 @@ namespace ValheimCompanion.Building
                 {
                     continue;
                 }
-                if (!PieceCatalog.Get(f[0]) || PieceCatalog.ToolFor(f[0]) != "Hammer")
+                string prefab = !PieceCatalog.Get(f[0]) && Renamed.TryGetValue(f[0], out string now) ? now : f[0];
+                if (!PieceCatalog.Get(prefab) || PieceCatalog.ToolFor(prefab) != "Hammer")
                 {
                     bp.Skipped.Add(f[0]); // another mod's piece, or not something a hammer builds
                     continue;
                 }
-                bp.Pieces.Add((f[0], new Vector3(v[0], v[1], v[2]), new Quaternion(v[3], v[4], v[5], v[6])));
+                bp.Pieces.Add((prefab, new Vector3(v[0], v[1], v[2]), new Quaternion(v[3], v[4], v[5], v[6])));
             }
             return bp;
         }
@@ -114,25 +272,78 @@ namespace ValheimCompanion.Building
                     }
                 }
             }
-            bool needsBench = bp.Pieces.Any(p => PieceCatalog.Get(p.piece).m_craftingStation)
-                              && !bp.Pieces.Any(p => p.piece == "piece_workbench")
-                              && !CraftingStation.HaveBuildStationInRange("$piece_workbench", origin);
-            if (needsBench)
+            // Stations (workbench first: the others need one) round the outside, wherever a piece would be out of range.
+            List<string> stations = bp.Pieces.Select(p => PieceCatalog.Get(p.piece).m_craftingStation).Where(s => s)
+                .Select(s => s.gameObject.name).Distinct().OrderBy(s => s == "piece_workbench" ? 0 : 1).ToList();
+            foreach (string station in stations)
             {
-                Vector3 bench = origin + facing * new Vector3(half.x + 1.5f, 0f, 0f);
-                if (ZoneSystem.instance.GetGroundHeight(bench, out float h))
+                foreach (Vector3 local in StationSpots(bp, station, origin, facing, half))
                 {
-                    bench.y = h;
+                    Vector3 pos = origin + facing * local;
+                    if (ZoneSystem.instance.GetGroundHeight(pos, out float h))
+                    {
+                        pos.y = h;
+                    }
+                    Vector3 toSite = origin - pos;
+                    toSite.y = 0f;
+                    steps.Add(new BuildStep { Piece = station, Pos = pos, Rot = Quaternion.LookRotation(toSite.sqrMagnitude > 0.01f ? toSite : facing * Vector3.forward) });
                 }
-                steps.Add(new BuildStep { Piece = "piece_workbench", Pos = bench, Rot = facing * Quaternion.Euler(0f, -90f, 0f) });
             }
-            // A workbench in the blueprint goes first, then everything bottom up.
-            foreach (var p in bp.Pieces.OrderBy(p => p.piece == "piece_workbench" ? 0 : 1).ThenBy(p => p.pos.y).ThenBy(p => p.pos.sqrMagnitude))
+            // The blueprint's own stations go first, then everything bottom up.
+            foreach (var p in bp.Pieces.OrderBy(p => p.piece == "piece_workbench" ? 0 : PieceCatalog.Get(p.piece).GetComponent<CraftingStation>() ? 1 : 2)
+                         .ThenBy(p => p.pos.y).ThenBy(p => p.pos.sqrMagnitude))
             {
                 steps.Add(new BuildStep { Piece = p.piece, Pos = origin + facing * p.pos, Rot = facing * p.rot });
             }
             return steps;
         }
+
+        /// <summary>
+        /// Where to put extra <paramref name="station"/>s, in the blueprint's own space, so every piece that needs one is in
+        /// its build range: none if stations already standing (or in the blueprint) cover them all, otherwise a few round
+        /// the outside of the footprint, picked greedily (the spot that covers most of what's left, until all are).
+        /// </summary>
+        private static List<Vector3> StationSpots(Blueprint bp, string station, Vector3 origin, Quaternion facing, Vector2 half)
+        {
+            CraftingStation prefab = PieceCatalog.Get(station)?.GetComponent<CraftingStation>();
+            var spots = new List<Vector3>();
+            if (!prefab)
+            {
+                return spots;
+            }
+            float reach = prefab.m_rangeBuild - 0.5f;
+            var own = bp.Pieces.Where(p => p.piece == station).Select(p => p.pos).ToList();
+            var left = bp.Pieces
+                .Where(p => PieceCatalog.Get(p.piece).m_craftingStation is CraftingStation s && s.gameObject.name == station)
+                .Select(p => p.pos)
+                .Where(local => !CraftingStation.HaveBuildStationInRange(prefab.m_name, origin + facing * local))
+                .Where(local => !own.Any(o => Flat(o, local) < reach))
+                .ToList();
+            var candidates = new List<Vector3>();
+            for (float z = -half.y; z <= half.y; z += 3f)
+            {
+                candidates.Add(new Vector3(half.x + 1.5f, 0f, z));
+                candidates.Add(new Vector3(-half.x - 1.5f, 0f, z));
+            }
+            for (float x = -half.x; x <= half.x; x += 3f)
+            {
+                candidates.Add(new Vector3(x, 0f, half.y + 1.5f));
+                candidates.Add(new Vector3(x, 0f, -half.y - 1.5f));
+            }
+            while (left.Count > 0)
+            {
+                Vector3 best = candidates.OrderByDescending(c => left.Count(p => Flat(c, p) < reach)).First();
+                int covered = left.RemoveAll(p => Flat(best, p) < reach);
+                if (covered == 0)
+                {
+                    break; // a piece too far inside for any outside spot: the build reports need_station there
+                }
+                spots.Add(best);
+            }
+            return spots;
+        }
+
+        private static float Flat(Vector3 a, Vector3 b) => new Vector2(a.x - b.x, a.z - b.z).magnitude;
 
         /// <summary>
         /// Write the connected building nearest <paramref name="near"/> (see LineTemplate.FindBuilding) as a blueprint:

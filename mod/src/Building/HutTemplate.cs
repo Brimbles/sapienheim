@@ -314,6 +314,11 @@ namespace ValheimCompanion.Building
                     }
                     minY = Mathf.Min(minY, h);
                     maxY = Mathf.Max(maxY, h);
+                    if (level && maxY - minY > MaxLevelRange)
+                    {
+                        why = "ground_too_uneven"; // only gets worse: stop sampling (big footprints, many spots)
+                        return false;
+                    }
                 }
             }
             if (level)
