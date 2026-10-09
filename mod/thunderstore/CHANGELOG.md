@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.7
+- Two new starter blueprints: a **Wooden Watchtower** (4 x 4 m, four storeys with ladders inside, a lookout at 8 m with a covered beacon fire; about 220 wood) and a **Stone Lighthouse** (6 x 6 m, 1 m stone walls, windows, a parapet at 8 m and a beacon under a timber canopy; about 260 stone and 110 wood, and a stonecutter (2 iron)).
+- Blueprints build each level from the outside in, so boards in the middle of an upper floor aren't placed with nothing to rest on (the game broke them at once).
+- A new release's starter blueprints replace the old copies on the server (your own files are left alone).
+
 ## 0.1.6
 - Blueprint packs: he also builds blueprints from PlanBuild's folder and from packs installed as mods (any `blueprints` folder under plugins, e.g. BiomeBlueprints), and from subfolders of his own. Asked what he can build, he can search them by words ("longhouse", "meadows") and size, and sees what each costs.
 - Big blueprints get extra workbenches (and stonecutters for stone) round the outside: a workbench only reaches 10 m, so long builds used to stop partway with "need a workbench".

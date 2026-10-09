@@ -289,9 +289,11 @@ namespace ValheimCompanion.Building
                     steps.Add(new BuildStep { Piece = station, Pos = pos, Rot = Quaternion.LookRotation(toSite.sqrMagnitude > 0.01f ? toSite : facing * Vector3.forward) });
                 }
             }
-            // The blueprint's own stations go first, then everything bottom up.
+            // The blueprint's own stations go first, then everything bottom up, and each level from the outside in: an
+            // upper floor hangs off the walls, and a board placed in the middle before its neighbours has nothing to
+            // rest on, so the game breaks it at once.
             foreach (var p in bp.Pieces.OrderBy(p => p.piece == "piece_workbench" ? 0 : PieceCatalog.Get(p.piece).GetComponent<CraftingStation>() ? 1 : 2)
-                         .ThenBy(p => p.pos.y).ThenBy(p => p.pos.sqrMagnitude))
+                         .ThenBy(p => p.pos.y).ThenByDescending(p => new Vector2(p.pos.x, p.pos.z).sqrMagnitude))
             {
                 steps.Add(new BuildStep { Piece = p.piece, Pos = origin + facing * p.pos, Rot = facing * p.rot });
             }
@@ -388,7 +390,7 @@ namespace ValheimCompanion.Building
 
         private static bool IsRing(string prefab) => prefab.Contains("fence") || prefab.Contains("stake_wall") || prefab == "wood_gate";
 
-        /// <summary>Server start: copy the starter blueprints shipped with the mod into the folder, if not there yet.</summary>
+        /// <summary>Server start: copy the starter blueprints shipped with the mod into the folder (new ones, and updates).</summary>
         public static void InstallStarters()
         {
             string shipped = Path.Combine(Path.GetDirectoryName(typeof(Plugin).Assembly.Location) ?? ".", "blueprints");
@@ -400,9 +402,11 @@ namespace ValheimCompanion.Building
             foreach (string file in Directory.GetFiles(shipped, "*.blueprint"))
             {
                 string target = Path.Combine(Folder, Path.GetFileName(file));
-                if (!File.Exists(target))
+                // A newer release's starter replaces the old one, but never someone's own file of the same name.
+                if (!File.Exists(target)
+                    || (File.ReadAllText(target) != File.ReadAllText(file) && File.ReadLines(target).Any(l => l.Trim() == "#Creator:Sapienheim")))
                 {
-                    File.Copy(file, target);
+                    File.Copy(file, target, overwrite: true);
                 }
             }
         }
