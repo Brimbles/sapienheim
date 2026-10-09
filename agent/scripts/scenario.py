@@ -1015,6 +1015,56 @@ async def scenario_blueprint(r: Runner) -> None:
     await r.cmd("save_world")
 
 
+async def scenario_woodcut(r: Runner) -> None:
+    """Wood priorities: scenario.py woodcut [qty]. Goes to the nearest beech wood, gathers with a stone axe; the server
+    log's "gather Wood from ..." lines show the order (logs and drops before the next standing tree)."""
+    qty = int(sys.argv[2]) if len(sys.argv) > 2 else 40
+    f = await r.cmd("find", prefabs=["Beech1"], max=1)
+    if not f.ok:
+        r.results.append(("find beech", f.error))
+        return
+    pos = f.data["found"][0]["pos"]
+    await r.cmd("debug_teleport", x=pos[0] + 3, z=pos[2] + 3)
+    await asyncio.sleep(8)
+    await r.cmd("debug_clear", all=True)
+    await r.cmd("debug_give", item="AxeStone", qty=1)
+    started = time.time()
+    outcome = await r.task(f"gather {qty} wood", "gather", item="Wood", qty=qty, radius=30)
+    r.results.append(("took", f"{round(time.time() - started)} s"))
+    s = await r.state()
+    have = {i["item"]: i["qty"] for i in s.get("self", {}).get("inventory", [])}
+    r.results.append(("wood", f"{have.get('Wood', 0)} ({outcome})"))
+
+
+async def scenario_make(r: Runner) -> None:
+    """The make errand, run by the real agent code with no LLM: scenario.py make ITEM [x z]. Empty pack, then make ITEM
+    from scratch; every step it takes is logged."""
+    from companion_agent.brain import Brain
+    from companion_agent.memory import Memory
+
+    item = sys.argv[2] if len(sys.argv) > 2 else "Hammer"
+    if len(sys.argv) > 4:
+        await r.cmd("debug_teleport", x=float(sys.argv[3]), z=float(sys.argv[4]))
+        await asyncio.sleep(8)
+    await r.cmd("debug_clear", all=True)
+    brain = Brain(r.conn, client=None, memory=Memory())
+    block = type("B", (), {"type": "tool_use", "id": "t1", "name": "make", "input": {"item": item}})()
+    first = await brain._execute(block, [], [])
+    r.results.append(("start", first["content"]))
+    deadline = time.time() + 1500
+    while brain.mission and time.time() < deadline:
+        try:
+            ev = await asyncio.wait_for(r.events.get(), timeout=30)
+        except asyncio.TimeoutError:
+            continue
+        log.info("event %s %s | stage %s goals %s", ev.name, ev.data, brain.mission["stage"],
+                 [g["item"] for g in brain.mission["goals"]])
+        await brain.on_event(ev)
+    r.results.append(("journal", " / ".join(e["text"] for e in brain.memory.data.get("journal", [])[-8:])))
+    s = await r.state()
+    r.results.append(("inventory", str({i["item"]: i["qty"] for i in s.get("self", {}).get("inventory", [])})))
+
+
 async def scenario_packbuild(r: Runner) -> None:
     """A blueprint from an installed pack: scenario.py packbuild NAME [x z]. Lists, filters, builds NAME with the materials
     the listing says it costs, and counts what stands."""
@@ -1061,7 +1111,7 @@ async def scenario_packbuild(r: Runner) -> None:
 
 SCENARIOS = {
     "m4": scenario_m4, "pieces": scenario_pieces, "build": scenario_build, "inspect": scenario_inspect,
-    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds, "buildportal": scenario_buildportal, "gravestone": scenario_gravestone, "guard": scenario_guard, "fires": scenario_fires, "items": scenario_items, "deposit": scenario_deposit, "tidy_chests": scenario_tidy_chests, "hold": scenario_hold, "sign": scenario_sign, "pieceinfo": scenario_pieceinfo, "stations": scenario_stations, "cookdebug": scenario_cookdebug, "collect": scenario_collect, "find": scenario_find, "farm": scenario_farm, "labels": scenario_labels, "feed": scenario_feed, "settlement": scenario_settlement, "prefabs": scenario_prefabs, "road": scenario_road, "bridge": scenario_bridge, "blueprint": scenario_blueprint, "fish": scenario_fish, "boat": scenario_boat, "teleport": scenario_teleport, "near": scenario_near, "shore": scenario_shore, "resume": scenario_resume, "workshop": scenario_workshop, "cover": scenario_cover, "mission": scenario_mission, "coast": scenario_coast, "tamecheck": scenario_tamecheck, "packbuild": scenario_packbuild,
+    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds, "buildportal": scenario_buildportal, "gravestone": scenario_gravestone, "guard": scenario_guard, "fires": scenario_fires, "items": scenario_items, "deposit": scenario_deposit, "tidy_chests": scenario_tidy_chests, "hold": scenario_hold, "sign": scenario_sign, "pieceinfo": scenario_pieceinfo, "stations": scenario_stations, "cookdebug": scenario_cookdebug, "collect": scenario_collect, "find": scenario_find, "farm": scenario_farm, "labels": scenario_labels, "feed": scenario_feed, "settlement": scenario_settlement, "prefabs": scenario_prefabs, "road": scenario_road, "bridge": scenario_bridge, "blueprint": scenario_blueprint, "fish": scenario_fish, "boat": scenario_boat, "teleport": scenario_teleport, "near": scenario_near, "shore": scenario_shore, "resume": scenario_resume, "workshop": scenario_workshop, "cover": scenario_cover, "mission": scenario_mission, "coast": scenario_coast, "tamecheck": scenario_tamecheck, "packbuild": scenario_packbuild, "woodcut": scenario_woodcut, "make": scenario_make,
 }
 
 

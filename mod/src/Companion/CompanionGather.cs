@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
 namespace ValheimCompanion.Companion
@@ -35,6 +36,9 @@ namespace ValheimCompanion.Companion
         private const float StuckSeconds = 90f;
         private const float TargetGiveUp = 20f; // can't get within reach of a source (up on a roof, behind a wall): try another
         private const float MaxSeconds = 600f;
+        private const float HeadRoom = 4f;        // a log propped up this high is still within an axe's swing
+        private const float WorkSpotRange = 20f;  // a felled tree's log and the wood it breaks into land within this of the stump
+        private const int MaxWorkSpots = 6;
         // Hard limit per gather, including "everything nearby", so a vague request can't strip a hillside.
         public const int MaxItems = 100;
 
@@ -65,6 +69,9 @@ namespace ValheimCompanion.Companion
         private bool _loggedSearch;
         private float _targetSince;
         private readonly HashSet<Component> _unreachable = new HashSet<Component>();
+        // Where it has been chopping or mining: what that work leaves (a felled tree's log, the wood a log splits into)
+        // counts as in range there, even outside the search circle, so it finishes one tree before starting the next.
+        private readonly List<Vector3> _workSpots = new List<Vector3>();
 
         public CompanionGather(Humanoid character, MonsterAI ai, CompanionInventory inventory)
         {
@@ -100,6 +107,7 @@ namespace ValheimCompanion.Companion
             _deadline = Time.time + MaxSeconds;
             _nextSearch = 0f;
             _unreachable.Clear();
+            _workSpots.Clear();
         }
 
         public bool Active => _item != null;
@@ -189,7 +197,7 @@ namespace ValheimCompanion.Companion
 
             Vector3 closest = ClosestPoint(_target.Target);
             MoveTowards(closest);
-            if (Vector3.Distance(closest, _character.transform.position) <= Reach)
+            if (InReach(closest))
             {
                 _targetSince = Time.time;
                 Act(_target, closest);
@@ -203,11 +211,23 @@ namespace ValheimCompanion.Companion
             return Status.Running;
         }
 
+        /// <summary>Close enough to swing at: within reach across the ground, and not too far above or below.</summary>
+        private bool InReach(Vector3 point)
+        {
+            Vector3 d = point - _character.transform.position;
+            return new Vector2(d.x, d.z).magnitude <= Reach && d.y <= HeadRoom && d.y >= -2f;
+        }
+
         private void MoveTowards(Vector3 point)
         {
             if (!_waypoint)
             {
                 _waypoint = new GameObject("CompanionGatherWaypoint");
+            }
+            // Walk to the ground under it: a log can lie propped up on a slope, a stump or another tree.
+            if (ZoneSystem.instance.GetGroundHeight(point, out float ground) && point.y > ground + 0.5f)
+            {
+                point.y = ground;
             }
             _waypoint.transform.position = point;
             if (_ai.GetFollowTarget() != _waypoint)
@@ -284,6 +304,7 @@ namespace ValheimCompanion.Companion
                 m_hitCollider = NearestCollider(source.Target, point),
             };
             hit.SetAttacker(_character);
+            NoteWorkSpot(source.Target.transform.position);
 
             // Warn before the blow that fells a standing tree.
             if (source.Target is TreeBase tree && _companion)
@@ -366,11 +387,18 @@ namespace ValheimCompanion.Companion
 
             // 2. Pickables and things to chop or mine.
             _kindCounts.Clear();
+            var colliders = new List<Collider>();
             int n = Physics.OverlapSphereNonAlloc(_origin, _radius, s_overlap, ~0, QueryTriggerInteraction.Collide);
-            var seen = new HashSet<Component>();
-            for (int i = 0; i < n; i++)
+            colliders.AddRange(s_overlap.Take(n));
+            foreach (Vector3 spot in _workSpots)
             {
-                Source source = Classify(s_overlap[i]);
+                n = Physics.OverlapSphereNonAlloc(spot, WorkSpotRange, s_overlap, ~0, QueryTriggerInteraction.Collide);
+                colliders.AddRange(s_overlap.Take(n));
+            }
+            var seen = new HashSet<Component>();
+            foreach (Collider collider in colliders)
+            {
+                Source source = Classify(collider);
                 if (source == null || !seen.Add(source.Target) || !IsUsable(source))
                 {
                     continue;
@@ -445,7 +473,8 @@ namespace ValheimCompanion.Companion
             {
                 return;
             }
-            float d = Vector3.Distance(ClosestPoint(source.Target), _character.transform.position);
+            Vector3 to = ClosestPoint(source.Target) - _character.transform.position;
+            float d = new Vector2(to.x, to.z).magnitude;
             float score = Tier(source.Target) * 10000f + d;
             if (score < bestScore)
             {
@@ -456,13 +485,19 @@ namespace ValheimCompanion.Companion
 
         private static int Tier(Component target)
         {
+            // Wood: finish each tree before the next. A felled tree's log (and the wood it breaks into, as drops) comes
+            // first, then the next standing tree; saplings, bushes, branches and stumps give too little to go after
+            // while there are trees.
             switch (target)
             {
                 case ItemDrop _: return 0;   // loose drops
-                case Pickable _:             // branches, stones, berries
-                case TreeLog _: return 1;    // fallen logs
-                case TreeBase _: return 3;   // standing trees, only when nothing else is left
-                default: return 2;           // stumps, bushes, rocks
+                case TreeLog _: return 1;    // fallen trees: felled ones, and the world's old logs
+                case Destructible d when Utils.GetPrefabName(d.gameObject).ToLowerInvariant().Contains("log"): return 1;
+                case TreeBase _: return 2;   // standing trees
+                case Pickable p when p.m_itemPrefab && p.m_itemPrefab.name == "Wood": return 3; // branches
+                case Pickable _: return 1;   // stones, flint, berries: no tool needed, the quickest
+                case Destructible _: return 3; // saplings, bushes, stumps (rocks are MineRock)
+                default: return 2;           // rocks
             }
         }
 
@@ -582,7 +617,21 @@ namespace ValheimCompanion.Companion
             return !(c is Pickable pickable) || !pickable.m_picked;
         }
 
-        private bool InRange(Vector3 p) => Vector3.Distance(p, _origin) <= _radius;
+        private bool InRange(Vector3 p) =>
+            Vector3.Distance(p, _origin) <= _radius || _workSpots.Any(s => Vector3.Distance(p, s) <= WorkSpotRange);
+
+        private void NoteWorkSpot(Vector3 p)
+        {
+            if (_workSpots.Any(s => Vector3.Distance(p, s) < 4f))
+            {
+                return;
+            }
+            _workSpots.Add(p);
+            if (_workSpots.Count > MaxWorkSpots)
+            {
+                _workSpots.RemoveAt(0);
+            }
+        }
 
         private bool HasRoomFor(string prefab)
         {

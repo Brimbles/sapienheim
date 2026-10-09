@@ -5,6 +5,8 @@
 - Big blueprints get extra workbenches (and stonecutters for stone) round the outside: a workbench only reaches 10 m, so long builds used to stop partway with "need a workbench".
 - Older blueprints' roof walls (`wood_wall_roof`, since renamed by the game) are built instead of skipped.
 - Finding a building site is quicker on rough ground.
+- Woodcutting finishes each tree: he fells it, chops up its log and picks up all the wood before starting the next. Fallen logs come first; saplings, bushes and branches only when there are no trees. A log propped up on a slope or a stump no longer makes him give up and fell another tree.
+- "Make yourself an axe": with the agent's new `make` errand he gets the materials himself (a chest, gathering, or a trip to where they're found), builds a workbench shelter if the recipe needs one, makes an axe first if he needs one for the trees, crafts it and comes back.
 
 ## 0.1.5
 - He swings his axe again when chopping on Linux servers. Axe swings come in a chain (swing_axe0, 1, 2) and the server was sending the bare name, which players' games don't know.

@@ -62,7 +62,7 @@ RULES = """
 - You carry an inventory (see `inventory` in the state; items are named by id, e.g. "Wood"). Players hand you things by dropping them near you; use `pick_up` to collect them. Use `give` to hand items to a player.
 - `gather` collects resources: it picks things up, picks branches and stones, chops trees and logs (needs an axe in your inventory) and mines rocks (needs a pickaxe). It never chops or mines inside a ward (anyone's base, including your master's), though picking up and harvesting there is fine. If the only trees or rocks nearby are warded it fails with only_sources_inside_wards, so offer to go further out.
 - `chests` in the state lists nearby chests with their contents; use `fetch_items` / `store_items` with a chest id.
-- `craft` makes items from your inventory, walking to the right crafting station if the recipe needs one. Check what an item needs with `recipe` first; if you're short, gather or fetch the materials, then craft. A hammer needs no station (Wood 3, Stone 2). If a craft fails with no_station:Workbench, build a `workshop` first (the build tool: a small roofed shelter with a workbench, about 32 wood, needs a hammer; a torch too if you carry 2 resin), then craft.
+- `craft` makes items from your inventory, walking to the right crafting station if the recipe needs one. Check what an item needs with `recipe` first; if you're short, gather or fetch the materials, then craft. A hammer needs no station (Wood 3, Stone 2). If a craft fails with no_station:Workbench, build a `workshop` first (the build tool: a small roofed shelter with a workbench, about 32 wood, needs a hammer; a torch too if you carry 2 resin), then craft. When asked to make yourself something ("make yourself an axe") and you're short of materials, use `make`: it's a whole errand (fetching, gathering, trips to where materials are, a workbench, an axe for the trees) that runs on its own and reports back, so just say you're off to do it.
 - You automatically drop whatever you're doing to fight aggressive enemies nearby, then carry on. No tool call is needed for that.
 - Work tools (go_to, attack, pick_up, give, gather, store_items, fetch_items, craft, build, resume_build, repair_nearby) take `queue: true` to run one after another. Plan multi-step jobs as a queue, e.g. gather wood, then give it. If one task fails, the rest of the queue is dropped and you'll hear about it.
 - You'll be told when queued work finishes or fails. Report back in character; if something failed (e.g. need_axe), say what you need.
@@ -80,7 +80,7 @@ RULES = """
 - Travel: to go to a named place, use `travel` (it picks the best route, through portals when that's shorter). `use_portal` steps through a specific portal. You can walk up to 5 km, but not across open water. You can't sail or steer a boat, but you ride as a passenger: `board` the nearest boat (you swim to its ladder; never to one more than 15 m out), and when following you climb aboard on your own when your master does and step off when they do. If you fall in you swim back to the boat if it's close, else to shore.
 - Always name the settlements you build (the `name` on `build`) so you can travel back to them later: use the player's name for it, or if they gave none, invent a fitting Norse-sounding one and tell them. Named places show as pins on everyone's map.
 - Memory: you keep a long-term memory between sessions (shown as "What you remember"). Use `remember` for things worth keeping: what players like, promises, plans, notable events. Use `name_place` when asked to remember a location, and `go_to` with `place` to go back there.
-- Settlements (`build` templates outpost, farm, village, fort, mining_camp, port) go at least 50 m from any base and outside wards; you gather every material honestly. Wood only until Bonemass is beaten. `build_road` lays a free stone-paved road between places, routing round steep ground and bridging narrow water (it stops and tells you where wider water blocks it). `blueprints` lists shared building plans you can build (template blueprint) or saves a building you're near as a new one.
+- Settlements (`build` templates outpost, farm, village, fort, mining_camp, port) go at least 50 m from any base and outside wards; you gather every material honestly. Wood only until Bonemass is beaten. `build_road` lays a free stone-paved road between places, routing round steep ground and bridging narrow water (it stops and tells you where wider water blocks it). `blueprints` lists shared building plans you can build (template blueprint) or saves a building you're near as a new one. Asked what you can build, name your templates (hut, workshop, wall, fence, portal, sign, the settlements) and look up blueprints with `blueprints` (a filter like the player's biome keeps it short).
 - `fish` at the nearest shore with your rod and bait. It's chancy: the right bait for the water's biome helps a lot, misses sometimes lose bait, and a few fish can take a while.
 - Example plan for "get 20 wood and make me a club": recipe(Club) -> gather(Wood, enough for the club plus 20, queue) -> craft(Club, queue) -> give(Club to the player, queue) -> give(Wood, 20, queue). Say what you're about to do first.
 - Never attack players or tamed animals. Use the `id` values from the `nearby` list for `attack`.
@@ -111,6 +111,23 @@ FINDABLE: dict[str, list[str]] = {
     "pine trees": ["Pinetree_01"],
     "greydwarf nests": ["Spawner_GreydwarfNest"],
 }
+
+# Where a material comes from, for a `make` errand with none nearby: what `find` looks for (nearest first).
+MATERIAL_SOURCES: dict[str, list[str]] = {
+    "Wood": ["Pickable_Branch", "Beech1", "Birch1", "Birch2", "Oak1", "FirTree", "Pinetree_01"],
+    "Stone": ["Pickable_Stone"],
+    "Flint": ["Pickable_Flint"],
+    "FineWood": ["Birch1", "Birch2", "Oak1"],
+    "CopperOre": ["rock4_copper", "rock4_copper_frac"],
+    "TinOre": ["MineRock_Tin"],
+    "Raspberry": ["RaspberryBush"],
+    "Blueberries": ["BlueberryBush"],
+    "Mushroom": ["Pickable_Mushroom"],
+    "Thistle": ["Pickable_Thistle"],
+    "Dandelion": ["Pickable_Dandelion"],
+}
+MAKE_TRIES = 3      # trips per material before giving up
+MAKE_TRIP_MIN = 50  # a trip goes somewhere further than this (closer is the gather area it just cleared)
 
 # What each boss's altar wants (item id, how many) and where it comes from.
 BOSSES: dict[str, dict[str, Any]] = {
@@ -443,6 +460,23 @@ TOOLS: list[dict[str, Any]] = [
                 "export": {"type": "string"},
                 "filter": {"type": "string"},
                 "max_pieces": {"type": "integer"},
+            },
+        },
+    },
+    {
+        "name": "make",
+        "description": "An errand to make an item from scratch when you don't have the materials (use `craft` when you "
+        "do). You get each missing material yourself: from a nearby chest, by gathering, or, when there's none about, a "
+        "trip to where it's been seen (up to 5 km, a mission: you report at milestones and carry on after death or "
+        "going off duty). You build a workbench shelter if the recipe needs one, make an axe first if the only wood is "
+        "standing trees, craft it, and come back. Item ids: Hammer, AxeStone (stone axe), AxeFlint, Club, Torch, Hoe, "
+        "SpearFlint, KnifeFlint, ArmorRagsChest... (`recipe` checks one). action=cancel stops it.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "item": {"type": "string"},
+                "qty": {"type": "integer"},
+                "action": {"type": "string", "enum": ["start", "cancel"]},
             },
         },
     },
@@ -1015,7 +1049,11 @@ class Brain:
         """Pick the mission up again after a death or going off duty, at whatever step it had reached."""
         m = self.mission
         log.info("mission resumes (%s) at stage %s", why, m["stage"])
-        if m["stage"] == "exploring":
+        if m.get("kind") == "make" and m["stage"] == "travelling":
+            await self.conn.command("go_to", x=m["x"], z=m["z"])
+        elif m.get("kind") == "make" and m["stage"] != "returning":
+            await self._make_step()
+        elif m["stage"] == "exploring":
             state = await self.conn.request_state() or {}
             pos = (state.get("self") or {}).get("pos")
             await self._explore_leg([pos[0], pos[2]] if pos else [m["x"], m["z"]])
@@ -1051,6 +1089,8 @@ class Brain:
         task = d.get("task")
         if d.get("queue_remaining", 0) > 0:
             return task in ("go_to", "build")  # a step in the middle of a queued job: say nothing
+        if m.get("kind") == "make" and m["stage"] != "returning":
+            return await self._make_event(event)
         if m.get("kind") == "explore" and m["stage"] == "exploring" and task == "go_to":
             return await self._explore_event(event)
         if event.name == "task_failed":
@@ -1093,6 +1133,204 @@ class Brain:
         else:
             self._set_mission(None)
             await self._milestone(text)
+
+    # ---------- make: an item from scratch ----------
+    # The mission holds a stack of goals: the item asked for, with whatever it needs first on top (a workshop for a
+    # recipe that needs a workbench, a hammer to build that, an axe when the only wood is standing trees). Each step
+    # tries the top goal and, when something's missing, starts the one task that gets it; the task's event moves on.
+
+    async def _make_tool(self, tool_id: str, args: dict[str, Any], actions: list[str]) -> dict[str, Any]:
+        if args.get("action") == "cancel":
+            if not self.mission or self.mission.get("kind") != "make":
+                return _tool_result(tool_id, "not making anything")
+            await self.conn.command("set_mission")
+            await self.conn.command("follow")
+            self._set_mission(None)
+            actions.append("make(cancel)")
+            return _tool_result(tool_id, "stopped")
+        item = str(args.get("item") or "")
+        if not item:
+            return _tool_result(tool_id, "failed: which item?", error=True)
+        if self.mission:
+            return _tool_result(tool_id, f"failed: busy with a mission ({self.mission['label']}); cancel it first", error=True)
+        recipe = await self.conn.command("recipe", item=item)
+        if not recipe.ok:
+            return _tool_result(tool_id, f"failed: {recipe.error} (use the item id, e.g. AxeStone)", error=True)
+        state = await self.conn.request_state() or {}
+        pos = (state.get("self") or {}).get("pos") or [0, 0, 0]
+        self._set_mission({
+            "kind": "make", "label": f"making {item}", "item": item, "stage": "starting", "build": None,
+            "goals": [{"item": item, "qty": max(1, int(args.get("qty") or 1))}],
+            "home": [pos[0], pos[2]], "away": False, "come_back": False, "tries": {}, "current": None,
+        })
+        self.memory.log(f"set off to make {item}")
+        actions.append(f"make({item})")
+        first = await self._make_step()
+        if not self.mission:
+            return _tool_result(tool_id, f"failed: {first}", error=True)
+        return _tool_result(tool_id, f"on it: {first}; you'll report when it's made or if you get stuck")
+
+    async def _make_step(self) -> str:
+        """Work on the top goal: start the one task that moves it on. Returns what it's doing now."""
+        for _ in range(6):  # pushing a goal (workshop, hammer, axe) tries again straight away
+            m = self.mission
+            if not m or m.get("kind") != "make":
+                return "stopped"
+            goal = m["goals"][-1]
+            if goal["item"] == "workshop":
+                r = await self.conn.command("build", template="workshop")
+                if r.ok:
+                    return self._make_stage("building", "building a workbench shelter first")
+                if r.error == "need_hammer":
+                    if not self._make_push("Hammer"):
+                        return await self._make_fail("needs a hammer to build a workbench, and can't make one")
+                    continue
+                if r.error == "missing_materials":
+                    return await self._make_get(r.data.get("missing") or {})
+                return await self._make_fail(f"can't build a workbench shelter: {r.error}")
+            r = await self.conn.command("craft", item=goal["item"], qty=goal["qty"])
+            if r.ok:
+                return self._make_stage("crafting", f"crafting {goal['item']}")
+            error = r.error or ""
+            if error == "missing_materials":
+                return await self._make_get(r.data.get("missing") or {})
+            if error.startswith("no_station:Workbench"):
+                if m["away"]:
+                    return await self._make_head_home()  # craft at home, not out in the wild
+                if not self._make_push("workshop"):
+                    return await self._make_fail("needs a workbench and can't build one")
+                continue
+            if error.startswith(("no_station", "station_level_too_low")):
+                return await self._make_fail(f"needs a better crafting station ({error})")
+            return await self._make_fail(f"can't craft {goal['item']}: {error}")
+        return await self._make_fail("going round in circles")
+
+    def _make_stage(self, stage: str, doing: str) -> str:
+        m = self.mission
+        m["stage"] = stage
+        self._set_mission(m)
+        return doing
+
+    def _make_push(self, item: str) -> bool:
+        """Make something first (a hammer, an axe, a workshop), unless it's already on the list (no loops)."""
+        m = self.mission
+        if any(g["item"] == item for g in m["goals"]) or len(m["goals"]) >= 4:
+            return False
+        m["goals"].append({"item": item, "qty": 1})
+        self._set_mission(m)
+        return True
+
+    async def _make_get(self, missing: dict[str, Any]) -> str:
+        """Fetch the first missing material from a chest nearby, or gather it."""
+        material, qty = next(iter(missing.items()))
+        qty = int(qty)
+        m = self.mission
+        m["current"], m["need"] = material, qty
+        state = await self.conn.request_state() or {}
+        for chest in state.get("chests") or []:
+            have = sum(c["qty"] for c in chest.get("contents") or [] if c.get("item") == material)
+            if have > 0:
+                r = await self.conn.command("fetch_items", chest_id=chest["id"], item=material, qty=min(qty, have))
+                if r.ok:
+                    return self._make_stage("fetching", f"fetching {material} from a chest")
+        r = await self.conn.command("gather", item=material, qty=qty, radius=60)
+        if not r.ok:
+            return await self._make_trip(material, r.error)
+        return self._make_stage("gathering", f"gathering {qty} {material}")
+
+    async def _make_trip(self, material: str, why: str | None) -> str:
+        """None nearby: travel to the nearest place it's been seen, further than the area just searched."""
+        m = self.mission
+        m["tries"][material] = m["tries"].get(material, 0) + 1
+        if m["tries"][material] > MAKE_TRIES:
+            return await self._make_fail(f"can't find enough {material} ({why})")
+        prefabs = MATERIAL_SOURCES.get(material)
+        if not prefabs:
+            return await self._make_fail(f"doesn't know where to get {material} (it doesn't grow or lie about)")
+        r = await self.conn.command("find", prefabs=prefabs, max=10)
+        found = [f for f in (r.data or {}).get("found", []) if f["dist"] > MAKE_TRIP_MIN] if r.ok else []
+        if not found:
+            return await self._make_fail(f"no {material} anywhere explored ({why})")
+        x, z = found[0]["pos"][0], found[0]["pos"][2]
+        r = await self.conn.command("go_to", x=x, z=z)
+        if not r.ok:
+            return await self._make_fail(f"can't get to the {material} ({r.error})")
+        await self.conn.command("set_mission", x=x, z=z)  # if he dies out there, he comes back there
+        m.update({"x": x, "z": z, "away": True, "come_back": True})
+        doing = self._make_stage("travelling", f"off to get {material}, {round(found[0]['dist'])} m away")
+        await self._milestone(f"{m['label']}: {doing}")
+        return doing
+
+    async def _make_head_home(self) -> str:
+        m = self.mission
+        x, z = m["home"]
+        await self.conn.command("set_mission")
+        await self.conn.command("go_to", x=x, z=z)
+        m.update({"x": x, "z": z})
+        return self._make_stage("heading_home", "heading home to craft it at the workbench")
+
+    async def _make_fail(self, why: str) -> str:
+        await self._finish_mission(f"gave up {self.mission['label']}: {why}")
+        return why
+
+    async def _make_event(self, event: Event) -> bool:
+        """A task belonging to the errand ended: move on (or explain why it can't)."""
+        m = self.mission
+        d = event.data
+        task, ok = d.get("task"), event.name == "task_done"
+        stage = m["stage"]
+        if stage == "crafting" and task == "craft":
+            if not ok:
+                await self._make_fail(f"crafting failed ({d.get('reason')})")
+                return True
+            done = m["goals"].pop()
+            self._set_mission(m)
+            if m["goals"]:
+                await self._make_step()  # made a tool it needed; back to the main job
+            else:
+                await self._finish_mission(f"made {done['qty']} {done['item']}")
+            return True
+        if stage == "building" and task == "build":
+            if not ok:
+                await self._make_fail(f"the workbench shelter failed ({d.get('reason')})")
+                return True
+            m["goals"].pop()
+            self._set_mission(m)
+            await self._make_step()
+            return True
+        if stage == "fetching" and task == "fetch":
+            await self._make_step()
+            return True
+        if stage == "gathering" and task == "gather":
+            reason = d.get("reason")
+            if ok or d.get("collected", 0) > 0:
+                await self._make_step()  # whatever was collected, see what's still missing
+            elif reason == "need_axe":
+                if not self._make_push("AxeStone"):
+                    await self._make_fail("needs an axe for the trees here")
+                else:
+                    await self._make_step()
+            elif reason in ("need_pickaxe", "tool_too_weak"):
+                await self._make_fail(f"needs a better tool to get {m['current']} ({reason})")
+            elif reason == "inventory_full":
+                await self._make_fail("pack is full")
+            else:
+                await self._make_trip(m["current"], reason)
+            return True
+        if stage in ("travelling", "heading_home") and task == "go_to":
+            if not ok:
+                m["tries"]["walk"] = m["tries"].get("walk", 0) + 1
+                if m["tries"]["walk"] > MAKE_TRIES:
+                    await self._make_fail(f"can't get there ({d.get('reason')})")
+                else:
+                    await self.conn.command("go_to", x=m["x"], z=m["z"])
+                return True
+            if stage == "heading_home":
+                m.update({"away": False, "come_back": False})
+                self._set_mission(m)
+            await self._make_step()
+            return True
+        return False
 
     async def _find(self, tool_id: str, args: dict[str, Any], actions: list[str]) -> dict[str, Any]:
         thing = str(args.get("thing", ""))
@@ -1366,6 +1604,8 @@ class Brain:
             return await self._find(block.id, args, actions)
         if name == "mission":
             return await self._mission_tool(block.id, args, actions)
+        if name == "make":
+            return await self._make_tool(block.id, args, actions)
         if name == "explore":
             return await self._explore_tool(block.id, args, actions)
         if name == "boss_prep":
