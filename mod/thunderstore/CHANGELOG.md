@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.5
+- He swings his axe again when chopping on Linux servers. Axe swings come in a chain (swing_axe0, 1, 2) and the server was sending the bare name, which players' games don't know.
+
 ## 0.1.3
 - He no longer chases enemies far or for long: he gives up beyond 25 m from where he was (or from you, when following) or after 30 s of chasing, and leaves that enemy be for a while. Orders to attack, and guard duty, still let him pursue.
 - New build: a workshop, the starter shelter that makes a workbench usable (two floors, back and side walls, open front, roof, a torch if he has resin). He builds one when a craft needs a workbench.

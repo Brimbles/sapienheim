@@ -204,19 +204,19 @@ namespace ValheimCompanion.Companion
                     }
                 }
             }
-            string own = tool.m_shared.m_attack?.m_attackAnimation;
+            string own = SwingTrigger(tool.m_shared.m_attack);
             if (triggers.Count == 0)
             {
                 // A headless server's animator may report no parameters at all (Linux, no rendering). The trigger is
                 // only sent on to the players, whose animators have the tool's own swing, so trust it.
-                return string.IsNullOrEmpty(own) ? "swing_axe" : own;
+                return own ?? "swing_axe0";
             }
             var candidates = new List<string> { own };
             foreach (ItemDrop.ItemData item in _character.GetInventory().GetAllItems())
             {
-                candidates.Add(item.m_shared.m_attack?.m_attackAnimation);
+                candidates.Add(SwingTrigger(item.m_shared.m_attack));
             }
-            candidates.AddRange(new[] { "swing_axe", "attack", "attack_melee", "swing_sledge" });
+            candidates.AddRange(new[] { "swing_axe0", "swing_axe", "attack", "attack_melee", "swing_sledge" });
             foreach (string c in candidates)
             {
                 if (!string.IsNullOrEmpty(c) && triggers.Contains(c))
@@ -226,6 +226,21 @@ namespace ValheimCompanion.Companion
             }
             Jotunn.Logger.LogInfo($"{_character.m_name}: animator triggers: {string.Join(", ", triggers)}");
             return null;
+        }
+
+        /// <summary>
+        /// The trigger an attack's first swing fires, named as Attack.Start does: chained attacks (axes: swing_axe0,
+        /// swing_axe1...) and random ones end in a number, single swings (pickaxe, hammer) use the bare name.
+        /// </summary>
+        private static string SwingTrigger(Attack attack)
+        {
+            if (attack == null || string.IsNullOrEmpty(attack.m_attackAnimation))
+            {
+                return null;
+            }
+            return attack.m_attackChainLevels > 1 || attack.m_attackRandomAnimations >= 2
+                ? attack.m_attackAnimation + "0"
+                : attack.m_attackAnimation;
         }
 
         /// <summary>Owner only: show a "..." bubble while the agent thinks. The next Say replaces it.</summary>
