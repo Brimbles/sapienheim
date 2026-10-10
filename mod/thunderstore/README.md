@@ -9,7 +9,7 @@
 - **Talk to it** with `@Name ...` in chat, or just chat within 10 m of it.
 - **Orders in plain language:** follow, stay, go somewhere (up to 5 km), fight, fetch from chests, gather wood or stone, craft at a station, build from templates, repair or tear down buildings, use and build portals.
 - **Settlements:** an outpost, farm, village, fort (stone walls once Bonemass is beaten), mining camp or port, sited away from your bases and outside wards, with every material gathered honestly. Each gets a name and a map pin.
-- **Roads and blueprints:** stone-paved roads between places, with wooden bridges over narrow water; builds shared PlanBuild `.blueprint` files (vanilla pieces only) and saves buildings as new ones.
+- **Roads and blueprints:** stone-paved roads between places, with wooden bridges over narrow water; builds shared PlanBuild `.blueprint` files (vanilla pieces only) and saves buildings as new ones. Comes with BiomeBlueprints (353 builds by biome, installed with it) and its own watchtower and lighthouse.
 - **Boats and fishing:** rides along as a passenger (swims to the ladder, stands by the mast, swims back if it falls in); fishes with a rod and bait.
 - **Exploring and missions:** goes off exploring, uncovering its master's map and pinning what it finds (boss altars, traders, dungeons); takes on long jobs far away and reports at milestones.
 - **Chores:** tends fires, cooks, runs kilns and smelters, farms, feeds tamed animals, stores loot like with like and labels chests.
