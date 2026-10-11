@@ -244,7 +244,8 @@ namespace ValheimCompanion.Companion
         }
 
         /// <summary>Move up to <paramref name="qty"/> of an item (null = everything not equipped). Returns how many moved.</summary>
-        public static int Transfer(Inventory from, Inventory to, string prefab, int qty)
+        /// <param name="owner">Moving out of the companion's pack: keep what he can't part with (his basic kit).</param>
+        public static int Transfer(Inventory from, Inventory to, string prefab, int qty, CompanionInventory owner = null)
         {
             int moved = 0;
             foreach (ItemDrop.ItemData item in new List<ItemDrop.ItemData>(from.GetAllItems()))
@@ -253,7 +254,8 @@ namespace ValheimCompanion.Companion
                 {
                     break;
                 }
-                if (item.m_equipped || (prefab != null && CompanionInventory.PrefabName(item) != prefab))
+                if (item.m_equipped || (prefab != null && CompanionInventory.PrefabName(item) != prefab)
+                    || (owner != null && !owner.CanPartWith(item)))
                 {
                     continue;
                 }

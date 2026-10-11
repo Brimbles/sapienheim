@@ -1,6 +1,8 @@
 # Changelog
 
 ## 0.1.7
+- He always has his basic kit: a stone axe, a hammer, a hoe and a cultivator. A missing one turns up again within seconds, and he keeps one of each (won't give, store or deposit the last one).
+- Give him better weapons and he fights with the hardest-hitting one (the game's own AI picked at random, so a sword lost half its fights to the stone axe).
 - Three new starter blueprints: a **Viking Longhouse** (8 x 12 m, a steep roof with smoke vents in the gables, a hearth, two beds, a chest and a workbench; wood only: 160 wood and 5 stone), a **Wooden Watchtower** (4 x 4 m, four storeys with ladders inside, a lookout at 8 m with a roofed beacon fire; about 220 wood) and a **Stone Lighthouse** (6 x 6 m, 1 m stone walls, windows, a parapet at 8 m and a beacon under a timber roof; about 260 stone and 110 wood, and a stonecutter (2 iron)).
 - Blueprints build each level from the outside in, so boards in the middle of an upper floor aren't placed with nothing to rest on (the game broke them at once).
 - Installs **BiomeBlueprints** (353 base-game builds by biome) as a dependency, with PlanBuild: he can build any of them, and players can too with PlanBuild.

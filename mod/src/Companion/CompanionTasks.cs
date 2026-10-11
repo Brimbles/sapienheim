@@ -1613,7 +1613,7 @@ namespace ValheimCompanion.Companion
             }
             Inventory chestInv = _chest.GetInventory();
             int moved = store
-                ? CompanionWorkshop.Transfer(_inventory.Inventory, chestInv, _chestItem, _chestQty)
+                ? CompanionWorkshop.Transfer(_inventory.Inventory, chestInv, _chestItem, _chestQty, _inventory)
                 : CompanionWorkshop.Transfer(chestInv, _inventory.Inventory, _chestItem, _chestQty);
             var data = new JObject { ["task"] = task, ["item"] = _chestItem ?? "all", ["moved"] = moved };
             _chest = null;
@@ -2647,7 +2647,7 @@ namespace ValheimCompanion.Companion
                 {
                     continue;
                 }
-                int n = CompanionWorkshop.Transfer(_inventory.Inventory, target.GetInventory(), prefab, int.MaxValue);
+                int n = CompanionWorkshop.Transfer(_inventory.Inventory, target.GetInventory(), prefab, int.MaxValue, _inventory);
                 if (n > 0)
                 {
                     _deposited.TryGetValue(prefab, out int had);

@@ -1015,6 +1015,31 @@ async def scenario_blueprint(r: Runner) -> None:
     await r.cmd("save_world")
 
 
+async def scenario_kit(r: Runner) -> None:
+    """Basic kit and weapons: scenario.py kit. Empty the pack and see the kit come back; store everything in the
+    nearest chest (the kit stays); then give a bronze sword, start a fight, and see which weapon he uses."""
+    def held(s):
+        return {i["item"]: i["qty"] for i in s.get("self", {}).get("inventory", [])}
+    await r.cmd("debug_clear", all=True)
+    await asyncio.sleep(8)
+    r.results.append(("after emptying his pack", str(held(await r.state()))))
+    await r.cmd("debug_give", item="Hammer", qty=1)
+    await r.cmd("debug_give", item="Wood", qty=5)
+    await r.cmd("debug_spawn", prefab="piece_chest_wood")
+    await asyncio.sleep(2)
+    s = await r.state()
+    chests = s.get("chests", [])
+    if chests:
+        await r.task("store everything", "store_items", chest_id=min(chests, key=lambda c: c["dist"])["id"])
+        r.results.append(("after storing everything", str(held(await r.state()))))
+    else:
+        r.results.append(("store everything", "skipped: no chest within 30 m"))
+    await r.cmd("debug_give", item="SwordBronze", qty=1)
+    await r.cmd("debug_spawn", prefab="Greyling", count=2)
+    await asyncio.sleep(25)
+    r.results.append(("after the fight", str(held(await r.state()))))
+
+
 async def scenario_fire(r: Runner) -> None:
     """A beacon's fire: scenario.py fire x z [x z ...]. At each spot, refuel the nearest fireplace and say whether it
     burns (not blocked by smoke or something just above) and keeps its full flame in rain (under a roof)."""
@@ -1124,7 +1149,7 @@ async def scenario_packbuild(r: Runner) -> None:
 
 SCENARIOS = {
     "m4": scenario_m4, "pieces": scenario_pieces, "build": scenario_build, "inspect": scenario_inspect,
-    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds, "buildportal": scenario_buildportal, "gravestone": scenario_gravestone, "guard": scenario_guard, "fires": scenario_fires, "items": scenario_items, "deposit": scenario_deposit, "tidy_chests": scenario_tidy_chests, "hold": scenario_hold, "sign": scenario_sign, "pieceinfo": scenario_pieceinfo, "stations": scenario_stations, "cookdebug": scenario_cookdebug, "collect": scenario_collect, "find": scenario_find, "farm": scenario_farm, "labels": scenario_labels, "feed": scenario_feed, "settlement": scenario_settlement, "prefabs": scenario_prefabs, "road": scenario_road, "bridge": scenario_bridge, "blueprint": scenario_blueprint, "fish": scenario_fish, "boat": scenario_boat, "teleport": scenario_teleport, "near": scenario_near, "shore": scenario_shore, "resume": scenario_resume, "workshop": scenario_workshop, "cover": scenario_cover, "mission": scenario_mission, "coast": scenario_coast, "tamecheck": scenario_tamecheck, "packbuild": scenario_packbuild, "woodcut": scenario_woodcut, "make": scenario_make, "fire": scenario_fire,
+    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds, "buildportal": scenario_buildportal, "gravestone": scenario_gravestone, "guard": scenario_guard, "fires": scenario_fires, "items": scenario_items, "deposit": scenario_deposit, "tidy_chests": scenario_tidy_chests, "hold": scenario_hold, "sign": scenario_sign, "pieceinfo": scenario_pieceinfo, "stations": scenario_stations, "cookdebug": scenario_cookdebug, "collect": scenario_collect, "find": scenario_find, "farm": scenario_farm, "labels": scenario_labels, "feed": scenario_feed, "settlement": scenario_settlement, "prefabs": scenario_prefabs, "road": scenario_road, "bridge": scenario_bridge, "blueprint": scenario_blueprint, "fish": scenario_fish, "boat": scenario_boat, "teleport": scenario_teleport, "near": scenario_near, "shore": scenario_shore, "resume": scenario_resume, "workshop": scenario_workshop, "cover": scenario_cover, "mission": scenario_mission, "coast": scenario_coast, "tamecheck": scenario_tamecheck, "packbuild": scenario_packbuild, "woodcut": scenario_woodcut, "make": scenario_make, "fire": scenario_fire, "kit": scenario_kit,
 }
 
 

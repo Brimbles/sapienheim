@@ -574,6 +574,27 @@ namespace ValheimCompanion.Bridge
                     };
                     return null;
                 }
+                case "debug_spawn":
+                {
+                    // Testing command (not an LLM tool): spawn something (a creature, a chest...) a few metres in front of the
+                    // companion.
+                    GameObject prefab = ZNetScene.instance.GetPrefab((string)args["prefab"] ?? "");
+                    if (!prefab)
+                    {
+                        return "unknown_prefab";
+                    }
+                    int count = Mathf.Clamp(args["count"] != null ? (int)args["count"] : 1, 1, 5);
+                    for (int i = 0; i < count; i++)
+                    {
+                        Vector3 at = companion.transform.position + companion.transform.forward * 6f + companion.transform.right * (i * 1.5f);
+                        if (ZoneSystem.instance.GetSolidHeight(at, out float h))
+                        {
+                            at.y = h + 0.5f;
+                        }
+                        UnityEngine.Object.Instantiate(prefab, at, Quaternion.identity);
+                    }
+                    return null;
+                }
                 case "debug_raid":
                 {
                     // Testing command (not an LLM tool): start a random event at the companion (e.g. army_eikthyr), or stop it.
@@ -700,6 +721,10 @@ namespace ValheimCompanion.Bridge
                     if (!IsQueued(args) && companion.Inventory.Count(item) == 0)
                     {
                         return "dont_have_item";
+                    }
+                    if (CompanionInventory.IsBasicKit(item) && companion.Inventory.Count(item) <= 1)
+                    {
+                        return "his_own_basic_tool"; // he always keeps one: the player can make their own
                     }
                     string playerName = (string)args["player"];
                     if (string.IsNullOrEmpty(playerName) || !TryFindPlayer(playerName, out long playerId, out _, out _))

@@ -64,6 +64,51 @@ namespace ValheimCompanion.Companion
             Save();
         }
 
+        /// <summary>
+        /// The tools he always has, for free: whatever happens he can chop, build, level and plant. He keeps one of each
+        /// (never gives, stores or deposits the last one), and a missing one turns up again within seconds.
+        /// </summary>
+        public static readonly string[] BasicKit = { "AxeStone", "Hammer", "Hoe", "Cultivator" };
+
+        public static bool IsBasicKit(string prefab) => Array.IndexOf(BasicKit, prefab) >= 0;
+
+        /// <summary>May this item leave his pack? Not the last of his basic kit.</summary>
+        public bool CanPartWith(ItemDrop.ItemData item)
+        {
+            string prefab = PrefabName(item);
+            return !IsBasicKit(prefab) || Count(prefab) > 1;
+        }
+
+        private float _nextKitCheck;
+        private bool _kitFullLogged;
+
+        /// <summary>Put back any basic tool he's lost (given away by a player's trade, dropped on death and so on).</summary>
+        public void KeepBasicKit()
+        {
+            if (!_restored || Time.time < _nextKitCheck)
+            {
+                return;
+            }
+            _nextKitCheck = Time.time + 5f;
+            foreach (string prefab in BasicKit)
+            {
+                if (Count(prefab) > 0)
+                {
+                    continue;
+                }
+                GameObject go = ObjectDB.instance.GetItemPrefab(prefab);
+                if (go && Inventory.AddItem(go, 1))
+                {
+                    Jotunn.Logger.LogInfo($"{_character.m_name}: basic kit: {prefab} back in his pack");
+                }
+                else if (!_kitFullLogged)
+                {
+                    _kitFullLogged = true;
+                    Jotunn.Logger.LogWarning($"{_character.m_name}: basic kit: no room for {prefab}");
+                }
+            }
+        }
+
         private float _nextRepair;
 
         /// <summary>The companion's gear never wears out: top every item back up to full durability.</summary>
@@ -195,9 +240,9 @@ namespace ValheimCompanion.Companion
                 {
                     break;
                 }
-                if (PrefabName(item) != prefab)
+                if (PrefabName(item) != prefab || !CanPartWith(item))
                 {
-                    continue;
+                    continue; // never the last of his basic kit
                 }
                 int n = Math.Min(item.m_stack, amount - dropped);
                 if (_character.DropItem(Inventory, item, n))

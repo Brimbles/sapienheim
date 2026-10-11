@@ -318,6 +318,7 @@ namespace ValheimCompanion.Companion
             SyncNameFromConfig();
             _inventory.EnsureRestored();
             _inventory.KeepRepaired();
+            _inventory.KeepBasicKit();
             _levelling.Update();
             _doors.Update();
             if (_queuedMoment != null && Time.time >= _queuedAt)

@@ -59,7 +59,7 @@ RULES = """
 - When a player asks for a story, a tale, a song or a poem, tell it: several `say` calls in the same reply (up to about 8), each still one or two short sentences. They're spoken one after another, so together they make a proper telling with a beginning, middle and end. Don't brush it off or tell them to ask someone else.
 - Amounts for gather: use the number asked for. For vague requests ("some wood", "chop some trees", "a bit of stone") use qty 20 and mention the amount when you agree. Omit qty (everything nearby) only when explicitly asked for all of it ("all", "clear this area", "chop up those logs"). A single gather never collects more than 100.
 - Work takes time. When you start a job, say you're on it; never claim it's finished, or give numbers, until the task_done event arrives. Tool results of "ok" only mean the job was accepted.
-- You carry an inventory (see `inventory` in the state; items are named by id, e.g. "Wood"). Players hand you things by dropping them near you; use `pick_up` to collect them. Use `give` to hand items to a player.
+- You carry an inventory (see `inventory` in the state; items are named by id, e.g. "Wood"). Players hand you things by dropping them near you; use `pick_up` to collect them. Use `give` to hand items to a player. You always carry your own basic kit: a stone axe, a hammer, a hoe and a cultivator. They're yours: you keep one of each (you won't give or store the last one), and a lost one turns up again, so never gather for, craft or `make` them. Players can give you better weapons; you fight with the hardest-hitting one you carry.
 - `gather` collects resources: it picks things up, picks branches and stones, chops trees and logs (needs an axe in your inventory) and mines rocks (needs a pickaxe). It never chops or mines inside a ward (anyone's base, including your master's), though picking up and harvesting there is fine. If the only trees or rocks nearby are warded it fails with only_sources_inside_wards, so offer to go further out.
 - `chests` in the state lists nearby chests with their contents; use `fetch_items` / `store_items` with a chest id.
 - `craft` makes items from your inventory, walking to the right crafting station if the recipe needs one. Check what an item needs with `recipe` first; if you're short, gather or fetch the materials, then craft. A hammer needs no station (Wood 3, Stone 2). If a craft fails with no_station:Workbench, build a `workshop` first (the build tool: a small roofed shelter with a workbench, about 32 wood, needs a hammer; a torch too if you carry 2 resin), then craft. When asked to make yourself something ("make yourself an axe") and you're short of materials, use `make`: it's a whole errand (fetching, gathering, trips to where materials are, a workbench, an axe for the trees) that runs on its own and reports back, so just say you're off to do it.
@@ -469,8 +469,8 @@ TOOLS: list[dict[str, Any]] = [
         "do). You get each missing material yourself: from a nearby chest, by gathering, or, when there's none about, a "
         "trip to where it's been seen (up to 5 km, a mission: you report at milestones and carry on after death or "
         "going off duty). You build a workbench shelter if the recipe needs one, make an axe first if the only wood is "
-        "standing trees, craft it, and come back. Item ids: Hammer, AxeStone (stone axe), AxeFlint, Club, Torch, Hoe, "
-        "SpearFlint, KnifeFlint, ArmorRagsChest... (`recipe` checks one). action=cancel stops it.",
+        "standing trees, craft it, and come back. Item ids: AxeFlint, Club, Torch, SpearFlint, KnifeFlint, "
+        "ArmorRagsChest, ShieldWood... (`recipe` checks one; not your basic kit, which you always have). action=cancel stops it.",
         "input_schema": {
             "type": "object",
             "properties": {
