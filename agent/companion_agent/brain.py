@@ -80,11 +80,12 @@ RULES = """
 - Travel: to go to a named place, use `travel` (it picks the best route, through portals when that's shorter). `use_portal` steps through a specific portal. You can walk up to 5 km, but not across open water. You can't sail or steer a boat, but you ride as a passenger: `board` the nearest boat (you swim to its ladder; never to one more than 15 m out), and when following you climb aboard on your own when your master does and step off when they do. If you fall in you swim back to the boat if it's close, else to shore.
 - Always name the settlements you build (the `name` on `build`) so you can travel back to them later: use the player's name for it, or if they gave none, invent a fitting Norse-sounding one and tell them. Named places show as pins on everyone's map.
 - Memory: you keep a long-term memory between sessions (shown as "What you remember"). Use `remember` for things worth keeping: what players like, promises, plans, notable events. Use `name_place` when asked to remember a location, and `go_to` with `place` to go back there.
-- Settlements (`build` templates outpost, farm, village, fort, mining_camp, port) go at least 50 m from any base and outside wards; you gather every material honestly. Wood only until Bonemass is beaten. `build_road` lays a free stone-paved road between places, routing round steep ground and bridging narrow water (it stops and tells you where wider water blocks it). `blueprints` lists shared building plans you can build (template blueprint) or saves a building you're near as a new one. Asked what you can build, name your templates (hut, workshop, wall, fence, portal, sign, the settlements) and look up blueprints with `blueprints` (a filter like the player's biome keeps it short).
+- Settlements (`build` templates outpost, farm, village, fort, mining_camp, port) go at least 50 m from any base and outside wards; you gather every material honestly. Wood only until Bonemass is beaten. `build_road` lays a free stone-paved road between places, routing round steep ground and bridging narrow water (it stops and tells you where wider water blocks it). `blueprints` lists shared building plans you can build (template blueprint) or saves a building you're near as a new one. Asked what you can build, answer in two short lines: the basics (a hut, a workshop, a longhouse, a watchtower, a stone lighthouse, walls and fences, portals, and settlements: outpost, farm, village, fort), then offer more: "I know hundreds of designs; want some for the <biome>?". Only if they say yes, look them up with `blueprints` (filter by their biome, or what they asked for) and name a few with what they cost. Asked about a particular building ("a lighthouse", "a tower"), look it up with `blueprints` (filter: that word) before saying you can't. The longhouse, watchtower, lighthouse and cabin are your own blueprints (template blueprint, blueprint=<name>).
 - `fish` at the nearest shore with your rod and bait. It's chancy: the right bait for the water's biome helps a lot, misses sometimes lose bait, and a few fish can take a while.
 - Example plan for "get 20 wood and make me a club": recipe(Club) -> gather(Wood, enough for the club plus 20, queue) -> craft(Club, queue) -> give(Club to the player, queue) -> give(Wood, 20, queue). Say what you're about to do first.
 - Never attack players or tamed animals. Use the `id` values from the `nearby` list for `attack`.
 - Positions are [x, y, z] in metres; `go_to` takes x and z.
+- Health: you heal by eating. A bite heals at once (berries a little, cooked meat about half, the best dishes and healing meads up to all of it), and while fed (`fed_s` in your state) you heal fully in five minutes instead of an hour. You eat on your own from your pack when you're hurt, so carry some food; `eat` eats now. Raw meat isn't food: `cook` it first. Never claim you've eaten unless `eat` (or an `ate` note) says so.
 - Each message from a player includes a fresh state snapshot. Use it: who is near, what is hostile, time of day, weather, biome.
 """.strip()
 
@@ -464,6 +465,12 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "eat",
+        "description": "Eat something from your pack now to heal (e.g. after a player hands you food: pick_up first). Without "
+        "`item` you eat the best food you carry. You also eat on your own when you're hurt.",
+        "input_schema": {"type": "object", "properties": {"item": {"type": "string", "description": "Item id, e.g. Raspberry, CookedMeat, MeadHealthMinor."}}},
+    },
+    {
         "name": "make",
         "description": "An errand to make an item from scratch when you don't have the materials (use `craft` when you "
         "do). You get each missing material yourself: from a nearby chest, by gathering, or, when there's none about, a "
@@ -713,6 +720,12 @@ def _low_health(d: dict[str, Any]) -> tuple[str, str]:
             "(you were badly hurt)")
 
 
+def _hungry(d: dict[str, Any]) -> tuple[str, str]:
+    return (f"(You're hurt, {d.get('health')}/{d.get('max_health')} health, and you've no food to eat and heal. One short "
+            "line in character: ask your master for something to eat (berries, mushrooms, cooked meat, a healing mead), "
+            "or offer to pick some berries. Don't go off without being asked.)", "(you were hurt with no food)")
+
+
 def _idle(d: dict[str, Any]) -> tuple[str, str]:
     return (f"(You've been standing about near your master for {d.get('minutes')} minutes with nothing to do. "
             "Make one short in-character remark: small talk, an anecdote from your career, or an offer to do something "
@@ -728,6 +741,7 @@ def _master_returned(d: dict[str, Any]) -> tuple[str, str]:
 PROACTIVE: dict[str, Any] = {
     "dusk": _dusk,
     "low_health": _low_health,
+    "hungry": _hungry,
     "idle": _idle,
     "master_returned": _master_returned,
 }
@@ -840,7 +854,7 @@ class Brain:
                 f"({event.name}: {json.dumps(event.data)}. Report back to the players in character.)",
                 history_line=f"({event.name}: {json.dumps(event.data)})",
             )
-        elif event.name in ("task_done", "task_failed", "died", "combat"):
+        elif event.name in ("task_done", "task_failed", "died", "combat", "ate"):
             # Informational: fed into the next turn's context instead of costing an LLM call now.
             self.notes.append(f"{event.name}: {json.dumps(event.data)}")
             log.info("%s %s", event.name, event.data)

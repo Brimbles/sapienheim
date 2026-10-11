@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.8
+- He heals by eating. A bite heals at once (berries a little, cooked meat about half his health, the best dishes and healing meads up to all of it), and while fed he heals fully in five minutes instead of an hour. He eats on his own from his pack when he's hurt (the plainest food first, the best when it's urgent), says so when he's hurt with nothing to eat, and eats when asked.
+- "What can you build?" gets a short answer: the basic buildings, then an offer of designs for your biome from the blueprint collection. Asked about a particular building, he looks it up before saying no.
+
 ## 0.1.7
 - He always has his basic kit: a stone axe, a hammer, a hoe and a cultivator. A missing one turns up again within seconds, and he keeps one of each (won't give, store or deposit the last one).
 - Give him better weapons and he fights with the hardest-hitting one (the game's own AI picked at random, so a sword lost half its fights to the stone axe).

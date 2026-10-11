@@ -574,6 +574,15 @@ namespace ValheimCompanion.Bridge
                     };
                     return null;
                 }
+                case "debug_hurt":
+                {
+                    // Testing command (not an LLM tool): set the companion's health to a fraction of his max.
+                    Humanoid body = companion.GetComponent<Humanoid>();
+                    float fraction = Mathf.Clamp(args["fraction"] != null ? (float)args["fraction"] : 0.5f, 0.05f, 1f);
+                    body.SetHealth(body.GetMaxHealth() * fraction);
+                    data = new JObject { ["hp"] = Mathf.Round(body.GetHealth()), ["max_hp"] = Mathf.Round(body.GetMaxHealth()) };
+                    return null;
+                }
                 case "debug_spawn":
                 {
                     // Testing command (not an LLM tool): spawn something (a creature, a chest...) a few metres in front of the
@@ -708,6 +717,13 @@ namespace ValheimCompanion.Bridge
                     string item = (string)args["item"];
                     return Queue(companion, args, $"pick_up({item ?? "all"})",
                         () => companion.Tasks.CommandPickUp(item, radius, TaskId(args, cmdId)));
+                }
+                case "eat":
+                {
+                    // Eat something from the pack now (item, or the best food for the moment): heals, and while fed he
+                    // heals much faster.
+                    string error = companion.Food.Eat((string)args["item"], urgent: true, out data);
+                    return error;
                 }
                 case "give":
                 {
@@ -1635,6 +1651,7 @@ namespace ValheimCompanion.Bridge
                 ["master_nearby"] = companion.Tasks.MasterNearby,
                 ["level"] = companion.Levelling.Level,
                 ["armor"] = Round(companion.Levelling.Armor),
+                ["fed_s"] = Round(companion.Food.FedSecondsLeft),
                 ["inventory"] = companion.Inventory.Describe(),
                 ["free_slots"] = companion.Inventory.FreeSlots,
                 ["queue"] = companion.Tasks.DescribeQueue(),

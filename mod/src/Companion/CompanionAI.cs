@@ -32,6 +32,7 @@ namespace ValheimCompanion.Companion
         private MonsterAI _ai;
         private CompanionTasks _tasks;
         private CompanionInventory _inventory;
+        private CompanionFood _food;
         private CompanionLevelling _levelling;
         private CompanionDoors _doors;
         private CompanionProactive _proactive;
@@ -54,6 +55,7 @@ namespace ValheimCompanion.Companion
             _nview.Register<string, bool>(RpcSound, RPC_Sound);
             _nview.Register(RpcThinking, RPC_Thinking);
             _inventory = new CompanionInventory(_nview, _character);
+            _food = new CompanionFood(_nview, _character, _inventory);
             _levelling = new CompanionLevelling(_nview, _character);
             _doors = new CompanionDoors(_nview, _character, _ai);
             _tasks = new CompanionTasks(_nview, _character, _ai, _inventory);
@@ -81,6 +83,7 @@ namespace ValheimCompanion.Companion
         public CompanionTasks Tasks => _tasks;
         public CompanionDoors Doors => _doors;
         public CompanionInventory Inventory => _inventory;
+        public CompanionFood Food => _food;
         public CompanionLevelling Levelling => _levelling;
 
         public ZDO ZDO => _nview.GetZDO();
@@ -327,6 +330,7 @@ namespace ValheimCompanion.Companion
                 _queuedMoment = null;
             }
             _tasks.Update();
+            _food.Update(_tasks.InCombat);
             _proactive.Update();
 
             if (Time.time >= _nextStatus)
