@@ -384,6 +384,44 @@ namespace ValheimCompanion.Bridge
                     };
                     return null;
                 }
+                case "debug_fire":
+                {
+                    // Testing command (not an LLM tool): the fireplace nearest x/z (default: the companion), optionally
+                    // refuelled, and whether it burns: blocked (smoke or something just above), wet (rain without a roof).
+                    Vector3 at = args["x"] != null && args["z"] != null
+                        ? new Vector3((float)args["x"], companion.transform.position.y, (float)args["z"]) : companion.transform.position;
+                    Fireplace fire = null;
+                    float best = 30f;
+                    foreach (Fireplace f in UnityEngine.Object.FindObjectsByType<Fireplace>(FindObjectsSortMode.None))
+                    {
+                        Vector3 d = f.transform.position - at;
+                        d.y = 0f;
+                        if (d.magnitude < best)
+                        {
+                            fire = f;
+                            best = d.magnitude;
+                        }
+                    }
+                    if (!fire)
+                    {
+                        return "no_fire_nearby";
+                    }
+                    if (args["fuel"] != null)
+                    {
+                        fire.m_nview.GetZDO().Set(ZDOVars.s_fuel, (float)args["fuel"]);
+                    }
+                    Cover.GetCoverForPoint(fire.transform.position + Vector3.up * fire.m_coverCheckOffset, out float cover, out bool underRoof);
+                    data = new JObject
+                    {
+                        ["fire"] = Utils.GetPrefabName(fire.gameObject), ["dist"] = Mathf.Round(best),
+                        ["fuel"] = fire.m_nview.GetZDO().GetFloat(ZDOVars.s_fuel), ["burning"] = fire.IsBurning(),
+                        ["blocked"] = fire.m_blocked, ["wet"] = fire.m_wet, ["under_roof"] = underRoof,
+                        ["cover"] = Mathf.Round(cover * 100f) / 100f,
+                        ["smoke_blocked"] = fire.m_smokeSpawner && fire.m_smokeSpawner.IsBlocked(),
+                        ["raining"] = EnvMan.IsWet(),
+                    };
+                    return null;
+                }
                 case "debug_kill":
                 {
                     // Testing command (not an LLM tool): he dies where he stands.

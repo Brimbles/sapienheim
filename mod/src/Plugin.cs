@@ -132,7 +132,7 @@ namespace ValheimCompanion
             }
             if (Jotunn.Managers.GUIManager.IsHeadless())
             {
-                Building.Blueprints.InstallStarters();
+                Building.Blueprints.RemoveStarterCopies();
                 LocalPlayerGuards.Apply(_harmony);
             }
 

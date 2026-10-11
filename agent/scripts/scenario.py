@@ -1015,6 +1015,19 @@ async def scenario_blueprint(r: Runner) -> None:
     await r.cmd("save_world")
 
 
+async def scenario_fire(r: Runner) -> None:
+    """A beacon's fire: scenario.py fire x z [x z ...]. At each spot, refuel the nearest fireplace and say whether it
+    burns (not blocked by smoke or something just above) and keeps its full flame in rain (under a roof)."""
+    spots = [(float(a), float(b)) for a, b in zip(sys.argv[2::2], sys.argv[3::2])]
+    for x, z in spots:
+        await r.cmd("debug_teleport", x=x + 6, z=z + 6)
+        await asyncio.sleep(8)
+        await r.cmd("debug_fire", x=x, z=z, fuel=5)
+        await asyncio.sleep(12)  # the fireplace checks smoke and cover every couple of seconds
+        res = await r.cmd("debug_fire", x=x, z=z)
+        r.results.append((f"fire at {round(x)}, {round(z)}", f"{res.error or 'ok'} {res.data}"))
+
+
 async def scenario_woodcut(r: Runner) -> None:
     """Wood priorities: scenario.py woodcut [qty]. Goes to the nearest beech wood, gathers with a stone axe; the server
     log's "gather Wood from ..." lines show the order (logs and drops before the next standing tree)."""
@@ -1111,7 +1124,7 @@ async def scenario_packbuild(r: Runner) -> None:
 
 SCENARIOS = {
     "m4": scenario_m4, "pieces": scenario_pieces, "build": scenario_build, "inspect": scenario_inspect,
-    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds, "buildportal": scenario_buildportal, "gravestone": scenario_gravestone, "guard": scenario_guard, "fires": scenario_fires, "items": scenario_items, "deposit": scenario_deposit, "tidy_chests": scenario_tidy_chests, "hold": scenario_hold, "sign": scenario_sign, "pieceinfo": scenario_pieceinfo, "stations": scenario_stations, "cookdebug": scenario_cookdebug, "collect": scenario_collect, "find": scenario_find, "farm": scenario_farm, "labels": scenario_labels, "feed": scenario_feed, "settlement": scenario_settlement, "prefabs": scenario_prefabs, "road": scenario_road, "bridge": scenario_bridge, "blueprint": scenario_blueprint, "fish": scenario_fish, "boat": scenario_boat, "teleport": scenario_teleport, "near": scenario_near, "shore": scenario_shore, "resume": scenario_resume, "workshop": scenario_workshop, "cover": scenario_cover, "mission": scenario_mission, "coast": scenario_coast, "tamecheck": scenario_tamecheck, "packbuild": scenario_packbuild, "woodcut": scenario_woodcut, "make": scenario_make,
+    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds, "buildportal": scenario_buildportal, "gravestone": scenario_gravestone, "guard": scenario_guard, "fires": scenario_fires, "items": scenario_items, "deposit": scenario_deposit, "tidy_chests": scenario_tidy_chests, "hold": scenario_hold, "sign": scenario_sign, "pieceinfo": scenario_pieceinfo, "stations": scenario_stations, "cookdebug": scenario_cookdebug, "collect": scenario_collect, "find": scenario_find, "farm": scenario_farm, "labels": scenario_labels, "feed": scenario_feed, "settlement": scenario_settlement, "prefabs": scenario_prefabs, "road": scenario_road, "bridge": scenario_bridge, "blueprint": scenario_blueprint, "fish": scenario_fish, "boat": scenario_boat, "teleport": scenario_teleport, "near": scenario_near, "shore": scenario_shore, "resume": scenario_resume, "workshop": scenario_workshop, "cover": scenario_cover, "mission": scenario_mission, "coast": scenario_coast, "tamecheck": scenario_tamecheck, "packbuild": scenario_packbuild, "woodcut": scenario_woodcut, "make": scenario_make, "fire": scenario_fire,
 }
 
 

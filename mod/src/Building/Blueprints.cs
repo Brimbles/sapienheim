@@ -13,9 +13,10 @@ namespace ValheimCompanion.Building
     /// lines, then after <c>#Pieces</c> one line per piece, <c>prefab;category;x;y;z;qx;qy;qz;qw[;info;sx;sy;sz]</c>, in
     /// metres relative to the blueprint's base. Read on the server from (first match wins):
     /// <list type="bullet">
-    /// <item><c>BepInEx/config/sapienheim/blueprints</c> and its subfolders: the starters, exports, files dropped in.</item>
+    /// <item><c>BepInEx/config/sapienheim/blueprints</c> and its subfolders: exports and files dropped in.</item>
     /// <item><c>BepInEx/config/PlanBuild/blueprints</c>: PlanBuild's own folder, if it's installed.</item>
-    /// <item>Any <c>blueprints</c> folder under <c>BepInEx/plugins</c>: blueprint packs installed as mods (BiomeBlueprints).</item>
+    /// <item>Any <c>blueprints</c> folder under <c>BepInEx/plugins</c>: the starters shipped with this mod, and packs installed
+    /// as mods (BiomeBlueprints).</item>
     /// </list>
     /// Only the game's own hammer pieces are built: pieces from other mods are skipped (agreed with the user) and
     /// reported. Export writes an existing building out in the same format.
@@ -390,23 +391,25 @@ namespace ValheimCompanion.Building
 
         private static bool IsRing(string prefab) => prefab.Contains("fence") || prefab.Contains("stake_wall") || prefab == "wood_gate";
 
-        /// <summary>Server start: copy the starter blueprints shipped with the mod into the folder (new ones, and updates).</summary>
-        public static void InstallStarters()
+        /// <summary>
+        /// Server start: the starters are read straight from the mod's own folder (a <c>blueprints</c> folder under
+        /// plugins), so remove the copies older releases put in <see cref="Folder"/>: PlanBuild, which reads both,
+        /// warns about each twice. Only an exact copy goes; a file someone changed, or their own of the same name, stays.
+        /// </summary>
+        public static void RemoveStarterCopies()
         {
             string shipped = Path.Combine(Path.GetDirectoryName(typeof(Plugin).Assembly.Location) ?? ".", "blueprints");
-            if (!Directory.Exists(shipped))
+            if (!Directory.Exists(shipped) || !Directory.Exists(Folder))
             {
                 return;
             }
-            Directory.CreateDirectory(Folder);
             foreach (string file in Directory.GetFiles(shipped, "*.blueprint"))
             {
-                string target = Path.Combine(Folder, Path.GetFileName(file));
-                // A newer release's starter replaces the old one, but never someone's own file of the same name.
-                if (!File.Exists(target)
-                    || (File.ReadAllText(target) != File.ReadAllText(file) && File.ReadLines(target).Any(l => l.Trim() == "#Creator:Sapienheim")))
+                string copy = Path.Combine(Folder, Path.GetFileName(file));
+                if (File.Exists(copy) && File.ReadAllText(copy) == File.ReadAllText(file))
                 {
-                    File.Copy(file, target, overwrite: true);
+                    File.Delete(copy);
+                    Jotunn.Logger.LogInfo($"Removed the old copy of starter blueprint {Path.GetFileName(file)} (read from the mod's folder now)");
                 }
             }
         }

@@ -1,9 +1,11 @@
-"""Generate the starter tower blueprints (PlanBuild .blueprint) into mod/blueprints:
+"""Generate the starter blueprints (PlanBuild .blueprint) into mod/blueprints:
 
-    uv run python scripts/tower_blueprints.py
+    uv run python scripts/starter_blueprints.py
 
 - watchtower: a wooden watchtower, 4 x 4 m, four storeys and a lookout with a covered beacon fire at 8 m.
-- lighthouse: a stone lighthouse, 6 x 6 m, the same height, with a parapet and a beacon under a timber canopy on stone pillars.
+- lighthouse: a stone lighthouse, 6 x 6 m, the same height, with a parapet and a beacon under a timber roof on stone pillars.
+- longhouse: a Viking longhouse, 8 x 12 m, a 45 degree roof with smoke vents in the gables, a hearth, beds, a chest
+  and a workbench; wood only, for the start of the game.
 
 Piece sizes and pivots are the game's (snap points from `scenario.py pieces`): floors pivot on their top surface,
 walls, poles and stone blocks on their centre; a step ladder climbs 2 m towards -z from its pivot (bottom end at z=+1).
@@ -18,6 +20,7 @@ STOREYS = 4                 # walls up to 8 m
 TOP = STOREY * STOREYS      # the lookout floor
 TURN = (0.0, math.sqrt(0.5), 0.0, math.sqrt(0.5))   # 90 degrees about y
 NONE = (0.0, 0.0, 0.0, 1.0)
+HALF = (0.0, 1.0, 0.0, 0.0)                          # 180 degrees about y
 
 
 class Blueprint:
@@ -60,7 +63,17 @@ def ladders_and_floors(bp: Blueprint) -> None:
 
 
 def beacon(bp: Blueprint) -> None:
-    bp.add("fire_pit", 0.0, TOP, 0.0)
+    # Under one slope, not the ridge: the game's roof test is a thin ray straight up, and a seam can let it through.
+    bp.add("fire_pit", 0.0, TOP, -0.75)
+
+
+def gable_roof(bp: Blueprint, eaves: float, xs: tuple) -> None:
+    """A 45 degree roof over z -2..2, ridge along x at z=0, gable ends left open (smoke). Floors don't count: the game
+    tags them leaky, rain falls through, and a fire under them isn't under a roof. A 45 degree roof piece's high edge
+    is at its -z side, so the back slope is as-is and the front one turned round."""
+    for x in xs:
+        bp.add("wood_roof_45", x, eaves + 1, 1)
+        bp.add("wood_roof_45", x, eaves + 1, -1, HALF)
 
 
 def watchtower() -> Blueprint:
@@ -92,7 +105,7 @@ def watchtower() -> Blueprint:
         bp.add("wood_beam", -2, TOP, a, TURN)
         bp.add("wood_beam", 2, TOP, a, TURN)
     ladders_and_floors(bp)
-    # Lookout: a waist-high wall, posts up to a canopy that keeps the rain off the beacon.
+    # Lookout: a waist-high wall, posts up to a roof that keeps the rain off the beacon.
     for a in (-1, 1):
         bp.add("wood_wall_half", a, TOP + 0.5, -2)
         bp.add("wood_wall_half", a, TOP + 0.5, 2)
@@ -106,16 +119,14 @@ def watchtower() -> Blueprint:
         bp.add("wood_beam", a, TOP + 2, 2)
         bp.add("wood_beam", -2, TOP + 2, a, TURN)
         bp.add("wood_beam", 2, TOP + 2, a, TURN)
-    for x in (-1, 1):
-        for z in (-1, 1):
-            bp.add("wood_floor", x, TOP + 2, z)
+    gable_roof(bp, TOP + 2, (-1, 1))
     beacon(bp)
     return bp
 
 
 def lighthouse() -> Blueprint:
     bp = Blueprint("lighthouse", "Stone Lighthouse",
-                   "A stone lighthouse: 1 m thick walls, ladders inside, a parapet at 8 m and a beacon under a timber canopy on stone pillars. "
+                   "A stone lighthouse: 1 m thick walls, ladders inside, a parapet at 8 m and a beacon under a timber roof on stone pillars. "
                    "Needs a stonecutter.")
     for x in (-1, 1):
         for z in (-1, 1):
@@ -152,19 +163,61 @@ def lighthouse() -> Blueprint:
     for x in (-2.5, 2.5):
         for z in (-2.5, 2.5):
             bp.add("stone_pillar", x, TOP + 2, z)
-    # The canopy is timber: stone slabs barely span sideways (only the ones on a pillar stood), wood on stone does.
+    # The roof is timber: stone slabs barely span sideways (only the ones on a pillar stood), wood on stone does.
     for a in (-2, 0, 2):
-        bp.add("wood_beam", a, TOP + 3, -2.5)
-        bp.add("wood_beam", a, TOP + 3, 2.5)
+        bp.add("wood_beam", a, TOP + 3, -2)  # the roof's eaves rest on these, pillar to pillar
+        bp.add("wood_beam", a, TOP + 3, 2)
+    for a in (-1, 1):
         bp.add("wood_beam", -2.5, TOP + 3, a, TURN)
         bp.add("wood_beam", 2.5, TOP + 3, a, TURN)
-    for x in (-2, 0, 2):
-        for z in (-2, 0, 2):
-            bp.add("wood_floor", x, TOP + 3, z)
+    gable_roof(bp, TOP + 3, (-2, 0, 2))
     beacon(bp)
     return bp
 
 
+# 90 degrees the other way about y: a 45 degree roof piece's high edge (its -z side) then faces +x.
+TURN_BACK = (0.0, -math.sqrt(0.5), 0.0, math.sqrt(0.5))
+
+
+def longhouse() -> Blueprint:
+    bp = Blueprint("longhouse", "Viking Longhouse",
+                   "A Viking longhouse, 8 x 12 m: a steep roof with smoke vents in the gables, a hearth, two beds, a chest "
+                   "and a workbench. Wood only.")
+    half_x, half_z, wall = 4, 6, 2.0
+    # Long walls, and the gable ends with the door at the front.
+    for z in (-5, -3, -1, 1, 3, 5):
+        bp.add("woodwall", -half_x, 1, z, TURN)
+        bp.add("woodwall", half_x, 1, z, TURN)
+    for x in (-3, -1, 1, 3):
+        bp.add("woodwall", x, 1, half_z)
+        if x == 1:
+            bp.add("wood_door", x, 1, -half_z)
+        else:
+            bp.add("woodwall", x, 1, -half_z)
+    # Corner and mid posts to tie the walls together.
+    for x in (-half_x, half_x):
+        for z in (-half_z, -2, 2, half_z):
+            bp.add("wood_pole2", x, 1, z)
+    # Roof: two rows of 45 degree pieces a side, eaves on the long walls at 2 m, ridge along z at 6 m.
+    for z in (-5, -3, -1, 1, 3, 5):
+        for x, y in ((-3, wall + 1), (-1, wall + 3)):
+            bp.add("wood_roof_45", x, y, z, TURN_BACK)   # left side rises towards +x
+            bp.add("wood_roof_45", -x, y, z, TURN)       # right side rises towards -x
+    # Gables, lower course only: the triangles under the top of the roof are left open to let the hearth's smoke out.
+    for z in (-half_z, half_z):
+        bp.add("wood_wall_roof_45", -3, wall, z)          # rises towards +x, like the roof above it
+        bp.add("woodwall", -1, wall + 1, z)
+        bp.add("woodwall", 1, wall + 1, z)
+        bp.add("wood_wall_roof_45", 3, wall, z, HALF)
+    # Inside: the hearth off the ridge line (the roof test is a ray straight up), beds, a chest and a workbench.
+    bp.add("fire_pit", 0.75, 0.0, -1.0)
+    bp.add("bed", 2.7, 0.0, 4.0)
+    bp.add("bed", 2.7, 0.0, 1.5)
+    bp.add("piece_chest_wood", -3.2, 0.0, 4.8)
+    bp.add("piece_workbench", -2.8, 0.0, 2.0, TURN_BACK)
+    return bp
+
+
 if __name__ == "__main__":
-    for bp in (watchtower(), lighthouse()):
+    for bp in (watchtower(), lighthouse(), longhouse()):
         print(bp.write(), len(bp.pieces), "pieces")

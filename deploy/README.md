@@ -69,12 +69,12 @@ Found on the first run:
 
 ## 7. Blueprint packs
 The companion builds PlanBuild `.blueprint` files from three places on the server, first match by name wins:
-1. `BepInEx/config/sapienheim/blueprints/` and its subfolders: the shipped `cabin`, his own exports, and files you drop in.
+1. `BepInEx/config/sapienheim/blueprints/` and its subfolders: his own exports, and files you drop in.
 2. `BepInEx/config/PlanBuild/blueprints/`, if PlanBuild is installed.
-3. Any `blueprints` folder under `BepInEx/plugins/`: packs installed as mods.
+3. Any `blueprints` folder under `BepInEx/plugins/`: the starters shipped with Sapienheim (cabin, longhouse, watchtower, lighthouse), and packs installed as mods.
 
 **BiomeBlueprints** ([Thunderstore](https://thunderstore.io/c/valheim/p/OverDrive/BiomeBlueprints/)) comes with Sapienheim since 0.1.7, as a Thunderstore dependency: 353 builds using base-game pieces only, sorted by biome (huts and cottages up to forts). A dependency isn't redistribution (the pack has no licence, and its builders gave permission for that pack): PhValheim or a mod manager downloads it from its author, with PlanBuild and HookGenPatcher, which it needs. It lands under `plugins/`, so it survives redeploys and there's nothing to set up on a new server. Players get PlanBuild too and can build the same designs, and Sapienheim's own starters show up in it.
 
-Checked on the dev server (PlanBuild 0.20.0): everything loads, Sapienheim lists the pack and builds from it. Expected log lines, all harmless: BiomeBlueprints' DLL is skipped on a dedicated server (`process filters (valheim.exe)`; it only runs in the game client, and the files are what matter), and PlanBuild warns `Blueprint ID cabin already exists` for each starter, because they're both in the plugin folder and copied to `config/sapienheim/blueprints`.
+Checked on the dev server (PlanBuild 0.20.0): everything loads, Sapienheim lists the pack and builds from it. Expected log lines, all harmless: BiomeBlueprints' DLL is skipped on a dedicated server (`process filters (valheim.exe)`; it only runs in the game client, and the files are what matter). Before 0.1.7 the starters were also copied into `config/sapienheim/blueprints`, and PlanBuild warned `Blueprint ID cabin already exists`; 0.1.7 reads them from the plugin folder and removes the old copies (only exact copies, so an edited one stays).
 
 Pieces the hammer can't build (decorative food and meads, dungeon stone, Dvergr props) are skipped and reported. Older blueprints' `wood_wall_roof` is built as today's `wood_wall_roof_a`. A workbench reaches only 10 m, so big builds get extra workbenches (or stonecutters, for stone) round the outside, and he gathers the wood for them too.

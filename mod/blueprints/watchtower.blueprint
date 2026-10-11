@@ -143,8 +143,8 @@ wood_beam;Building;1;10;-2;0;0;0;1;;1;1;1
 wood_beam;Building;1;10;2;0;0;0;1;;1;1;1
 wood_beam;Building;-2;10;1;0;0.707107;0;0.707107;;1;1;1
 wood_beam;Building;2;10;1;0;0.707107;0;0.707107;;1;1;1
-wood_floor;Building;-1;10;-1;0;0;0;1;;1;1;1
-wood_floor;Building;-1;10;1;0;0;0;1;;1;1;1
-wood_floor;Building;1;10;-1;0;0;0;1;;1;1;1
-wood_floor;Building;1;10;1;0;0;0;1;;1;1;1
-fire_pit;Building;0;8;0;0;0;0;1;;1;1;1
+wood_roof_45;Building;-1;11;1;0;0;0;1;;1;1;1
+wood_roof_45;Building;-1;11;-1;0;1;0;0;;1;1;1
+wood_roof_45;Building;1;11;1;0;0;0;1;;1;1;1
+wood_roof_45;Building;1;11;-1;0;1;0;0;;1;1;1
+fire_pit;Building;0;8;-0.75;0;0;0;1;;1;1;1
