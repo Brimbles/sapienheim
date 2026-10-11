@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.9
+- He picks up what he kills drops: after a fight (or an attack you order) he collects the drops where his enemies fell, waiting a few seconds for them to appear, then gets back to what he was doing. He leaves anything he can't reach, and stops when his pack is full.
+
 ## 0.1.8
 - He heals by eating. A bite heals at once (berries a little, cooked meat about half his health, the best dishes and healing meads up to all of it), and while fed he heals fully in five minutes instead of an hour. He eats on his own from his pack when he's hurt (the plainest food first, the best when it's urgent), says so when he's hurt with nothing to eat, and eats when asked.
 - "What can you build?" gets a short answer: the basic buildings, then an offer of designs for your biome from the blueprint collection. Asked about a particular building, he looks it up before saying no.

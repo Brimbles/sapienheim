@@ -1015,6 +1015,28 @@ async def scenario_blueprint(r: Runner) -> None:
     await r.cmd("save_world")
 
 
+async def scenario_loot(r: Runner) -> None:
+    """Looting: scenario.py loot. A fight he's drawn into (two greydwarfs), then an ordered attack (a boar): after
+    each, he should pick up what they dropped before going back to what he was doing."""
+    def held(s):
+        return {i["item"]: i["qty"] for i in s.get("self", {}).get("inventory", [])}
+    before = held(await r.state())
+    await r.cmd("debug_spawn", prefab="Greydwarf", count=2)
+    await asyncio.sleep(45)
+    after_fight = held(await r.state())
+    r.results.append(("gained from the greydwarf fight", str({k: v - before.get(k, 0) for k, v in after_fight.items() if v != before.get(k, 0)})))
+    await r.cmd("debug_spawn", prefab="Boar")
+    await asyncio.sleep(3)
+    boar = next((n for n in (await r.state()).get("nearby", []) if "Boar" in n.get("name", "")), None)
+    if not boar:
+        r.results.append(("boar", "not found nearby"))
+        return
+    await r.task("attack the boar", "attack", target_id=boar["id"])
+    await asyncio.sleep(20)
+    after_boar = held(await r.state())
+    r.results.append(("gained from the boar", str({k: v - after_fight.get(k, 0) for k, v in after_boar.items() if v != after_fight.get(k, 0)})))
+
+
 async def scenario_heal(r: Runner) -> None:
     """Eating to heal: scenario.py heal. Give him berries and cooked meat, hurt him badly, and watch him eat (most
     healing first when it's urgent), then heal faster while fed."""
@@ -1171,7 +1193,7 @@ async def scenario_packbuild(r: Runner) -> None:
 
 SCENARIOS = {
     "m4": scenario_m4, "pieces": scenario_pieces, "build": scenario_build, "inspect": scenario_inspect,
-    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds, "buildportal": scenario_buildportal, "gravestone": scenario_gravestone, "guard": scenario_guard, "fires": scenario_fires, "items": scenario_items, "deposit": scenario_deposit, "tidy_chests": scenario_tidy_chests, "hold": scenario_hold, "sign": scenario_sign, "pieceinfo": scenario_pieceinfo, "stations": scenario_stations, "cookdebug": scenario_cookdebug, "collect": scenario_collect, "find": scenario_find, "farm": scenario_farm, "labels": scenario_labels, "feed": scenario_feed, "settlement": scenario_settlement, "prefabs": scenario_prefabs, "road": scenario_road, "bridge": scenario_bridge, "blueprint": scenario_blueprint, "fish": scenario_fish, "boat": scenario_boat, "teleport": scenario_teleport, "near": scenario_near, "shore": scenario_shore, "resume": scenario_resume, "workshop": scenario_workshop, "cover": scenario_cover, "mission": scenario_mission, "coast": scenario_coast, "tamecheck": scenario_tamecheck, "packbuild": scenario_packbuild, "woodcut": scenario_woodcut, "make": scenario_make, "fire": scenario_fire, "kit": scenario_kit, "heal": scenario_heal,
+    "portal": scenario_portal, "walls": scenario_walls, "longwalk": scenario_longwalk, "hut": scenario_hut, "teardown": scenario_teardown, "body": scenario_body, "sounds": scenario_sounds, "buildportal": scenario_buildportal, "gravestone": scenario_gravestone, "guard": scenario_guard, "fires": scenario_fires, "items": scenario_items, "deposit": scenario_deposit, "tidy_chests": scenario_tidy_chests, "hold": scenario_hold, "sign": scenario_sign, "pieceinfo": scenario_pieceinfo, "stations": scenario_stations, "cookdebug": scenario_cookdebug, "collect": scenario_collect, "find": scenario_find, "farm": scenario_farm, "labels": scenario_labels, "feed": scenario_feed, "settlement": scenario_settlement, "prefabs": scenario_prefabs, "road": scenario_road, "bridge": scenario_bridge, "blueprint": scenario_blueprint, "fish": scenario_fish, "boat": scenario_boat, "teleport": scenario_teleport, "near": scenario_near, "shore": scenario_shore, "resume": scenario_resume, "workshop": scenario_workshop, "cover": scenario_cover, "mission": scenario_mission, "coast": scenario_coast, "tamecheck": scenario_tamecheck, "packbuild": scenario_packbuild, "woodcut": scenario_woodcut, "make": scenario_make, "fire": scenario_fire, "kit": scenario_kit, "heal": scenario_heal, "loot": scenario_loot,
 }
 
 

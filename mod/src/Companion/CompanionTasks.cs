@@ -108,6 +108,20 @@ namespace ValheimCompanion.Companion
         private Character _threat;
         private bool _inCombat;
         private float _combatStart;
+        // Looting after a fight: where each enemy last was, and since when (world time) a drop counts as theirs.
+        private readonly Dictionary<Character, Vector3> _foeSpots = new Dictionary<Character, Vector3>();
+        private long _lootSinceTicks;
+        private bool _lootPending;     // an ordered attack ended: loot before the next thing
+        private float _lootDeadline;
+        private ItemDrop _lootTarget;
+        private float _lootTargetSince;
+        private readonly HashSet<ItemDrop> _lootSkipped = new HashSet<ItemDrop>();
+        private GameObject _lootWaypoint;
+        private const float LootRange = 6f;       // drops scatter round where a creature fell
+        private const float LootTimeout = 45f;
+        private const float LootTargetGiveUp = 10f;
+        private const float LootGrace = 8f;       // a creature's drops appear when its body vanishes, a few seconds on
+        private float _lootWaitUntil;
         private Vector3 _combatAnchor;
         private readonly Dictionary<Character, float> _ignoreUntil = new Dictionary<Character, float>();
 
@@ -417,6 +431,7 @@ namespace ValheimCompanion.Companion
         public void CommandAttack(Character target, string taskId)
         {
             _attackTarget = target;
+            StartLootWindow(); // what it drops is picked up afterwards
             SetTask(Attack, taskId);
         }
 
@@ -872,6 +887,15 @@ namespace ValheimCompanion.Companion
             {
                 return false; // already fighting on purpose
             }
+            if (_lootPending && !_inCombat)
+            {
+                if (Loot())
+                {
+                    return true;
+                }
+                _lootPending = false;
+                _applied = null; // re-set the task's movement
+            }
 
             Character threat = _threat;
             if (!threat || threat.IsDead() || Vector3.Distance(threat.transform.position, _character.transform.position) > DisengageRange)
@@ -899,17 +923,23 @@ namespace ValheimCompanion.Companion
                     _inCombat = true;
                     _combatStart = Time.time;
                     _combatAnchor = _character.transform.position;
+                    StartLootWindow();
                     Jotunn.Logger.LogInfo($"{_character.m_name}: pausing {Current} to fight {threat.m_name}");
                     BattleCry(threat);
                     AgentClient.SendEvent("combat", new JObject { ["state"] = "started", ["enemy"] = Localization.instance.Localize(threat.m_name), ["paused_task"] = Current });
                 }
                 _threat = threat;
+                _foeSpots[threat] = threat.transform.position;
                 _ai.SetFollowTarget(null);
                 _ai.m_targetCreature = threat;
                 _ai.SetAlerted(true);
                 return true;
             }
 
+            if (_inCombat && Loot())
+            {
+                return true; // picking up what the fight dropped before getting back to work
+            }
             if (_inCombat)
             {
                 _inCombat = false;
@@ -924,6 +954,136 @@ namespace ValheimCompanion.Companion
                 AgentClient.SendEvent("combat", new JObject { ["state"] = "ended", ["resumed_task"] = Current });
             }
             return false;
+        }
+
+        private void StartLootWindow()
+        {
+            if (_inCombat || _lootPending || _lootDeadline > 0f)
+            {
+                return; // already in a fight or picking up after one: keep what it knows about the fallen
+            }
+            _foeSpots.Clear();
+            _lootSkipped.Clear();
+            _lootSinceTicks = ZNet.instance.GetTime().Ticks - TimeSpan.FromSeconds(5).Ticks;
+            _lootDeadline = 0f;
+            _lootTarget = null;
+        }
+
+        /// <summary>
+        /// After a fight (or an ordered attack): walk to and pick up what the enemies dropped, i.e. ground items that
+        /// appeared since it started near where one of them last was. Returns true while there's still some to get.
+        /// Kills are found by their drops: a creature near a player is usually that player's to simulate, so its
+        /// death runs on their machine, not here.
+        /// </summary>
+        private bool Loot()
+        {
+            if (_foeSpots.Count == 0)
+            {
+                return false;
+            }
+            if (_lootDeadline <= 0f)
+            {
+                _lootDeadline = Time.time + LootTimeout;
+                _lootWaitUntil = Time.time + LootGrace;
+            }
+            if (Time.time > _lootDeadline)
+            {
+                return EndLoot("out of time");
+            }
+            if (_lootTarget && (!_lootTarget.m_nview || !_lootTarget.m_nview.IsValid()))
+            {
+                _lootTarget = null; // picked up, by him or someone else
+            }
+            if (!_lootTarget)
+            {
+                _lootTarget = NearestLoot();
+                _lootTargetSince = Time.time;
+                if (!_lootTarget)
+                {
+                    if (Time.time < _lootWaitUntil)
+                    {
+                        return true; // wait by the fallen for their drops to appear
+                    }
+                    return EndLoot("all picked up");
+                }
+            }
+            if (!_inventory.Inventory.CanAddItem(_lootTarget.m_itemData))
+            {
+                return EndLoot("pack full");
+            }
+            if (!_lootWaypoint)
+            {
+                _lootWaypoint = new GameObject("CompanionLootWaypoint");
+            }
+            _lootWaypoint.transform.position = _lootTarget.transform.position;
+            if (_ai.GetFollowTarget() != _lootWaypoint)
+            {
+                _ai.SetFollowTarget(_lootWaypoint);
+            }
+            _ai.m_targetCreature = null;
+            if (Vector3.Distance(_lootTarget.transform.position, _character.transform.position) <= PickupReach)
+            {
+                string what = CompanionInventory.PrefabName(_lootTarget.m_itemData);
+                int n = _lootTarget.m_itemData.m_stack;
+                if (_inventory.TryPickup(_lootTarget))
+                {
+                    Jotunn.Logger.LogInfo($"{_character.m_name}: looted {n} {what}");
+                    _lootTarget = null;
+                }
+            }
+            else if (Time.time - _lootTargetSince > LootTargetGiveUp)
+            {
+                _lootSkipped.Add(_lootTarget); // out of reach (in water, up a cliff): leave it
+                _lootTarget = null;
+            }
+            return true;
+        }
+
+        private bool EndLoot(string why)
+        {
+            if (_lootDeadline > 0f)
+            {
+                Jotunn.Logger.LogInfo($"{_character.m_name}: done looting ({why})");
+            }
+            _foeSpots.Clear();
+            _lootTarget = null;
+            _lootDeadline = 0f;
+            if (_lootWaypoint && _ai.GetFollowTarget() == _lootWaypoint)
+            {
+                _ai.SetFollowTarget(null);
+            }
+            return false;
+        }
+
+        private ItemDrop NearestLoot()
+        {
+            ItemDrop best = null;
+            float bestDist = float.MaxValue;
+            foreach (ItemDrop drop in ItemDrop.s_instances)
+            {
+                if (!drop || !drop.m_nview || !drop.m_nview.IsValid() || _lootSkipped.Contains(drop)
+                    || drop.m_nview.GetZDO().GetLong(ZDOVars.s_spawnTime, 0L) < _lootSinceTicks)
+                {
+                    continue;
+                }
+                Vector3 p = drop.transform.position;
+                bool near = false;
+                foreach (Vector3 spot in _foeSpots.Values)
+                {
+                    if (Vector3.Distance(p, spot) <= LootRange)
+                    {
+                        near = true;
+                        break;
+                    }
+                }
+                float d = Vector3.Distance(p, _character.transform.position);
+                if (near && d < bestDist)
+                {
+                    best = drop;
+                    bestDist = d;
+                }
+            }
+            return best;
         }
 
         /// <summary>
@@ -1449,8 +1609,10 @@ namespace ValheimCompanion.Companion
             {
                 _attackTarget = null;
                 Complete(true, new JObject { ["task"] = Attack });
+                _lootPending = true; // what it dropped is picked up before the next thing (UpdateCombat)
                 return;
             }
+            _foeSpots[_attackTarget] = _attackTarget.transform.position;
             _ai.m_targetCreature = _attackTarget;
             _ai.SetAlerted(true);
         }
